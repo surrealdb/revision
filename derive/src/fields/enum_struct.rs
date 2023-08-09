@@ -1,11 +1,10 @@
+use super::ParsedEnumVariant;
 use crate::common::Exists;
 use crate::fields::enum_struct_field::*;
 use darling::FromVariant;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::cmp::max;
-
-use super::ParsedEnumVariant;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub(crate) struct EnumStruct {

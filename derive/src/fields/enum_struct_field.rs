@@ -129,7 +129,7 @@ impl StructField {
 				Some(default_fn) => {
 					let default_fn = syn::Ident::new(default_fn, Span::call_site());
 					quote! {
-						eld: Self::#default_fn(revision),
+						#field: Self::#default_fn(revision),
 					}
 				}
 				None => quote! {

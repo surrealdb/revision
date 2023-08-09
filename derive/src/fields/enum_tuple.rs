@@ -1,7 +1,7 @@
 use super::ParsedEnumVariant;
 use crate::common::Exists;
 use darling::FromVariant;
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use proc_macro_error::abort;
 use quote::{format_ident, quote};
 
@@ -10,6 +10,7 @@ pub(crate) struct EnumTuple {
 	revision: u16,
 	index: u32,
 	fields: Vec<syn::Type>,
+	is_unit: bool,
 	parsed: ParsedEnumVariant,
 }
 
@@ -34,10 +35,17 @@ impl EnumTuple {
 				abort!(variant.ident.span(), "{}", e);
 			}
 		};
+
+		let mut is_unit = false;
+
 		// Process the enum variant fields
 		let fields = match &variant.fields {
 			syn::Fields::Unnamed(fields) => {
 				fields.unnamed.iter().map(|field| field.ty.clone()).collect()
+			}
+			syn::Fields::Unit => {
+				is_unit = true;
+				Vec::new()
 			}
 			_ => Vec::new(),
 		};
@@ -47,17 +55,25 @@ impl EnumTuple {
 			index,
 			fields,
 			parsed,
+			is_unit,
 		}
 	}
 
 	pub fn reexpand(&self) -> TokenStream {
 		let ident = &self.parsed.ident;
 		let attrs = &self.parsed.attrs;
-		let fields = &self.fields;
-		quote!(
-			#(#attrs)*
-			#ident( #(#fields,)* )
-		)
+		if self.is_unit {
+			quote!(
+				#(#attrs)*
+				#ident
+			)
+		} else {
+			let fields = &self.fields;
+			quote!(
+				#(#attrs)*
+				#ident( #(#fields,)* )
+			)
+		}
 	}
 
 	pub fn check_attributes(&self, current: u16) {
@@ -154,7 +170,8 @@ impl EnumTuple {
 		// Check if the variant no longer exists
 		if !self.exists_at(current) {
 			// Get the conversion function
-			let convert_fn = self.parsed.convert_fn.as_ref().unwrap();
+			let convert_fn =
+				syn::Ident::new(self.parsed.convert_fn.as_ref().unwrap(), Span::call_site());
 			// Output the
 			quote! {
 				#index => {
