@@ -1,7 +1,7 @@
 use super::ParsedField;
 use crate::common::Exists;
 use darling::FromField;
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use proc_macro_error::abort;
 use quote::quote;
 
@@ -126,9 +126,12 @@ impl StructField {
 			quote! {},
 			// Set the field default value on the struct
 			match &self.parsed.default_fn {
-				Some(default_fn) => quote! {
-					#field: Self::#default_fn(revision),
-				},
+				Some(default_fn) => {
+					let default_fn = syn::Ident::new(default_fn, Span::call_site());
+					quote! {
+						eld: Self::#default_fn(revision),
+					}
+				}
 				None => quote! {
 					#field: Default::default(),
 				},
@@ -156,9 +159,12 @@ impl StructField {
 			},
 			// Post process the field data with the struct
 			match &self.parsed.convert_fn {
-				Some(convert_fn) => quote! {
-					object.#convert_fn(revision, #field)?;
-				},
+				Some(convert_fn) => {
+					let convert_fn = syn::Ident::new(convert_fn, Span::call_site());
+					quote! {
+						ect.#convert_fn(revision, #field)?;
+					}
+				}
 				None => quote! {},
 			},
 		)

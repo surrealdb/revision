@@ -201,7 +201,7 @@ pub fn revisioned(attrs: TokenStream, input: TokenStream) -> proc_macro::TokenSt
 		}
 	};
 
-	let _attrs = match Arguments::from_list(&attrs) {
+	let args = match Arguments::from_list(&attrs) {
 		Ok(v) => v,
 		Err(e) => {
 			return TokenStream::from(e.write_errors());
@@ -212,18 +212,7 @@ pub fn revisioned(attrs: TokenStream, input: TokenStream) -> proc_macro::TokenSt
 		Item::Enum(ref enum_) => {
 			let ident = enum_.ident.clone();
 			let generics = enum_.generics.clone();
-			let specified = enum_
-				.attrs
-				.iter()
-				.find_map(|attr| {
-					if attr.path().is_ident("revision") {
-						let x: syn::LitInt = attr.parse_args().unwrap();
-						let x = x.base10_parse::<u16>().unwrap();
-						return Some(x);
-					}
-					None
-				})
-				.expect("Expected a revision identifier");
+			let specified = args.revision;
 
 			let descriptor: Box<dyn Descriptor> = Box::new(EnumDescriptor::new(enum_));
 			(ident, generics, specified, descriptor)
@@ -231,19 +220,7 @@ pub fn revisioned(attrs: TokenStream, input: TokenStream) -> proc_macro::TokenSt
 		Item::Struct(ref struct_) => {
 			let ident = struct_.ident.clone();
 			let generics = struct_.generics.clone();
-			let specified = struct_
-				.attrs
-				.iter()
-				.find_map(|attr| {
-					if attr.path().is_ident("revision") {
-						let x: syn::LitInt = attr.parse_args().unwrap();
-						let x = x.base10_parse::<u16>().unwrap();
-						return Some(x);
-					}
-					None
-				})
-				.expect("Expected a revision identifier");
-
+			let specified = args.revision;
 			let descriptor: Box<dyn Descriptor> = Box::new(StructDescriptor::new(struct_));
 			(ident, generics, specified, descriptor)
 		}
@@ -258,41 +235,10 @@ pub fn revisioned(attrs: TokenStream, input: TokenStream) -> proc_macro::TokenSt
 	};
 	let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-	/*
-	// Parse the current struct name
-	let ident = input.ident.clone();
-	// Parse the current struct generics
-	let generics = input.generics.clone();
-	// Split the generics into impl, ty, and where
-	let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-	// Calculate the specified struct version
-	let specified = input
-		.attrs
-		.iter()
-		.find_map(|attr| {
-			if attr.path().is_ident("revision") {
-				let x: syn::LitInt = attr.parse_args().unwrap();
-				let x = x.base10_parse::<u16>().unwrap();
-				return Some(x);
-			}
-			None
-		})
-		.expect("Expected a revision identifier");
-
-	let descriptor: Box<dyn Descriptor> = match &input.data {
-		syn::Data::Struct(v) => Box::new(StructDescriptor::new(v, ident.clone())),
-		syn::Data::Enum(v) => Box::new(EnumDescriptor::new(v, ident.clone())),
-		syn::Data::Union(_) => {
-			return syn::Error::new(span, "Union serialization is not supported.")
-				.to_compile_error()
-				.into();
-		}
-	};
-	*/
-
 	let revision = descriptor.revision();
 	let serializer = descriptor.generate_serializer();
 	let deserializer = descriptor.generate_deserializer();
+	let item = descriptor.reexpand();
 
 	if specified != revision {
 		return syn::Error::new(
@@ -304,7 +250,7 @@ pub fn revisioned(attrs: TokenStream, input: TokenStream) -> proc_macro::TokenSt
 	}
 
 	(quote! {
-		#input
+		#item
 
         #[automatically_derived]
         impl #impl_generics revision::Revisioned for #ident #ty_generics #where_clause {

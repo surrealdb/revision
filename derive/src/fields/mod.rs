@@ -19,14 +19,14 @@ pub struct ParsedField {
 	#[darling(default)]
 	end: Option<u16>,
 	#[darling(default)]
-	default_fn: Option<syn::Lit>,
+	default_fn: Option<String>,
 	#[darling(default)]
-	convert_fn: Option<syn::Lit>,
+	convert_fn: Option<String>,
 	attrs: Vec<syn::Attribute>,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, FromVariant)]
-#[darling(forward_attrs)]
+#[darling(attributes(revision), forward_attrs)]
 struct ParsedEnumVariant {
 	ident: syn::Ident,
 	discriminant: Option<syn::Expr>,
@@ -35,8 +35,8 @@ struct ParsedEnumVariant {
 	#[darling(default)]
 	end: Option<u16>,
 	#[darling(default)]
-	default_fn: Option<syn::Lit>,
+	default_fn: Option<String>,
 	#[darling(default)]
-	convert_fn: Option<syn::Lit>,
+	convert_fn: Option<String>,
 	attrs: Vec<syn::Attribute>,
 }
