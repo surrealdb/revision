@@ -235,6 +235,19 @@ pub fn revisioned(attrs: TokenStream, input: TokenStream) -> proc_macro::TokenSt
 	};
 	let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
+	//
+	// TODO: Parse the `input` struct fields or enum variants and comment
+	// them out in the source code. This allows us to completely remove a
+	// field or variant. The subsequent derive macro can then read all
+	// fields or variants, along with markup comments. So for example:
+	//    #[revision(end = 2)]
+	//    name: String,
+	// could become:
+	//    #[revision(end = 2)]
+	//    // revision:remove name: String
+	//
+	// Extract the specified revision
+
 	let revision = descriptor.revision();
 	let serializer = descriptor.generate_serializer();
 	let deserializer = descriptor.generate_deserializer();

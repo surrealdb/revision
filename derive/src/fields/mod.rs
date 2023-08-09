@@ -8,6 +8,7 @@ pub mod struct_field;
 pub mod struct_index;
 pub mod struct_inner;
 
+/// A parsed struct field alongside its attributes.
 #[derive(Debug, Eq, PartialEq, Clone, FromField)]
 #[darling(attributes(revision))]
 pub struct ParsedField {
@@ -25,6 +26,7 @@ pub struct ParsedField {
 	attrs: Vec<syn::Attribute>,
 }
 
+/// A parsed enum variant alongside its attributes.
 #[derive(Debug, Eq, PartialEq, Clone, FromVariant)]
 #[darling(attributes(revision), forward_attrs)]
 struct ParsedEnumVariant {
