@@ -16,13 +16,13 @@ compatibility, but where the design of the data format evolves over time.</p>
 <br>
 
 <p align="center">
-	<a href="https://github.com/surrealdb/revision"><img src="https://img.shields.io/badge/status-beta-ff00bb.svg?style=flat-square"></a>
-	&nbsp;
-	<a href="https://docs.rs/revision/"><img src="https://img.shields.io/docsrs/revision?style=flat-square"></a>
-	&nbsp;
-	<a href="https://crates.io/crates/revision"><img src="https://img.shields.io/crates/v/revision?style=flat-square"></a>
-	&nbsp;
-	<a href="https://github.com/surrealdb/revision"><img src="https://img.shields.io/badge/license-Apache_License_2.0-00bfff.svg?style=flat-square"></a>
+    <a href="https://github.com/surrealdb/revision"><img src="https://img.shields.io/badge/status-beta-ff00bb.svg?style=flat-square"></a>
+    &nbsp;
+    <a href="https://docs.rs/revision/"><img src="https://img.shields.io/docsrs/revision?style=flat-square"></a>
+    &nbsp;
+    <a href="https://crates.io/crates/revision"><img src="https://img.shields.io/crates/v/revision?style=flat-square"></a>
+    &nbsp;
+    <a href="https://github.com/surrealdb/revision"><img src="https://img.shields.io/badge/license-Apache_License_2.0-00bfff.svg?style=flat-square"></a>
 </p>
 
 ## Information
@@ -41,16 +41,16 @@ This code takes inspiration from the [Versionize](https://github.com/firecracker
 use revision::Error;
 use revision::revisioned;
 
-// The test structure is at version 3.
+// The test structure is at revision 3.
 #[derive(Debug, PartialEq)]
 #[revisioned(revision = 3)]
 pub struct TestStruct {
     a: u32,
-    #[version(start = 2, end = 3, convert_fn = "convert_b")]
+    #[revision(start = 2, end = 3, convert_fn = "convert_b")]
     b: u8,
     #[revision(start = 3)]
     c: u64,
-    #[version(start = 3, default_fn = "default_c")]
+    #[revision(start = 3, default_fn = "default_c")]
     d: String,
 }
 
@@ -66,7 +66,7 @@ impl TestStruct {
     }
 }
 
-// The test structure is at version 3.
+// The test structure is at revision 3.
 #[derive(Debug, PartialEq)]
 #[revisioned(revision = 3)]
 pub enum TestEnum {
@@ -90,20 +90,24 @@ pub enum TestEnum {
 
 impl TestEnum {
     // Used to convert an old enum variant into a new variant.
-    fn convert_zero((): ()) -> Result<TestEnum, Error> {
+    fn upgrade_zero((): ()) -> Result<TestEnum, Error> {
         Ok(Self::Two(0))
     }
     // Used to convert an old enum variant into a new variant.
-    fn convert_one((v0,): (u32,)) -> Result<TestEnum, Error> {
-        Ok(Self::Two(v0 as u64))
-    }
-    // Used to convert an old enum variant into a new variant.
-    fn upgrade_three_b((v0,): (u32,)) -> Result<TestEnum, Error> {
+    fn upgrade_one((v0,): (u32,)) -> Result<TestEnum, Error> {
         Ok(Self::Two(v0 as u64))
     }
     // Used to convert the field from an old revision to the latest revision
-    fn upgrade_three_b(&mut self, _revision: u16, value: f64) -> Result<(), Error> {
-        self.c = value.into()
+    fn upgrade_three_b(&mut self, _revision: u16, value: f32) -> Result<(), Error> {
+        match self {
+            TestEnum::Three {
+                ref mut c,
+                ..
+            } => {
+                *c = value.into();
+            }
+            _ => unreachable!(),
+        }
         Ok(())
     }
 }
