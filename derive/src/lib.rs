@@ -57,7 +57,7 @@ struct Arguments {
 /// ## Revisioned requirements
 ///
 /// Currently, all struct field values, and all enum variant fields need to
-/// implemented the `Revisioned` trait. This is already implemented for a number
+/// implement the `Revisioned` trait. This is already implemented for a number
 /// of primitive and custom types. In addition, the `Revisioned` derive macro
 /// can not be used with generics.
 ///
@@ -96,7 +96,7 @@ struct Arguments {
 ///
 /// ### start/end
 ///
-/// Defines the field version lifetime. Fields can be added by specifing the
+/// Defines the field revision lifetime. Fields can be added by specifing the
 /// `start` revision number of the structure when first defining them and can
 /// be removed from serialization logic by adding an `end` revision number.
 ///
@@ -108,7 +108,7 @@ struct Arguments {
 ///
 /// Provides an initialization value for a field when deserializing from an
 /// older structure version which does not contain this field. If not specified
-/// the `Default` trait isused to initialize the field.
+/// the `Default` trait is used to initialize the field.
 ///
 /// The function name needs to be specified as a string. The first function
 /// argument is the source revision that is being deserialized, and the return
