@@ -162,7 +162,7 @@ impl StructField {
 				Some(convert_fn) => {
 					let convert_fn = syn::Ident::new(convert_fn, Span::call_site());
 					quote! {
-						ect.#convert_fn(revision, #field)?;
+						object.#convert_fn(revision, #field)?;
 					}
 				}
 				None => quote! {},
