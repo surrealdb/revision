@@ -1,0 +1,23 @@
+[package]
+name = "revision-derive"
+publish = true
+edition = "2021"
+version = "0.0.0"
+license = "Apache-2.0"
+readme = "README.md"
+authors = ["Tobie Morgan Hitchcock <tobie@surrealdb.com>"]
+description = "Implements procedural macros for automatic Revision trait implementation."
+repository = "https://github.com/surrealdb/revision"
+homepage = "https://github.com/surrealdb/revision"
+documentation = "https://docs.rs/revision/"
+keywords = ["serialization", "encoding", "revision", "version", "bincode"]
+categories = ["encoding"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+darling = "0.20.3"
+proc-macro2 = "1.0.66"
+quote = "1.0.32"
+syn = { version = "2.0.28", features = ["full", "extra-traits", "parsing"] }
