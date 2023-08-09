@@ -1,30 +1,27 @@
-use super::super::CONVERT_FN;
 use crate::common::Exists;
 use crate::fields::enum_struct_field::*;
-use crate::helpers::{
-	get_end_revision, get_ident_attr, get_start_revision, parse_field_attributes,
-};
+use darling::FromVariant;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::cmp::max;
-use std::collections::hash_map::HashMap;
+
+use super::ParsedEnumVariant;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub(crate) struct EnumStruct {
-	ident: syn::Ident,
+	revision: u16,
 	index: u32,
+	parsed: ParsedEnumVariant,
+	// fields: Vec<(syn::Ident, syn::Type)>,
 	fields: Vec<StructField>,
-	start_revision: u16,
-	end_revision: u16,
-	attrs: HashMap<String, syn::Lit>,
 }
 
 impl Exists for EnumStruct {
 	fn start_revision(&self) -> u16 {
-		self.start_revision
+		self.parsed.start.unwrap_or(self.revision)
 	}
 	fn end_revision(&self) -> u16 {
-		self.end_revision
+		self.parsed.end.unwrap_or_default()
 	}
 	fn sub_revision(&self) -> u16 {
 		let mut revision = 1;
@@ -38,9 +35,19 @@ impl Exists for EnumStruct {
 impl EnumStruct {
 	pub fn new(revision: u16, variant: &syn::Variant, index: u32) -> Self {
 		// Parse the field macro attributes
-		let attrs = parse_field_attributes(&variant.attrs);
+		let parsed = match ParsedEnumVariant::from_variant(variant) {
+			Ok(x) => x,
+			Err(e) => {
+				abort!(variant.ident.span(), "{}", e);
+			}
+		};
 		// Process the enum variant fields
 		let fields = match &variant.fields {
+			// syn::Fields::Named(fields) => fields
+			//     .named
+			//     .iter()
+			//     .map(|field| (field.ident.clone().unwrap(), field.ty.clone()))
+			//     .collect(),
 			syn::Fields::Named(fields) => fields
 				.named
 				.iter()
@@ -51,20 +58,30 @@ impl EnumStruct {
 		};
 		// Create the enum variant holder
 		EnumStruct {
-			ident: variant.ident.clone(),
+			revision,
 			index,
 			fields,
-			start_revision: get_start_revision(&attrs).unwrap_or(revision),
-			end_revision: get_end_revision(&attrs).unwrap_or_default(),
-			attrs,
+			parsed,
 		}
 	}
 
+	pub fn reexpand(&self) -> TokenStream {
+		let ident = &self.parsed.ident;
+		let attrs = &self.parsed.attrs;
+		let fields = self.fields.iter().map(|x| x.reexpand());
+		quote!(
+			#(#attrs)*
+			#ident{ #(#fields,)* }
+		)
+	}
+
 	pub fn check_attributes(&self, current: u16) {
-		if !self.exists_at(current) {
-			if get_ident_attr(&self.attrs, CONVERT_FN).is_none() {
-				panic!("Expected a 'convert_fn' to be specified for enum variant {}", self.ident);
-			}
+		if !self.exists_at(current) && self.parsed.convert_fn.is_none() {
+			abort!(
+				self.parsed.ident.span(),
+				"Expected a 'convert_fn' to be specified for enum variant {}",
+				self.parsed.ident
+			);
 		}
 		// Check field attributes
 		for field in &self.fields {
@@ -74,7 +91,7 @@ impl EnumStruct {
 
 	pub fn generate_serializer(&self, revision: u16) -> TokenStream {
 		// Get the variant identifier
-		let field_ident = &self.ident;
+		let field_ident = &self.parsed.ident;
 		// Get the variant index
 		let index = self.index;
 		// Create a token stream for the serializer
@@ -104,7 +121,7 @@ impl EnumStruct {
 		// Get the variant index
 		let index = self.index;
 		// Get the variant identifier
-		let ident = &self.ident;
+		let ident = &self.parsed.ident;
 		// Check if the variant is new.
 		if !self.exists_at(revision) {
 			return quote!();

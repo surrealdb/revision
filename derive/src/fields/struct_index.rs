@@ -1,27 +1,24 @@
-use super::super::{CONVERT_FN, DEFAULT_FN};
+use super::ParsedField;
 use crate::common::Exists;
-use crate::helpers::{
-	get_end_revision, get_ident_attr, get_start_revision, parse_field_attributes,
-};
+use darling::FromField;
 use proc_macro2::TokenStream;
+use proc_macro_error::abort;
 use quote::{format_ident, quote};
-use std::collections::hash_map::HashMap;
+use syn::spanned::Spanned;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub(crate) struct StructIndex {
 	index: u32,
-	ty: syn::Type,
-	start_revision: u16,
-	end_revision: u16,
-	attrs: HashMap<String, syn::Lit>,
+	revision: u16,
+	parsed: ParsedField,
 }
 
 impl Exists for StructIndex {
 	fn start_revision(&self) -> u16 {
-		self.start_revision
+		self.parsed.start.unwrap_or(self.revision)
 	}
 	fn end_revision(&self) -> u16 {
-		self.end_revision
+		self.parsed.end.unwrap_or_default()
 	}
 	fn sub_revision(&self) -> u16 {
 		0
@@ -31,22 +28,39 @@ impl Exists for StructIndex {
 impl StructIndex {
 	pub fn new(revision: u16, field: &syn::Field, index: u32) -> Self {
 		// Parse the field macro attributes
-		let attrs = parse_field_attributes(&field.attrs);
+		let parsed = match ParsedField::from_field(field) {
+			Ok(x) => x,
+			Err(e) => {
+				abort!(e.span(), "{e}")
+			}
+		};
+
+		assert!(parsed.ident.is_none(), "tried to parse a named field as a tuple field");
+
 		// Create the struct field holder
 		StructIndex {
 			index,
-			ty: field.ty.clone(),
-			start_revision: get_start_revision(&attrs).unwrap_or(revision),
-			end_revision: get_end_revision(&attrs).unwrap_or_default(),
-			attrs,
+			revision,
+			parsed,
 		}
 	}
 
+	pub fn reexpand(&self) -> TokenStream {
+		let vis = &self.parsed.vis;
+		let ty = &self.parsed.ty;
+		let attrs = &self.parsed.attrs;
+		quote!(
+			#(#attrs)* #vis #ty
+		)
+	}
+
 	pub fn check_attributes(&self, current: u16) {
-		if !self.exists_at(current) {
-			if get_ident_attr(&self.attrs, CONVERT_FN).is_none() {
-				panic!("Expected a 'convert_fn' to be specified for field {}", self.index);
-			}
+		if !self.exists_at(current) && self.parsed.convert_fn.is_none() {
+			abort!(
+				self.parsed.ty.span(),
+				"Expected a 'convert_fn' to be specified for field {}",
+				self.index
+			);
 		}
 	}
 
@@ -58,7 +72,7 @@ impl StructIndex {
 			return proc_macro2::TokenStream::new();
 		}
 		// Match the type of the field.
-		match &self.ty {
+		match &self.parsed.ty {
 			syn::Type::Array(_) => quote! {
 				for element in self.#field.iter() {
 					revision::Revisioned::serialize_revisioned(element, writer)?;
@@ -70,7 +84,7 @@ impl StructIndex {
 			syn::Type::Reference(_) => quote! {
 				self.#field.serialize_revisioned(writer)?;
 			},
-			v => panic!("Unsupported field type {v:?}"),
+			v => abort!(v.span(), "Unsupported field type"),
 		}
 	}
 
@@ -80,7 +94,7 @@ impl StructIndex {
 		revision: u16,
 	) -> (TokenStream, TokenStream, TokenStream) {
 		// Get the field type.
-		let kind = &self.ty;
+		let kind = &self.parsed.ty;
 		// Get the field index.
 		let index = syn::Index::from(self.index as usize);
 		// Get the field identifier.
@@ -114,7 +128,7 @@ impl StructIndex {
 			// Field did not exist, so don't deserialize it
 			quote! {},
 			// Set the field default value on the struct
-			match get_ident_attr(&self.attrs, DEFAULT_FN) {
+			match &self.parsed.default_fn {
 				Some(default_fn) => quote! {
 					Self::#default_fn(revision),
 				},
@@ -129,7 +143,7 @@ impl StructIndex {
 
 	fn generate_deserializer_oldfield(&self) -> (TokenStream, TokenStream, TokenStream) {
 		// Get the field type.
-		let kind = &self.ty;
+		let kind = &self.parsed.ty;
 		// Get the field index.
 		let index = syn::Index::from(self.index as usize);
 		// Get the field identifier.
@@ -146,7 +160,7 @@ impl StructIndex {
 				Default::default(),
 			},
 			// Post process the field data with the struct
-			match get_ident_attr(&self.attrs, CONVERT_FN) {
+			match &self.parsed.convert_fn {
 				Some(convert_fn) => quote! {
 					object.#convert_fn(revision, #field)?;
 				},
