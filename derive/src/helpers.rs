@@ -1,6 +1,4 @@
-use super::{ATTRIBUTE_NAME, END_REVISION, START_REVISION};
 use crate::common::Exists;
-use quote::format_ident;
 use std::cmp::max;
 
 /// Compute current struct revision by finding the latest field change revision.

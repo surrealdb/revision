@@ -3,6 +3,7 @@ use crate::common::Exists;
 use crate::fields::enum_struct_field::*;
 use darling::FromVariant;
 use proc_macro2::TokenStream;
+use proc_macro_error::abort;
 use quote::quote;
 use std::cmp::max;
 
