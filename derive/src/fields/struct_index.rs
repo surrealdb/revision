@@ -97,7 +97,7 @@ impl StructIndex {
 		(
 			// Deserialize the field from the reader
 			quote! {
-				let #field = <#kind as revision::Revisioned>::deserialize_revisioned(&mut reader)?;
+				let #field = <#kind as revision::Revisioned>::deserialize_revisioned(reader)?;
 			},
 			// Insert the field value into the struct
 			quote! {
@@ -138,7 +138,7 @@ impl StructIndex {
 		(
 			// Deserialize the field which no longer exists
 			quote! {
-				let #field = <#kind as revision::Revisioned>::deserialize_revisioned(&mut reader)?;
+				let #field = <#kind as revision::Revisioned>::deserialize_revisioned(reader)?;
 			},
 			// Don't insert the field into the current struct
 			quote! {

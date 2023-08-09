@@ -108,7 +108,7 @@ impl Descriptor for StructDescriptor {
 		// Output the token stream
 		quote! {
 			// Deserialize the data revision
-			let revision = <u16 as revision::Revisioned>::deserialize_revisioned(&mut reader)?;
+			let revision = <u16 as revision::Revisioned>::deserialize_revisioned(reader)?;
 			// Output logic for this revision
 			match revision {
 				#deserializer

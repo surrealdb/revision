@@ -139,7 +139,7 @@ impl EnumTuple {
 			inner.extend(quote!(#field,));
 			// Extend the deserializer
 			deserializer.extend(quote! {
-				let #field = <#kind as revision::Revisioned>::deserialize_revisioned(&mut reader)?;
+				let #field = <#kind as revision::Revisioned>::deserialize_revisioned(reader)?;
 			});
 		}
 		// Check if the variant no longer exists

@@ -5,7 +5,7 @@ use std::ops::Bound;
 
 impl<T: Revisioned> Revisioned for Bound<T> {
 	#[inline]
-	fn serialize_revisioned<W: std::io::Write>(&self, mut writer: &mut W) -> Result<(), Error> {
+	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		let opts = bincode::options()
 			.with_no_limit()
 			.with_little_endian()
@@ -13,39 +13,39 @@ impl<T: Revisioned> Revisioned for Bound<T> {
 			.reject_trailing_bytes();
 		match *self {
 			Bound::Unbounded => opts
-				.serialize_into(&mut writer, &0u32)
+				.serialize_into(writer, &0u32)
 				.map_err(|ref err| Error::Serialize(format!("{:?}", err))),
 			Bound::Included(ref value) => {
-				opts.serialize_into(&mut writer, &1u32)
+				opts.serialize_into(&mut *writer, &1u32)
 					.map_err(|ref err| Error::Serialize(format!("{:?}", err)))?;
-				value.serialize_revisioned(&mut writer)
+				value.serialize_revisioned(writer)
 			}
 			Bound::Excluded(ref value) => {
-				opts.serialize_into(&mut writer, &2u32)
+				opts.serialize_into(&mut *writer, &2u32)
 					.map_err(|ref err| Error::Serialize(format!("{:?}", err)))?;
-				value.serialize_revisioned(&mut writer)
+				value.serialize_revisioned(writer)
 			}
 		}
 	}
 
 	#[inline]
-	fn deserialize_revisioned<R: std::io::Read>(mut reader: &mut R) -> Result<Self, Error> {
+	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let opts = bincode::options()
 			.with_no_limit()
 			.with_little_endian()
 			.with_varint_encoding()
 			.reject_trailing_bytes();
 		let variant: u32 = opts
-			.deserialize_from(&mut reader)
+			.deserialize_from(&mut *reader)
 			.map_err(|ref err| Error::Deserialize(format!("{:?}", err)))?;
 		match variant {
 			0 => Ok(Bound::Unbounded),
 			1 => Ok(Bound::Included(
-				T::deserialize_revisioned(&mut reader)
+				T::deserialize_revisioned(reader)
 					.map_err(|ref err| Error::Deserialize(format!("{:?}", err)))?,
 			)),
 			2 => Ok(Bound::Excluded(
-				T::deserialize_revisioned(&mut reader)
+				T::deserialize_revisioned(reader)
 					.map_err(|ref err| Error::Deserialize(format!("{:?}", err)))?,
 			)),
 			_ => Err(Error::Deserialize("Unknown variant index".to_string())),
