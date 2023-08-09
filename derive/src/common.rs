@@ -45,9 +45,11 @@ mod tests {
 			fn start_revision(&self) -> u16 {
 				3
 			}
-
 			fn end_revision(&self) -> u16 {
 				5
+			}
+			fn sub_revision(&self) -> u16 {
+				0
 			}
 		}
 
