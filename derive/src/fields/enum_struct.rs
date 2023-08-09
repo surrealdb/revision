@@ -13,7 +13,6 @@ use std::collections::hash_map::HashMap;
 pub(crate) struct EnumStruct {
     ident: syn::Ident,
     index: u32,
-    // fields: Vec<(syn::Ident, syn::Type)>,
     fields: Vec<StructField>,
     start_revision: u16,
     end_revision: u16,
@@ -42,11 +41,6 @@ impl EnumStruct {
         let attrs = parse_field_attributes(&variant.attrs);
         // Process the enum variant fields
         let fields = match &variant.fields {
-            // syn::Fields::Named(fields) => fields
-            //     .named
-            //     .iter()
-            //     .map(|field| (field.ident.clone().unwrap(), field.ty.clone()))
-            //     .collect(),
             syn::Fields::Named(fields) => fields
                 .named
                 .iter()
