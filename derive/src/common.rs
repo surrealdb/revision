@@ -1,6 +1,9 @@
 /// Describes a structure and it's fields.
 pub(crate) struct GenericDescriptor<T> {
 	pub ident: syn::Ident,
+	pub vis: syn::Visibility,
+	pub attrs: Vec<syn::Attribute>,
+	pub generics: syn::Generics,
 	pub revision: u16,
 	pub fields: Vec<T>,
 }
@@ -14,6 +17,8 @@ pub trait Descriptor {
 	fn generate_deserializer(&self) -> proc_macro2::TokenStream;
 	/// Returns the curent revision.
 	fn revision(&self) -> u16;
+
+	fn reexpand(&self) -> proc_macro2::TokenStream;
 }
 
 /// A trait that enables checking whether a certain field
@@ -45,9 +50,11 @@ mod tests {
 			fn start_revision(&self) -> u16 {
 				3
 			}
+
 			fn end_revision(&self) -> u16 {
 				5
 			}
+
 			fn sub_revision(&self) -> u16 {
 				0
 			}

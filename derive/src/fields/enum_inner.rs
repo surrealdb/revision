@@ -49,4 +49,11 @@ impl EnumInner {
 			Self::EnumStruct(v) => v.generate_deserializer(current, revision),
 		}
 	}
+
+	pub fn reexpand(&self) -> TokenStream {
+		match self {
+			Self::EnumTuple(v) => v.reexpand(),
+			Self::EnumStruct(v) => v.reexpand(),
+		}
+	}
 }

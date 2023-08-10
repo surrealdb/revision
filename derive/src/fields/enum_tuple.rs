@@ -1,28 +1,25 @@
-use super::super::CONVERT_FN;
+use super::ParsedEnumVariant;
 use crate::common::Exists;
-use crate::helpers::{
-	get_end_revision, get_ident_attr, get_start_revision, parse_field_attributes,
-};
-use proc_macro2::TokenStream;
+use darling::FromVariant;
+use proc_macro2::{Span, TokenStream};
+use proc_macro_error::abort;
 use quote::{format_ident, quote};
-use std::collections::hash_map::HashMap;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub(crate) struct EnumTuple {
-	ident: syn::Ident,
+	revision: u16,
 	index: u32,
 	fields: Vec<syn::Type>,
-	start_revision: u16,
-	end_revision: u16,
-	attrs: HashMap<String, syn::Lit>,
+	is_unit: bool,
+	parsed: ParsedEnumVariant,
 }
 
 impl Exists for EnumTuple {
 	fn start_revision(&self) -> u16 {
-		self.start_revision
+		self.parsed.start.unwrap_or(self.revision)
 	}
 	fn end_revision(&self) -> u16 {
-		self.end_revision
+		self.parsed.end.unwrap_or_default()
 	}
 	fn sub_revision(&self) -> u16 {
 		0
@@ -31,41 +28,71 @@ impl Exists for EnumTuple {
 
 impl EnumTuple {
 	pub fn new(revision: u16, variant: &syn::Variant, index: u32) -> Self {
-		// Parse the field macro attributes
-		let attrs = parse_field_attributes(&variant.attrs);
+		// Parse the variant macro attributes
+		let parsed = match ParsedEnumVariant::from_variant(variant) {
+			Ok(x) => x,
+			Err(e) => {
+				abort!(variant.ident.span(), "{}", e);
+			}
+		};
+
+		let mut is_unit = false;
+
 		// Process the enum variant fields
 		let fields = match &variant.fields {
 			syn::Fields::Unnamed(fields) => {
 				fields.unnamed.iter().map(|field| field.ty.clone()).collect()
 			}
+			syn::Fields::Unit => {
+				is_unit = true;
+				Vec::new()
+			}
 			_ => Vec::new(),
 		};
 		// Create the enum variant holder
 		EnumTuple {
-			ident: variant.ident.clone(),
+			revision,
 			index,
 			fields,
-			start_revision: get_start_revision(&attrs).unwrap_or(revision),
-			end_revision: get_end_revision(&attrs).unwrap_or_default(),
-			attrs,
+			parsed,
+			is_unit,
+		}
+	}
+
+	pub fn reexpand(&self) -> TokenStream {
+		let ident = &self.parsed.ident;
+		let attrs = &self.parsed.attrs;
+		if self.is_unit {
+			quote!(
+				#(#attrs)*
+				#ident
+			)
+		} else {
+			let fields = &self.fields;
+			quote!(
+				#(#attrs)*
+				#ident( #(#fields,)* )
+			)
 		}
 	}
 
 	pub fn check_attributes(&self, current: u16) {
-		if !self.exists_at(current) {
-			if get_ident_attr(&self.attrs, CONVERT_FN).is_none() {
-				panic!("Expected a 'convert_fn' to be specified for enum variant {}", self.ident);
-			}
+		if !self.exists_at(current) && self.parsed.convert_fn.is_none() {
+			abort!(
+				self.parsed.ident.span(),
+				"Expected a 'convert_fn' to be specified for enum variant {}",
+				self.parsed.ident
+			);
 		}
 	}
 
 	pub fn generate_serializer(&self, current: u16) -> TokenStream {
 		// Get the name of the variant
-		let name = self.ident.to_string();
+		let name = self.parsed.ident.to_string();
 		// Get the variant index
 		let index = self.index;
 		// Get the variant identifier
-		let ident = &self.ident;
+		let ident = &self.parsed.ident;
 		// Create a token stream for the serializer
 		let mut serializer = TokenStream::new();
 		// Create a token stream for the variant fields
@@ -98,22 +125,20 @@ impl EnumTuple {
 					},
 				}
 			}
+		} else if !self.exists_at(current) {
+			quote! {
+				Self::#ident(#inner) => {
+					// TODO: remove this variant entirely using proc macro
+					panic!("The {} enum variant has been deprecated", #name);
+				},
+			}
 		} else {
-			if !self.exists_at(current) {
-				quote! {
-					Self::#ident(#inner) => {
-						// TODO: remove this variant entirely using proc macro
-						panic!("The {} enum variant has been deprecated", #name);
-					},
-				}
-			} else {
-				quote! {
-					Self::#ident(#inner) => {
-						let index: u32 = #index;
-						revision::Revisioned::serialize_revisioned(&index, writer)?;
-						#serializer
-					},
-				}
+			quote! {
+				Self::#ident(#inner) => {
+					let index: u32 = #index;
+					revision::Revisioned::serialize_revisioned(&index, writer)?;
+					#serializer
+				},
 			}
 		}
 	}
@@ -122,7 +147,7 @@ impl EnumTuple {
 		// Get the variant index
 		let index = self.index;
 		// Get the variant identifier
-		let ident = &self.ident;
+		let ident = &self.parsed.ident;
 		// Check if the variant is new.
 		if !self.exists_at(revision) {
 			return quote!();
@@ -145,7 +170,8 @@ impl EnumTuple {
 		// Check if the variant no longer exists
 		if !self.exists_at(current) {
 			// Get the conversion function
-			let convert_fn = get_ident_attr(&self.attrs, CONVERT_FN).unwrap();
+			let convert_fn =
+				syn::Ident::new(self.parsed.convert_fn.as_ref().unwrap(), Span::call_site());
 			// Output the
 			quote! {
 				#index => {

@@ -42,8 +42,8 @@ impl TestEnum {
 }
 
 // Used to serialize the struct at revision 1
-#[derive(Debug, PartialEq, Revisioned)]
-#[revision(1)]
+#[derive(Debug, PartialEq)]
+#[revisioned(revision = 1)]
 pub struct Tester1 {
 	#[revision(start = 1)] // used to force the version to 1
 	usize_1: usize,
@@ -62,8 +62,8 @@ pub struct Tester1 {
 }
 
 // Used to serialize the struct at revision 2
-#[derive(Debug, PartialEq, Revisioned)]
-#[revision(2)]
+#[derive(Debug, PartialEq)]
+#[revisioned(revision = 2)]
 pub struct Tester2 {
 	#[revision(start = 2)] // used to force the version to 2
 	usize_1: usize,
@@ -86,8 +86,8 @@ pub struct Tester2 {
 }
 
 // Used to serialize the struct at revision 3
-#[derive(Debug, PartialEq, Revisioned)]
-#[revision(3)]
+#[derive(Debug, PartialEq)]
+#[revisioned(revision = 3)]
 pub struct Tester3 {
 	#[revision(start = 3)] // used to force the version to 3
 	usize_1: usize,
