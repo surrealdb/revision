@@ -6,7 +6,15 @@ pub(crate) struct GenericDescriptor<T> {
 	pub generics: syn::Generics,
 	pub revision: u16,
 	pub fields: Vec<T>,
-	pub simple: bool,
+	pub kind: Kind,
+}
+
+/// Describes a structure and it's fields.
+pub(crate) enum Kind {
+	Unit,
+	Tuple,
+	Struct,
+	Enum,
 }
 
 /// An interface for generating serialzer and deserializer

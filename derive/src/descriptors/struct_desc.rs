@@ -1,4 +1,4 @@
-use crate::common::{Descriptor, GenericDescriptor};
+use crate::common::{Descriptor, GenericDescriptor, Kind};
 use crate::fields::struct_field::*;
 use crate::fields::struct_index::*;
 use crate::fields::struct_inner::*;
@@ -17,7 +17,7 @@ impl StructDescriptor {
 			attrs: input.attrs.clone(),
 			revision: 1,
 			fields: vec![],
-			simple: false,
+			kind: Kind::Struct,
 		};
 		// Parse the struct fields
 		descriptor.parse_struct_fields(&input.fields);
@@ -34,7 +34,7 @@ impl StructDescriptor {
 	fn parse_struct_fields(&mut self, fields: &syn::Fields) {
 		match fields {
 			syn::Fields::Named(fields) => {
-				self.simple = false;
+				self.kind = Kind::Struct;
 				let pairs = fields.named.pairs();
 				for (i, field) in pairs.enumerate() {
 					let field = field.value();
@@ -46,7 +46,7 @@ impl StructDescriptor {
 				}
 			}
 			syn::Fields::Unnamed(fields) => {
-				self.simple = true;
+				self.kind = Kind::Tuple;
 				let pairs = fields.unnamed.pairs();
 				for (i, field) in pairs.enumerate() {
 					let field = field.value();
@@ -57,7 +57,9 @@ impl StructDescriptor {
 					)));
 				}
 			}
-			_ => {}
+			syn::Fields::Unit => {
+				self.kind = Kind::Unit;
+			}
 		}
 	}
 }
@@ -141,17 +143,22 @@ impl Descriptor for StructDescriptor {
 		let generics = &self.generics;
 		let fields = self.fields.iter().map(|e| e.reexpand());
 
-		match self.simple {
-			true => quote! {
+		match self.kind {
+			Kind::Unit => quote! {
+				#(#attrs)*
+				#vis struct #ident #generics;
+			},
+			Kind::Tuple => quote! {
 				#(#attrs)*
 				#vis struct #ident #generics(#(#fields,)*);
 			},
-			false => quote! {
+			Kind::Struct => quote! {
 				#(#attrs)*
 				#vis struct #ident #generics {
 					#(#fields,)*
 				}
 			},
+			_ => unreachable!(),
 		}
 	}
 }

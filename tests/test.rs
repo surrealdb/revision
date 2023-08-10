@@ -43,6 +43,10 @@ impl TestEnum {
 
 #[derive(Debug, Default, PartialEq)]
 #[revisioned(revision = 1)]
+pub struct TestUnit;
+
+#[derive(Debug, Default, PartialEq)]
+#[revisioned(revision = 1)]
 pub struct TestTuple(pub Vec<i64>);
 
 // Used to serialize the struct at revision 1
@@ -107,7 +111,8 @@ pub struct Tester3 {
 	enum_1: TestEnum,
 	option_1: Option<u8>,
 	vec_1: Vec<char>,
-	other_1: TestTuple,
+	unit_1: TestUnit,
+	tuple_1: TestTuple,
 	#[allow(clippy::box_collection)] // we want to explicitly test Box
 	box_1: Box<String>,
 	wrapping_1: Wrapping<u32>,
@@ -138,8 +143,10 @@ pub struct Tester4 {
 	option_1: Option<u8>,
 	#[revision(start = 3, end = 4, convert_fn = "convert_vec_1")]
 	vec_1: Vec<char>,
-	#[revision(start = 3, default_fn = "default_other_1")]
-	other_1: TestTuple,
+	#[revision(start = 3)]
+	unit_1: TestUnit,
+	#[revision(start = 3, default_fn = "default_tuple_1")]
+	tuple_1: TestTuple,
 	#[allow(clippy::box_collection)] // we want to explicitly test Box
 	box_1: Box<String>,
 	#[revision(start = 3, default_fn = "default_wrapping_1")]
@@ -168,7 +175,7 @@ impl Tester4 {
 	pub fn default_wrapping_1(_revision: u16) -> Wrapping<u32> {
 		Wrapping(19348719)
 	}
-	pub fn default_other_1(_revision: u16) -> TestTuple {
+	pub fn default_tuple_1(_revision: u16) -> TestTuple {
 		TestTuple(vec![1039481, 30459830])
 	}
 }
@@ -236,7 +243,8 @@ fn test_enum() {
 		enum_1: TestEnum::Zero,
 		option_1: Some(17),
 		vec_1: vec!['a', 'b', 'c'],
-		other_1: TestTuple(vec![1039481, 30459830]),
+		unit_1: TestUnit {},
+		tuple_1: TestTuple(vec![1039481, 30459830]),
 		box_1: Box::new(String::from("this was a test")),
 		wrapping_1: Wrapping(19348719),
 	};
@@ -264,7 +272,8 @@ fn test_enum() {
 		enum_1: TestEnum::Zero,
 		option_1: Some(17),
 		vec_1: vec!['a', 'b', 'c'],
-		other_1: TestTuple(vec![1039481, 30459830]),
+		unit_1: TestUnit {},
+		tuple_1: TestTuple(vec![1039481, 30459830]),
 		box_1: Box::new(String::from("this was a test")),
 		wrapping_1: Wrapping(19348719),
 	};
@@ -291,7 +300,8 @@ fn test_enum() {
 		enum_1: TestEnum::Zero,
 		option_1: Some(17),
 		vec_1: vec![],
-		other_1: TestTuple(vec![1039481, 30459830]),
+		unit_1: TestUnit {},
+		tuple_1: TestTuple(vec![1039481, 30459830]),
 		box_1: Box::new(String::from("this was a test")),
 		wrapping_1: Wrapping(19348719),
 	};

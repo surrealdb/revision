@@ -1,4 +1,4 @@
-use crate::common::{Descriptor, GenericDescriptor};
+use crate::common::{Descriptor, GenericDescriptor, Kind};
 use crate::fields::enum_inner::*;
 use crate::fields::enum_struct::*;
 use crate::fields::enum_tuple::*;
@@ -17,7 +17,7 @@ impl EnumDescriptor {
 			attrs: input.attrs.clone(),
 			revision: 1,
 			fields: vec![],
-			simple: false,
+			kind: Kind::Enum,
 		};
 		// Parse the enum variants
 		descriptor.parse_enum_variants(&input.variants);
