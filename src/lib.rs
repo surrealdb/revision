@@ -14,6 +14,7 @@ pub mod implementations;
 
 pub use crate::error::Error;
 pub use derive::revisioned;
+pub use derive::Revisioned;
 
 use std::any::TypeId;
 use std::io::{Read, Write};

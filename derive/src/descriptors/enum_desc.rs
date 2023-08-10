@@ -8,13 +8,10 @@ use quote::quote;
 pub(crate) type EnumDescriptor = GenericDescriptor<EnumInner>;
 
 impl EnumDescriptor {
-	pub fn new(input: &syn::ItemEnum) -> Self {
+	pub fn new(input: &syn::DataEnum, ident: syn::Ident) -> Self {
 		// Create the new descriptor
 		let mut descriptor = EnumDescriptor {
-			ident: input.ident.clone(),
-			vis: input.vis.clone(),
-			generics: input.generics.clone(),
-			attrs: input.attrs.clone(),
+			ident,
 			revision: 1,
 			fields: vec![],
 		};
@@ -126,19 +123,5 @@ impl Descriptor for EnumDescriptor {
 
 	fn revision(&self) -> u16 {
 		self.revision
-	}
-
-	fn reexpand(&self) -> proc_macro2::TokenStream {
-		let vis = &self.vis;
-		let ident = &self.ident;
-		let attrs = &self.attrs;
-		let fields = self.fields.iter().map(|e| e.reexpand());
-
-		quote! {
-			#(#attrs)*
-			#vis enum #ident {
-				#(#fields,)*
-			}
-		}
 	}
 }

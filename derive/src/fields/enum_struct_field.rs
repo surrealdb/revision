@@ -1,22 +1,27 @@
-use super::ParsedField;
+use super::super::{CONVERT_FN, DEFAULT_FN};
 use crate::common::Exists;
-use darling::FromField;
-use proc_macro2::{Span, TokenStream};
-use proc_macro_error::abort;
-use quote::quote;
+use crate::helpers::{
+	get_end_revision, get_ident_attr, get_start_revision, parse_field_attributes,
+};
+use proc_macro2::TokenStream;
+use quote::{format_ident, quote};
+use std::collections::hash_map::HashMap;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub(crate) struct StructField {
-	revision: u16,
-	parsed: ParsedField,
+	name: String,
+	ty: syn::Type,
+	start_revision: u16,
+	end_revision: u16,
+	attrs: HashMap<String, syn::Lit>,
 }
 
 impl Exists for StructField {
 	fn start_revision(&self) -> u16 {
-		self.parsed.start.unwrap_or(self.revision)
+		self.start_revision
 	}
 	fn end_revision(&self) -> u16 {
-		self.parsed.end.unwrap_or_default()
+		self.end_revision
 	}
 	fn sub_revision(&self) -> u16 {
 		0
@@ -26,50 +31,38 @@ impl Exists for StructField {
 impl StructField {
 	pub fn new(revision: u16, field: &syn::Field, _: u32) -> Self {
 		// Parse the field macro attributes
-		let parsed = match ParsedField::from_field(field) {
-			Ok(x) => x,
-			Err(e) => {
-				abort!(e.span(), "{e}")
-			}
-		};
+		let attrs = parse_field_attributes(&field.attrs);
 		// Create the struct field holder
 		StructField {
-			revision,
-			parsed,
+			ty: field.ty.clone(),
+			name: field.ident.as_ref().unwrap().to_string(),
+			start_revision: get_start_revision(&attrs).unwrap_or(revision),
+			end_revision: get_end_revision(&attrs).unwrap_or_default(),
+			attrs,
 		}
 	}
 
-	pub fn reexpand(&self) -> TokenStream {
-		let vis = &self.parsed.vis;
-		let ident = self.parsed.ident.as_ref().unwrap();
-		let ty = &self.parsed.ty;
-		let attrs = &self.parsed.attrs;
-		quote!(
-			#(#attrs)*
-			#vis #ident: #ty
-		)
-	}
-
 	pub fn name(&self) -> syn::Ident {
-		self.parsed.ident.clone().unwrap()
+		format_ident!("{}", self.name)
 	}
 
 	pub fn check_attributes(&self, current: u16) {
-		if !self.exists_at(current) && self.parsed.convert_fn.is_none() {
-			let ident = self.parsed.ident.as_ref().unwrap();
-			abort!(ident.span(), "Expected a 'convert_fn' to be specified for field {}", ident);
+		if !self.exists_at(current) {
+			if get_ident_attr(&self.attrs, CONVERT_FN).is_none() {
+				panic!("Expected a 'convert_fn' to be specified for field {}", self.name);
+			}
 		}
 	}
 
 	pub fn generate_serializer(&self, current: u16) -> TokenStream {
 		// Get the field identifier
-		let field = self.parsed.ident.as_ref().unwrap();
+		let field = format_ident!("{}", self.name);
 		// Check if this field exists for this revision
 		if !self.exists_at(current) {
 			return TokenStream::new();
 		}
 		// Match the type of the field.
-		match &self.parsed.ty {
+		match &self.ty {
 			syn::Type::Array(_) => quote! {
 				for element in #field.iter() {
 					revision::Revisioned::serialize_revisioned(element, writer)?;
@@ -91,9 +84,9 @@ impl StructField {
 		revision: u16,
 	) -> (TokenStream, TokenStream, TokenStream) {
 		// Get the field type.
-		let kind = &self.parsed.ty;
+		let kind = &self.ty;
 		// Get the field identifier.
-		let field = self.parsed.ident.as_ref().unwrap();
+		let field = format_ident!("{}", self.name);
 		// If the field didn't exist, use default annotation or Default trait.
 		if !self.exists_at(revision) {
 			return self.generate_deserializer_newfield();
@@ -119,19 +112,16 @@ impl StructField {
 
 	fn generate_deserializer_newfield(&self) -> (TokenStream, TokenStream, TokenStream) {
 		// Get the field identifier.
-		let field = self.parsed.ident.as_ref().unwrap();
+		let field = format_ident!("{}", self.name);
 		// Output the token streams
 		(
 			// Field did not exist, so don't deserialize it
 			quote! {},
 			// Set the field default value on the struct
-			match &self.parsed.default_fn {
-				Some(default_fn) => {
-					let default_fn = syn::Ident::new(default_fn, Span::call_site());
-					quote! {
-						#field: Self::#default_fn(revision),
-					}
-				}
+			match get_ident_attr(&self.attrs, DEFAULT_FN) {
+				Some(default_fn) => quote! {
+					#field: Self::#default_fn(revision),
+				},
 				None => quote! {
 					#field: Default::default(),
 				},
@@ -143,9 +133,9 @@ impl StructField {
 
 	fn generate_deserializer_oldfield(&self) -> (TokenStream, TokenStream, TokenStream) {
 		// Get the field type.
-		let kind = &self.parsed.ty;
+		let kind = &self.ty;
 		// Get the field identifier.
-		let field = self.parsed.ident.as_ref().unwrap();
+		let field = format_ident!("{}", self.name);
 		// Output the token streams
 		(
 			// Deserialize the field which no longer exists
@@ -158,13 +148,10 @@ impl StructField {
 				#field: Default::default(),
 			},
 			// Post process the field data with the struct
-			match &self.parsed.convert_fn {
-				Some(convert_fn) => {
-					let convert_fn = syn::Ident::new(convert_fn, Span::call_site());
-					quote! {
-						object.#convert_fn(revision, #field)?;
-					}
-				}
+			match get_ident_attr(&self.attrs, CONVERT_FN) {
+				Some(convert_fn) => quote! {
+					object.#convert_fn(revision, #field)?;
+				},
 				None => quote! {},
 			},
 		)

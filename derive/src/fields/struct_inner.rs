@@ -53,11 +53,4 @@ impl StructInner {
 			Self::StructIndex(v) => v.generate_deserializer(current, revision),
 		}
 	}
-
-	pub fn reexpand(&self) -> TokenStream {
-		match self {
-			Self::StructField(v) => v.reexpand(),
-			Self::StructIndex(v) => v.reexpand(),
-		}
-	}
 }
