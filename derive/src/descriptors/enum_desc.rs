@@ -17,6 +17,7 @@ impl EnumDescriptor {
 			attrs: input.attrs.clone(),
 			revision: 1,
 			fields: vec![],
+			simple: false,
 		};
 		// Parse the enum variants
 		descriptor.parse_enum_variants(&input.variants);

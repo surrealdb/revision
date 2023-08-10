@@ -17,6 +17,7 @@ impl StructDescriptor {
 			attrs: input.attrs.clone(),
 			revision: 1,
 			fields: vec![],
+			simple: false,
 		};
 		// Parse the struct fields
 		descriptor.parse_struct_fields(&input.fields);
@@ -33,6 +34,7 @@ impl StructDescriptor {
 	fn parse_struct_fields(&mut self, fields: &syn::Fields) {
 		match fields {
 			syn::Fields::Named(fields) => {
+				self.simple = false;
 				let pairs = fields.named.pairs();
 				for (i, field) in pairs.enumerate() {
 					let field = field.value();
@@ -44,6 +46,7 @@ impl StructDescriptor {
 				}
 			}
 			syn::Fields::Unnamed(fields) => {
+				self.simple = true;
 				let pairs = fields.unnamed.pairs();
 				for (i, field) in pairs.enumerate() {
 					let field = field.value();
@@ -138,11 +141,17 @@ impl Descriptor for StructDescriptor {
 		let generics = &self.generics;
 		let fields = self.fields.iter().map(|e| e.reexpand());
 
-		quote! {
-			#(#attrs)*
-			#vis struct #ident #generics {
-				#(#fields,)*
-			}
+		match self.simple {
+			true => quote! {
+				#(#attrs)*
+				#vis struct #ident #generics(#(#fields,)*);
+			},
+			false => quote! {
+				#(#attrs)*
+				#vis struct #ident #generics {
+					#(#fields,)*
+				}
+			},
 		}
 	}
 }

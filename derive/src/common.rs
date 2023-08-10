@@ -6,6 +6,7 @@ pub(crate) struct GenericDescriptor<T> {
 	pub generics: syn::Generics,
 	pub revision: u16,
 	pub fields: Vec<T>,
+	pub simple: bool,
 }
 
 /// An interface for generating serialzer and deserializer
