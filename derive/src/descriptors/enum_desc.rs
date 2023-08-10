@@ -106,9 +106,9 @@ impl Descriptor for EnumDescriptor {
 		// Output the token stream
 		quote! {
 			// Deserialize the data revision
-			let revision = <u16 as revision::Revisioned>::deserialize_revisioned(&mut reader)?;
+			let revision = <u16 as revision::Revisioned>::deserialize_revisioned(reader)?;
 			// Deserialize the enum variant
-			let variant = <u32 as revision::Revisioned>::deserialize_revisioned(&mut reader)?;
+			let variant = <u32 as revision::Revisioned>::deserialize_revisioned(reader)?;
 			// Output logic for this revision
 			match revision {
 				#deserializer
