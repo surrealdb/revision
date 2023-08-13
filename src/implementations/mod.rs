@@ -8,6 +8,7 @@ pub mod geo;
 pub mod option;
 pub mod primitives;
 pub mod regex;
+pub mod result;
 pub mod string;
 pub mod trees;
 pub mod tuple;
