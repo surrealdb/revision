@@ -2,6 +2,7 @@ pub mod arrays;
 pub mod bound;
 pub mod boxes;
 pub mod chrono;
+pub mod cow;
 pub mod decimal;
 pub mod duration;
 pub mod geo;
