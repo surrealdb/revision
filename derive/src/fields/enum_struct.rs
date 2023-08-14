@@ -110,8 +110,7 @@ impl EnumStruct {
 		// Output the token stream
 		quote! {
 			Self::#field_ident{#inner} => {
-				let index: u32 = #index;
-				revision::Revisioned::serialize_revisioned(&index, writer)?;
+				revision::Revisioned::serialize_revisioned(&#index, writer)?;
 				#serializer
 			},
 		}

@@ -120,8 +120,7 @@ impl EnumTuple {
 			} else {
 				quote! {
 					Self::#ident => {
-						let index: u32 = #index;
-						revision::Revisioned::serialize_revisioned(&index, writer)?;
+						revision::Revisioned::serialize_revisioned(&#index, writer)?;
 					},
 				}
 			}
@@ -135,8 +134,7 @@ impl EnumTuple {
 		} else {
 			quote! {
 				Self::#ident(#inner) => {
-					let index: u32 = #index;
-					revision::Revisioned::serialize_revisioned(&index, writer)?;
+					revision::Revisioned::serialize_revisioned(&#index, writer)?;
 					#serializer
 				},
 			}
