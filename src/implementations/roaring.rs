@@ -41,7 +41,7 @@ impl Revisioned for RoaringBitmap {
 #[cfg(test)]
 mod tests {
 	use super::Revisioned;
-	use roaring::RoaringTreemap;
+	use roaring::{RoaringBitmap, RoaringTreemap};
 
 	#[test]
 	fn test_roaring_treemap() {
@@ -56,12 +56,12 @@ mod tests {
 
 	#[test]
 	fn test_roaring_bitmap() {
-		let val = RoaringTreemap::new();
+		let val = RoaringBitmap::new();
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 16);
 		let out =
-			<RoaringTreemap as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<RoaringBitmap as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 }
