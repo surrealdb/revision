@@ -16,3 +16,4 @@ pub mod tuple;
 pub mod uuid;
 pub mod vecs;
 pub mod wrapping;
+pub mod roaring;

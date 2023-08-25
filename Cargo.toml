@@ -26,3 +26,4 @@ rust_decimal = "1.31.0"
 serde = "1.0.183"
 thiserror = "1.0.44"
 uuid = "1.4.1"
+roaring = { version = "0.10.2", features = ["serde"] }
