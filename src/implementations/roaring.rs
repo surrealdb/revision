@@ -47,7 +47,7 @@ mod tests {
 		let val = RoaringTreemap::new();
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
-		assert_eq!(mem.len(), 16);
+		assert_eq!(mem.len(), 8);
 		let out =
 			<RoaringTreemap as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
@@ -58,7 +58,7 @@ mod tests {
 		let val = RoaringBitmap::new();
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
-		assert_eq!(mem.len(), 16);
+		assert_eq!(mem.len(), 8);
 		let out =
 			<RoaringBitmap as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
