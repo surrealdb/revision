@@ -134,10 +134,11 @@ impl Descriptor for EnumDescriptor {
 		let ident = &self.ident;
 		let attrs = &self.attrs;
 		let fields = self.fields.iter().map(|e| e.reexpand());
+		let generics = &self.generics;
 
 		quote! {
 			#(#attrs)*
-			#vis enum #ident {
+			#vis enum #ident #generics {
 				#(#fields,)*
 			}
 		}
