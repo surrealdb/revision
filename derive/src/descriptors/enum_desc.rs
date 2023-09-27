@@ -89,14 +89,15 @@ impl Descriptor for EnumDescriptor {
 			for field in &self.fields {
 				variant.extend(field.generate_deserializer(self.revision, i));
 			}
+
+			let name = &self.ident;
 			// Generate the deserializer match arm for revision `i`.
 			deserializer.extend(quote! {
 				#i => match variant {
 					#variant
 					v => return Err(revision::Error::Deserialize({
 						let res = format!(
-							"Unknown {:?} variant {}.",
-							<Self as revision::Revisioned>::type_id(),
+							concat!("Unknown '", stringify!(#name) ,"' variant {}."),
 							variant
 						);
 						res
@@ -104,6 +105,8 @@ impl Descriptor for EnumDescriptor {
 				},
 			});
 		}
+
+		let name = &self.ident;
 		// Output the token stream
 		quote! {
 			// Deserialize the data revision
@@ -115,8 +118,7 @@ impl Descriptor for EnumDescriptor {
 				#deserializer
 				v => return Err(revision::Error::Deserialize({
 					let res = format!(
-						"Unknown {:?} revision {}.",
-						<Self as revision::Revisioned>::type_id(),
+						concat!("Unknown '", stringify!(#name) ,"' variant {}."),
 						revision
 					);
 					res

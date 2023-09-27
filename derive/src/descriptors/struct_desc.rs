@@ -113,6 +113,7 @@ impl Descriptor for StructDescriptor {
 				}
 			});
 		}
+		let name = &self.ident;
 		// Output the token stream
 		quote! {
 			// Deserialize the data revision
@@ -122,8 +123,7 @@ impl Descriptor for StructDescriptor {
 				#deserializer
 				v => return Err(revision::Error::Deserialize({
 					let res = format!(
-						"Unknown {:?} revision {}.",
-						<Self as revision::Revisioned>::type_id(),
+						concat!("Unknown '", stringify!(#name) ,"' variant {}."),
 						revision
 					);
 					res
