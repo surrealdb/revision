@@ -123,6 +123,7 @@ impl StructIndex {
 	}
 
 	fn generate_deserializer_newfield(&self) -> (TokenStream, TokenStream, TokenStream) {
+		let index = syn::Index::from(self.index as usize);
 		// Output the token streams
 		(
 			// Field did not exist, so don't deserialize it
@@ -132,11 +133,11 @@ impl StructIndex {
 				Some(default_fn) => {
 					let default_fn = syn::Ident::new(default_fn, Span::call_site());
 					quote! {
-						Self::#default_fn(revision),
+						#index: Self::#default_fn(revision),
 					}
 				}
 				None => quote! {
-					Default::default(),
+					#index: Default::default(),
 				},
 			},
 			// No need for any field post-processing
