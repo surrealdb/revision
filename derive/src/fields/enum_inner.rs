@@ -16,7 +16,7 @@ impl Exists for EnumInner {
 			Self::EnumStruct(v) => v.start_revision(),
 		}
 	}
-	fn end_revision(&self) -> u16 {
+	fn end_revision(&self) -> Option<u16> {
 		match self {
 			Self::EnumTuple(v) => v.end_revision(),
 			Self::EnumStruct(v) => v.end_revision(),

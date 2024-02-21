@@ -18,8 +18,8 @@ impl Exists for EnumTuple {
 	fn start_revision(&self) -> u16 {
 		self.parsed.start.unwrap_or(self.revision)
 	}
-	fn end_revision(&self) -> u16 {
-		self.parsed.end.unwrap_or_default()
+	fn end_revision(&self) -> Option<u16> {
+		self.parsed.end
 	}
 	fn sub_revision(&self) -> u16 {
 		0
@@ -87,8 +87,6 @@ impl EnumTuple {
 	}
 
 	pub fn generate_serializer(&self, current: u16) -> TokenStream {
-		// Get the name of the variant
-		let name = self.parsed.ident.to_string();
 		// Get the variant index
 		let index = self.index;
 		// Get the variant identifier
@@ -111,12 +109,7 @@ impl EnumTuple {
 		// Output the token stream
 		if self.fields.is_empty() {
 			if !self.exists_at(current) {
-				quote! {
-					Self::#ident => {
-						// TODO: remove this variant entirely using proc macro
-						panic!("The {} enum variant has been deprecated", #name);
-					},
-				}
+				panic!("tried to generate a serializer a field which was deleted.");
 			} else {
 				quote! {
 					Self::#ident => {
@@ -125,12 +118,7 @@ impl EnumTuple {
 				}
 			}
 		} else if !self.exists_at(current) {
-			quote! {
-				Self::#ident(#inner) => {
-					// TODO: remove this variant entirely using proc macro
-					panic!("The {} enum variant has been deprecated", #name);
-				},
-			}
+			panic!("tried to generate a serializer a field which was deleted.");
 		} else {
 			quote! {
 				Self::#ident(#inner) => {

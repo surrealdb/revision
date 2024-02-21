@@ -17,8 +17,8 @@ impl Exists for StructField {
 	fn start_revision(&self) -> u16 {
 		self.parsed.start.unwrap_or(self.revision)
 	}
-	fn end_revision(&self) -> u16 {
-		self.parsed.end.unwrap_or_default()
+	fn end_revision(&self) -> Option<u16> {
+		self.parsed.end
 	}
 	fn sub_revision(&self) -> u16 {
 		0
