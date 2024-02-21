@@ -21,6 +21,10 @@ pub enum TestEnum {
 		#[revision(start = 3)]
 		d: String,
 	},
+	#[revision(end = 3, convert_fn = "upgrade_four")]
+	Four,
+	#[revision(start = 3)]
+	Four(usize),
 }
 
 impl TestEnum {
@@ -38,6 +42,10 @@ impl TestEnum {
 			_ => unreachable!(),
 		}
 		Ok(())
+	}
+
+	fn upgrade_four(_revision: u16, _: ()) -> Result<TestEnum, Error> {
+		Ok(TestEnum::Four(0))
 	}
 }
 
