@@ -1,3 +1,6 @@
+#![allow(clippy::excessive_precision)]
+#![allow(clippy::box_collection)]
+
 use revision::revisioned;
 use revision::Error;
 use revision::Revisioned;
