@@ -3,8 +3,8 @@ use revision::Error;
 use revision::Revisioned;
 use std::num::Wrapping;
 
-#[derive(Debug, PartialEq)]
 #[revisioned(revision = 3)]
+#[derive(Debug, PartialEq)]
 pub enum TestEnum {
 	Zero,
 	#[revision(end = 2, convert_fn = "upgrade_one")]
