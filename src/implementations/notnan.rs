@@ -15,8 +15,8 @@ where
 
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		Ok(NotNan::new(T::deserialize_revisioned(reader)?)
-			.map_err(|e| Error::Deserialize(format!("{:?}", e)))?)
+		NotNan::new(T::deserialize_revisioned(reader)?)
+			.map_err(|e| Error::Deserialize(format!("{:?}", e)))
 	}
 
 	fn revision() -> u16 {
