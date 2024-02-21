@@ -18,13 +18,6 @@ members = ["derive"]
 
 [features]
 default = []
-chrono = ["dep:chrono"]
-geo = ["dep:geo"]
-ordered-float = ["dep:ordered-float"]
-regex = ["dep:regex"]
-roaring = ["dep:roaring"]
-rust_decimal = ["dep:rust_decimal"]
-uuid = ["dep:uuid"]
 
 [dependencies]
 bincode = "1.3.3"
