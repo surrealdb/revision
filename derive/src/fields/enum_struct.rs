@@ -5,7 +5,6 @@ use darling::FromVariant;
 use proc_macro2::TokenStream;
 use proc_macro_error::abort;
 use quote::quote;
-use std::cmp::max;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub(crate) struct EnumStruct {
@@ -20,13 +19,13 @@ impl Exists for EnumStruct {
 	fn start_revision(&self) -> u16 {
 		self.parsed.start.unwrap_or(self.revision)
 	}
-	fn end_revision(&self) -> u16 {
-		self.parsed.end.unwrap_or_default()
+	fn end_revision(&self) -> Option<u16> {
+		self.parsed.end
 	}
 	fn sub_revision(&self) -> u16 {
 		let mut revision = 1;
 		for field in self.fields.iter() {
-			revision = max(revision, max(field.start_revision(), field.end_revision()));
+			revision = revision.max(field.start_revision()).max(field.end_revision().unwrap_or(0));
 		}
 		revision
 	}

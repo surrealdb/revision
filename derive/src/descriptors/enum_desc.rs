@@ -1,4 +1,4 @@
-use crate::common::{Descriptor, GenericDescriptor, Kind};
+use crate::common::{Descriptor, Exists, GenericDescriptor, Kind};
 use crate::fields::enum_inner::*;
 use crate::fields::enum_struct::*;
 use crate::fields::enum_tuple::*;
@@ -65,7 +65,7 @@ impl Descriptor for EnumDescriptor {
 		// Create a new token stream
 		let mut serializer = proc_macro2::TokenStream::new();
 		// Extend the token stream for each field
-		for field in &self.fields {
+		for field in self.fields.iter().filter(|x| x.exists_at(revision)) {
 			serializer.extend(field.generate_serializer(self.revision));
 		}
 		// Output the token stream
@@ -135,7 +135,8 @@ impl Descriptor for EnumDescriptor {
 		let vis = &self.vis;
 		let ident = &self.ident;
 		let attrs = &self.attrs;
-		let fields = self.fields.iter().map(|e| e.reexpand());
+		let fields =
+			self.fields.iter().filter(|x| x.exists_at(self.revision)).map(|e| e.reexpand());
 		let generics = &self.generics;
 
 		quote! {

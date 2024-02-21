@@ -16,7 +16,7 @@ impl Exists for StructInner {
 			Self::StructIndex(v) => v.start_revision(),
 		}
 	}
-	fn end_revision(&self) -> u16 {
+	fn end_revision(&self) -> Option<u16> {
 		match self {
 			Self::StructField(v) => v.end_revision(),
 			Self::StructIndex(v) => v.end_revision(),

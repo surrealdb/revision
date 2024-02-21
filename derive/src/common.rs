@@ -1,4 +1,5 @@
 /// Describes a structure and it's fields.
+#[derive(Debug)]
 pub(crate) struct GenericDescriptor<T> {
 	pub ident: syn::Ident,
 	pub vis: syn::Visibility,
@@ -10,6 +11,7 @@ pub(crate) struct GenericDescriptor<T> {
 }
 
 /// Describes a structure and it's fields.
+#[derive(Debug)]
 pub(crate) enum Kind {
 	Unit,
 	Tuple,
@@ -36,7 +38,7 @@ pub(crate) trait Exists {
 	// Get the start revision for this field
 	fn start_revision(&self) -> u16;
 	// Get the end revision for this field
-	fn end_revision(&self) -> u16;
+	fn end_revision(&self) -> Option<u16>;
 	// Get any sub revision for this field
 	fn sub_revision(&self) -> u16;
 	// Check if this field exists for this revision
@@ -44,8 +46,7 @@ pub(crate) trait Exists {
 		// All fields have an initial start revision
 		revision >= self.start_revision()
         // Not all fields have an end revision specified
-        && (0 == self.end_revision()
-                || (self.end_revision() > 0 && revision < self.end_revision()))
+        && self.end_revision().map(|x| revision < x).unwrap_or(true)
 	}
 }
 
@@ -60,8 +61,8 @@ mod tests {
 				3
 			}
 
-			fn end_revision(&self) -> u16 {
-				5
+			fn end_revision(&self) -> Option<u16> {
+				Some(5)
 			}
 
 			fn sub_revision(&self) -> u16 {

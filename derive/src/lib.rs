@@ -20,6 +20,7 @@ use darling::{Error, FromMeta};
 use descriptors::enum_desc::EnumDescriptor;
 use descriptors::struct_desc::StructDescriptor;
 use proc_macro::TokenStream;
+use proc_macro_error::proc_macro_error;
 use quote::quote;
 use syn::spanned::Spanned;
 use syn::{parse_macro_input, Item};
@@ -181,6 +182,7 @@ struct Arguments {
 /// }
 /// ```
 #[proc_macro_attribute]
+#[proc_macro_error]
 pub fn revisioned(attrs: TokenStream, input: TokenStream) -> proc_macro::TokenStream {
 	// Parse the current struct input
 	let input: Item = parse_macro_input!(input as Item);
