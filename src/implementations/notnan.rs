@@ -1,4 +1,4 @@
-#![cfg(feature = "ordered_float")]
+#![cfg(feature = "ordered-float")]
 
 use super::super::Error;
 use super::super::Revisioned;
