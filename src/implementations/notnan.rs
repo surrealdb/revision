@@ -1,3 +1,5 @@
+#![cfg(feature = "ordered_float")]
+
 use super::super::Error;
 use super::super::Revisioned;
 use ordered_float::{Float, NotNan};
@@ -13,10 +15,8 @@ where
 
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		Ok(NotNan::new(
-            T::deserialize_revisioned(reader)?).map_err(|e| 
-            Error::Deserialize(format!("{:?}", e))
-        )?)
+		Ok(NotNan::new(T::deserialize_revisioned(reader)?)
+			.map_err(|e| Error::Deserialize(format!("{:?}", e)))?)
 	}
 
 	fn revision() -> u16 {
@@ -28,7 +28,7 @@ where
 mod tests {
 
 	use super::Revisioned;
-    use ordered_float::NotNan;
+	use ordered_float::NotNan;
 
 	#[test]
 	fn test_wrapping() {
@@ -36,8 +36,7 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 4);
-		let out =
-			<NotNan<f32> as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <NotNan<f32> as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 }

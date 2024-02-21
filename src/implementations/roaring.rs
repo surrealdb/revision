@@ -1,3 +1,5 @@
+#![cfg(feature = "roaring")]
+
 use super::super::Error;
 use super::super::Revisioned;
 use roaring::{RoaringBitmap, RoaringTreemap};

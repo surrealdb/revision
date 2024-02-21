@@ -1,6 +1,8 @@
+#![cfg(feature = "chrono")]
+
 use super::super::Error;
 use super::super::Revisioned;
-use chrono::{offset::TimeZone, DateTime, Utc, NaiveDate, Datelike, NaiveTime, Timelike};
+use chrono::{offset::TimeZone, DateTime, Datelike, NaiveDate, NaiveTime, Timelike, Utc};
 
 impl Revisioned for DateTime<Utc> {
 	#[inline]
@@ -74,10 +76,10 @@ impl Revisioned for NaiveTime {
 
 #[cfg(test)]
 mod tests {
-	use chrono::{NaiveDate, NaiveTime};
 	use super::DateTime;
 	use super::Revisioned;
 	use super::Utc;
+	use chrono::{NaiveDate, NaiveTime};
 
 	#[test]
 	fn test_datetime_min() {
@@ -107,8 +109,7 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 3);
-		let out =
-			<NaiveDate as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <NaiveDate as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -118,8 +119,7 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 5);
-		let out =
-			<NaiveDate as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <NaiveDate as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -129,8 +129,7 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 4);
-		let out =
-			<NaiveTime as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <NaiveTime as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -140,8 +139,7 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 8);
-		let out =
-			<NaiveTime as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <NaiveTime as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 }

@@ -1,3 +1,5 @@
+#![cfg(feature = "rust_decimal")]
+
 use super::super::Error;
 use super::super::Revisioned;
 use rust_decimal::Decimal;
