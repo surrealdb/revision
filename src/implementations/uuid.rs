@@ -1,3 +1,5 @@
+#![cfg(feature = "uuid")]
+
 use super::super::Error;
 use super::super::Revisioned;
 use uuid::Uuid;

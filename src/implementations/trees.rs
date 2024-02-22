@@ -8,7 +8,9 @@ use std::collections::HashSet;
 use std::hash::BuildHasher;
 use std::hash::Hash;
 
-impl<K: Revisioned + Eq + Hash, V: Revisioned, S: BuildHasher + Default> Revisioned for HashMap<K, V, S> {
+impl<K: Revisioned + Eq + Hash, V: Revisioned, S: BuildHasher + Default> Revisioned
+	for HashMap<K, V, S>
+{
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.len().serialize_revisioned(writer)?;
@@ -147,9 +149,9 @@ mod tests {
 
 	use super::BTreeMap;
 	use super::BTreeSet;
+	use super::BinaryHeap;
 	use super::HashMap;
 	use super::HashSet;
-	use super::BinaryHeap;
 	use super::Revisioned;
 
 	#[test]
@@ -189,8 +191,7 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 11);
 		let out =
-			<HashSet<String> as Revisioned>::deserialize_revisioned(&mut mem.as_slice())
-				.unwrap();
+			<HashSet<String> as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -203,8 +204,7 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 11);
 		let out =
-			<BTreeSet<String> as Revisioned>::deserialize_revisioned(&mut mem.as_slice())
-				.unwrap();
+			<BTreeSet<String> as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -216,9 +216,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 11);
-		let out =
-			<BinaryHeap<String> as Revisioned>::deserialize_revisioned(&mut mem.as_slice())
-				.unwrap();
+		let out = <BinaryHeap<String> as Revisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val.into_sorted_vec(), out.into_sorted_vec());
 	}
 }

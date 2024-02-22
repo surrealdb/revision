@@ -1,0 +1,78 @@
+name: Continuous integration
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+  merge_group:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+
+  format:
+    name: Check format
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Check format
+        run: cargo fmt --all --check
+
+  check:
+    name: Check workspace
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Check workspace
+        run: cargo check --workspace
+
+  clippy:
+    name: Check clippy
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features --tests -- -D warnings
+
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Test with no features
+        run: cargo test --workspace
+
+      - name: Test with all features
+        run: cargo test --all-features --workspace

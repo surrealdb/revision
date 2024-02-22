@@ -1,3 +1,5 @@
+#![cfg(feature = "regex")]
+
 use super::super::Error;
 use super::super::Revisioned;
 use bincode::Options;
