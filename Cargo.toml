@@ -2,7 +2,7 @@
 name = "revision"
 publish = true
 edition = "2021"
-version = "0.5.0"
+version = "0.6.0"
 license = "Apache-2.0"
 readme = "README.md"
 authors = ["Tobie Morgan Hitchcock <tobie@surrealdb.com>"]
@@ -22,7 +22,7 @@ default = []
 [dependencies]
 bincode = "1.3.3"
 chrono = { version = "0.4.26", features = ["serde"], optional = true }
-derive = { version = "0.5.0", package = "revision-derive", path = "derive" }
+derive = { version = "0.6.0", package = "revision-derive", path = "derive" }
 geo = { version = "0.26.0", features = ["use-serde"], optional = true }
 ordered-float = { version = "3", optional = true }
 regex = { version = "1.9.3", optional = true }
