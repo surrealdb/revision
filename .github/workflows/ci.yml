@@ -38,42 +38,51 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install cargo-hack
-        run: |
-          curl -L https://github.com/taiki-e/cargo-hack/releases/download/v0.6.20/cargo-hack-x86_64-unknown-linux-gnu.tar.gz | gunzip - > cargo
-          chmod +x cargo
-          sudo mv cargo /usr/bin/cargo
+        run: cargo install --locked cargo-hack
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
 
       - name: Run hack check
-        run:  /usr/bin/cargo hack check --feature-powerset --optional-deps
+        run: cargo hack check --feature-powerset --optional-deps
 
   clippy:
     name: Check clippy
     runs-on: ubuntu-latest
     steps:
 
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install cargo-hack
-        run: |
-          curl -L https://github.com/taiki-e/cargo-hack/releases/download/v0.6.20/cargo-hack-x86_64-unknown-linux-gnu.tar.gz | gunzip - > cargo
-          chmod +x cargo
-          sudo mv cargo /usr/bin/cargo
+        run: cargo install --locked cargo-hack
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
 
       - name: Run hack clippy
-        run:  /usr/bin/cargo hack clippy --feature-powerset --optional-deps --all-targets --tests
+        run: cargo hack clippy --feature-powerset --optional-deps --all-targets --tests
 
   test:
     name: Run tests
     runs-on: ubuntu-latest
     steps:
 
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install cargo-hack
-        run: |
-          curl -L https://github.com/taiki-e/cargo-hack/releases/download/v0.6.20/cargo-hack-x86_64-unknown-linux-gnu.tar.gz | gunzip - > cargo
-          chmod +x cargo
-          sudo mv cargo /usr/bin/cargo
+        run: cargo install --locked cargo-hack
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
 
       - name: Run hack test
-        run:  /usr/bin/cargo hack test --feature-powerset --optional-deps
+        run:  cargo hack test --feature-powerset --optional-deps
 
   bench:
     name: Run benchmarks
