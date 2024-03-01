@@ -42,7 +42,6 @@ mod tests {
 	use bincode::Options;
 	use rand::random;
 	use roaring::{RoaringBitmap, RoaringTreemap};
-	use std::time::SystemTime;
 
 	#[test]
 	fn test_roaring_treemap() {
@@ -67,31 +66,25 @@ mod tests {
 	}
 
 	#[test]
-	fn test_roaring_serialization_benchmark() {
+	fn test_roaring_serialization_space_benchmark() {
 		let mut val = RoaringTreemap::new();
-		for i in 0..10000 {
+		for i in 0..1_000_000 {
 			if random() {
 				val.insert(i);
 			}
 		}
-		// COLLECTING ELAPSED TIME AND SIZE
 
-		//Bincode with default options is: Slower and bigger than direct serialization
-		let bincode_elapsed;
+		//Bincode with default options is: Bigger than direct serialization
 		let bincode_size;
 		{
 			let mut mem: Vec<u8> = vec![];
-			let t = SystemTime::now();
 			bincode::serialize_into(&mut mem, &val).unwrap();
-			bincode_elapsed = t.elapsed().unwrap();
 			bincode_size = mem.len();
 		}
-		//Bincode with options is: As fast, but still bigger than direct serialization
-		let bincode_options_elapsed;
+		//Bincode with options is: Bigger than direct serialization
 		let bincode_options_size;
 		{
 			let mut mem: Vec<u8> = vec![];
-			let t = SystemTime::now();
 			bincode::options()
 				.with_no_limit()
 				.with_little_endian()
@@ -99,35 +92,18 @@ mod tests {
 				.reject_trailing_bytes()
 				.serialize_into(&mut mem, &val)
 				.unwrap();
-			bincode_options_elapsed = t.elapsed().unwrap();
 			bincode_options_size = mem.len();
 		}
 		//Direct serialization  is : Faster and smaller
-		let direct_elapsed;
 		let direct_size;
 		{
 			let mut mem: Vec<u8> = vec![];
-			let t = SystemTime::now();
 			val.serialize_into(&mut mem).unwrap();
-			direct_elapsed = t.elapsed().unwrap();
 			direct_size = mem.len();
 		}
 
 		// ASSERTIONS
 
-		println!("Bincode::default, Bincode::options, Direct, Ratio direct/bincode::options");
-		// Direct is faster
-		println!(
-			"Elapsed - {} > {} > {} - {}",
-			bincode_elapsed.as_micros(),
-			bincode_options_elapsed.as_micros(),
-			direct_elapsed.as_micros(),
-			direct_elapsed.as_micros() as f32 / bincode_options_elapsed.as_micros() as f32
-		);
-		assert!(direct_elapsed < bincode_elapsed);
-		assert!(
-			(direct_elapsed.as_micros() as f32 / bincode_options_elapsed.as_micros() as f32) < 1.1
-		);
 		// Direct is smaller
 		println!(
 			"Size: {} > {} > {}  - {}",

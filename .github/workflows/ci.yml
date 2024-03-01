@@ -76,3 +76,20 @@ jobs:
 
       - name: Test with all features
         run: cargo test --all-features --workspace
+
+      - name: Test with all features
+        run: cargo bench --all-features --workspace
+
+  bench:
+    name: Run tests
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Bench
+        run: cargo bench --all-features --workspace
