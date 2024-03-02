@@ -1,28 +1,32 @@
 use bincode::Options;
 use criterion::{criterion_group, criterion_main, Criterion};
+use log::debug;
 use rand::random;
 use roaring::RoaringTreemap;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
-fn bench_roaring_serialization_time_benchmark() {
+fn bench_roaring_serialization_benchmark() {
 	let mut val = RoaringTreemap::new();
-	for i in 0..1_000_000 {
+	for i in 0..100_000_000 {
 		if random() {
 			val.insert(i);
 		}
 	}
-	// COLLECTING ELAPSED TIME
+	// COLLECTING ELAPSED TIME AND SIZE
 
-	//Bincode with default options is slower than direct serialization
+	//Bincode with default options is: Slower and bigger than direct serialization
 	let bincode_elapsed;
+	let bincode_size;
 	{
 		let mut mem: Vec<u8> = vec![];
 		let t = SystemTime::now();
 		bincode::serialize_into(&mut mem, &val).unwrap();
 		bincode_elapsed = t.elapsed().unwrap();
+		bincode_size = mem.len();
 	}
 	//Bincode with options is: As fast, but still bigger than direct serialization
 	let bincode_options_elapsed;
+	let bincode_options_size;
 	{
 		let mut mem: Vec<u8> = vec![];
 		let t = SystemTime::now();
@@ -34,36 +38,62 @@ fn bench_roaring_serialization_time_benchmark() {
 			.serialize_into(&mut mem, &val)
 			.unwrap();
 		bincode_options_elapsed = t.elapsed().unwrap();
+		bincode_options_size = mem.len();
 	}
 	//Direct serialization  is : Faster and smaller
 	let direct_elapsed;
+	let direct_size;
 	{
 		let mut mem: Vec<u8> = vec![];
 		let t = SystemTime::now();
 		val.serialize_into(&mut mem).unwrap();
 		direct_elapsed = t.elapsed().unwrap();
+		direct_size = mem.len();
 	}
 
 	// ASSERTIONS
 
-	println!("Bincode::default, Bincode::options, Direct, Ratio direct/bincode::options");
+	debug!("Bincode::default, Bincode::options, Direct, Ratio direct/bincode::options");
 	// Direct is faster
-	println!(
+	debug!(
 		"Elapsed - {} > {} > {} - {}",
 		bincode_elapsed.as_micros(),
 		bincode_options_elapsed.as_micros(),
 		direct_elapsed.as_micros(),
 		direct_elapsed.as_micros() as f32 / bincode_options_elapsed.as_micros() as f32
 	);
-	assert!(direct_elapsed < bincode_elapsed);
-	assert!((direct_elapsed.as_micros() as f32 / bincode_options_elapsed.as_micros() as f32) < 1.1);
+	assert!(
+		direct_elapsed < bincode_elapsed,
+		"direct_elapsed({direct_elapsed:?}) < bincode_elapsed({bincode_elapsed:?})"
+	);
+	let rate = direct_elapsed.as_micros() as f32 / bincode_options_elapsed.as_micros() as f32;
+	assert!(rate < 1.1, "rate({rate}) < 1.1");
+	// Direct is smaller
+	debug!(
+		"Size: {} > {} > {}  - {}",
+		bincode_size,
+		bincode_options_size,
+		direct_size,
+		direct_size as f32 / bincode_options_size as f32
+	);
+	assert!(
+		direct_size < bincode_size,
+		"direct_size({direct_size}) < bincode_size({bincode_size})"
+	);
+	assert!(
+		direct_size < bincode_options_size,
+		"direct_size({direct_size}) < bincode_options_size({bincode_options_size})"
+	);
 }
 
-fn criterion_benchmark(c: &mut Criterion) {
-	c.bench_function("bench_roaring_serialization_time_benchmark", |b| {
-		b.iter(bench_roaring_serialization_time_benchmark)
+fn roaring_benchmark(c: &mut Criterion) {
+	let mut group = c.benchmark_group("roaring_benchmark");
+	group.sample_size(10).measurement_time(Duration::from_secs(10));
+	group.bench_function("bench_roaring_serialization_benchmark", |b| {
+		b.iter(bench_roaring_serialization_benchmark)
 	});
+	group.finish();
 }
 
-criterion_group!(benches, criterion_benchmark);
+criterion_group!(benches, roaring_benchmark);
 criterion_main!(benches);

@@ -39,8 +39,6 @@ impl Revisioned for RoaringBitmap {
 #[cfg(test)]
 mod tests {
 	use super::Revisioned;
-	use bincode::Options;
-	use rand::random;
 	use roaring::{RoaringBitmap, RoaringTreemap};
 
 	#[test]
@@ -63,56 +61,5 @@ mod tests {
 		let out =
 			<RoaringBitmap as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
-	}
-
-	#[test]
-	fn test_roaring_serialization_space_benchmark() {
-		let mut val = RoaringTreemap::new();
-		for i in 0..1_000_000 {
-			if random() {
-				val.insert(i);
-			}
-		}
-
-		//Bincode with default options is: Bigger than direct serialization
-		let bincode_size;
-		{
-			let mut mem: Vec<u8> = vec![];
-			bincode::serialize_into(&mut mem, &val).unwrap();
-			bincode_size = mem.len();
-		}
-		//Bincode with options is: Bigger than direct serialization
-		let bincode_options_size;
-		{
-			let mut mem: Vec<u8> = vec![];
-			bincode::options()
-				.with_no_limit()
-				.with_little_endian()
-				.with_varint_encoding()
-				.reject_trailing_bytes()
-				.serialize_into(&mut mem, &val)
-				.unwrap();
-			bincode_options_size = mem.len();
-		}
-		//Direct serialization  is : Faster and smaller
-		let direct_size;
-		{
-			let mut mem: Vec<u8> = vec![];
-			val.serialize_into(&mut mem).unwrap();
-			direct_size = mem.len();
-		}
-
-		// ASSERTIONS
-
-		// Direct is smaller
-		println!(
-			"Size: {} > {} > {}  - {}",
-			bincode_size,
-			bincode_options_size,
-			direct_size,
-			direct_size as f32 / bincode_options_size as f32
-		);
-		assert!(direct_size < bincode_size);
-		assert!(direct_size < bincode_options_size);
 	}
 }
