@@ -81,7 +81,7 @@ jobs:
         run: cargo bench --all-features --workspace
 
   bench:
-    name: Run tests
+    name: Run benchmarks
     runs-on: ubuntu-latest
     steps:
 
