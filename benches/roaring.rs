@@ -1,13 +1,12 @@
 use bincode::Options;
 use criterion::{criterion_group, criterion_main, Criterion};
-use log::debug;
 use rand::random;
 use roaring::RoaringTreemap;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 fn bench_roaring_serialization_benchmark() {
 	let mut val = RoaringTreemap::new();
-	for i in 0..100_000_000 {
+	for i in 0..50_000_000 {
 		if random() {
 			val.insert(i);
 		}
@@ -52,16 +51,6 @@ fn bench_roaring_serialization_benchmark() {
 	}
 
 	// ASSERTIONS
-
-	debug!("Bincode::default, Bincode::options, Direct, Ratio direct/bincode::options");
-	// Direct is faster
-	debug!(
-		"Elapsed - {} > {} > {} - {}",
-		bincode_elapsed.as_micros(),
-		bincode_options_elapsed.as_micros(),
-		direct_elapsed.as_micros(),
-		direct_elapsed.as_micros() as f32 / bincode_options_elapsed.as_micros() as f32
-	);
 	assert!(
 		direct_elapsed < bincode_elapsed,
 		"direct_elapsed({direct_elapsed:?}) < bincode_elapsed({bincode_elapsed:?})"
@@ -69,13 +58,6 @@ fn bench_roaring_serialization_benchmark() {
 	let rate = direct_elapsed.as_micros() as f32 / bincode_options_elapsed.as_micros() as f32;
 	assert!(rate < 1.1, "rate({rate}) < 1.1");
 	// Direct is smaller
-	debug!(
-		"Size: {} > {} > {}  - {}",
-		bincode_size,
-		bincode_options_size,
-		direct_size,
-		direct_size as f32 / bincode_options_size as f32
-	);
 	assert!(
 		direct_size < bincode_size,
 		"direct_size({direct_size}) < bincode_size({bincode_size})"
@@ -88,7 +70,7 @@ fn bench_roaring_serialization_benchmark() {
 
 fn roaring_benchmark(c: &mut Criterion) {
 	let mut group = c.benchmark_group("roaring_benchmark");
-	group.sample_size(10).measurement_time(Duration::from_secs(10));
+	group.sample_size(10);
 	group.bench_function("bench_roaring_serialization_benchmark", |b| {
 		b.iter(bench_roaring_serialization_benchmark)
 	});
