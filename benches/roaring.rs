@@ -1,3 +1,5 @@
+#![cfg(feature = "roaring")]
+
 use bincode::Options;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::random;
