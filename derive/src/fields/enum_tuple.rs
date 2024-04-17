@@ -4,12 +4,12 @@ use darling::FromVariant;
 use proc_macro2::{Span, TokenStream};
 use proc_macro_error::abort;
 use quote::{format_ident, quote};
+use syn::spanned::Spanned;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub(crate) struct EnumTuple {
 	revision: u16,
 	index: u32,
-	fields: Vec<syn::Type>,
 	is_unit: bool,
 	parsed: ParsedEnumVariant,
 }
@@ -36,24 +36,25 @@ impl EnumTuple {
 			}
 		};
 
-		let mut is_unit = false;
+		for f in parsed.fields.iter() {
+			if f.end.is_some()
+				|| f.start.is_some()
+				|| f.default_fn.is_some()
+				|| f.convert_fn.is_some()
+			{
+				abort!(
+					f.ty.span(),
+					"Revision attributes are not yet supported on enum variant fields"
+				)
+			}
+		}
 
-		// Process the enum variant fields
-		let fields = match &variant.fields {
-			syn::Fields::Unnamed(fields) => {
-				fields.unnamed.iter().map(|field| field.ty.clone()).collect()
-			}
-			syn::Fields::Unit => {
-				is_unit = true;
-				Vec::new()
-			}
-			_ => Vec::new(),
-		};
+		let is_unit = matches!(variant.fields, syn::Fields::Unit);
+
 		// Create the enum variant holder
 		EnumTuple {
 			revision,
 			index,
-			fields,
 			parsed,
 			is_unit,
 		}
@@ -68,7 +69,13 @@ impl EnumTuple {
 				#ident
 			)
 		} else {
-			let fields = &self.fields;
+			let fields = self.parsed.fields.iter().map(|x| {
+				let attr = &x.attrs;
+				let ty = &x.ty;
+				quote!(
+					#(#attr)* #ty
+				)
+			});
 			quote!(
 				#(#attrs)*
 				#ident( #(#fields,)* )
@@ -96,7 +103,7 @@ impl EnumTuple {
 		// Create a token stream for the variant fields
 		let mut inner = TokenStream::new();
 		// Loop over each of the enum variant fields
-		for (index, _) in self.fields.iter().enumerate() {
+		for (index, _) in self.parsed.fields.iter().enumerate() {
 			// Get the field identifier
 			let field = format_ident!("v{}", index);
 			// Extend the enum constructor
@@ -107,7 +114,7 @@ impl EnumTuple {
 			});
 		}
 		// Output the token stream
-		if self.fields.is_empty() {
+		if self.parsed.fields.is_empty() {
 			if !self.exists_at(current) {
 				panic!("tried to generate a serializer a field which was deleted.");
 			} else {
@@ -143,9 +150,10 @@ impl EnumTuple {
 		// Create a token stream for the fields
 		let mut inner = TokenStream::new();
 		// Loop over the enum variant fields
-		for (index, kind) in self.fields.iter().enumerate() {
+		for (index, f) in self.parsed.fields.iter().enumerate() {
 			// Get the field identifier
 			let field = format_ident!("v{}", index);
+			let kind = &f.ty;
 			// Extend the enum constructor
 			inner.extend(quote!(#field,));
 			// Extend the deserializer
@@ -167,7 +175,7 @@ impl EnumTuple {
 			}
 		} else {
 			// Check if this is a simple enum
-			if self.fields.is_empty() {
+			if self.parsed.fields.is_empty() {
 				quote! {
 					#index => {
 						return Ok(Self::#ident);
