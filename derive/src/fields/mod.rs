@@ -10,7 +10,7 @@ pub mod struct_inner;
 
 /// A parsed struct field alongside its attributes.
 #[derive(Debug, Eq, PartialEq, Clone, FromField)]
-#[darling(attributes(revision))]
+#[darling(attributes(revision), forward_attrs)]
 pub struct ParsedField {
 	ident: Option<syn::Ident>,
 	ty: syn::Type,
