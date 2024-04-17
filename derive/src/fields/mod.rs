@@ -40,5 +40,6 @@ struct ParsedEnumVariant {
 	default_fn: Option<String>,
 	#[darling(default)]
 	convert_fn: Option<String>,
+	fields: darling::ast::Fields<ParsedField>,
 	attrs: Vec<syn::Attribute>,
 }
