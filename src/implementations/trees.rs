@@ -131,7 +131,7 @@ impl<T: Revisioned + Ord> Revisioned for BinaryHeap<T> {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
-		let mut heap = BinaryHeap::new();
+		let mut heap = BinaryHeap::with_capacity(len);
 		for _ in 0..len {
 			let v = T::deserialize_revisioned(reader)?;
 			heap.push(v);
