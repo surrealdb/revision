@@ -65,7 +65,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run hack clippy
-        run: cargo hack clippy --feature-powerset --optional-deps --all-targets --tests
+        run: cargo hack clippy --no-deps --feature-powerset --optional-deps --all-targets --tests
 
   test:
     name: Run tests

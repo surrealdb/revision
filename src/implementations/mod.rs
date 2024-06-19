@@ -8,6 +8,7 @@ pub mod duration;
 pub mod geo;
 pub mod notnan;
 pub mod option;
+pub mod path;
 pub mod primitives;
 pub mod regex;
 pub mod result;
