@@ -63,7 +63,7 @@ pub struct TestTuple1(pub Vec<i64>);
 #[derive(Debug, Default, PartialEq)]
 #[revisioned(revision = 2)]
 pub struct TestTuple2(
-	#[revision(start = 1, end = 2, convert_fn = "convert_tuple")] pub Vec<i64>,
+	#[revision(end = 2, convert_fn = "convert_tuple")] pub Vec<i64>,
 	#[revision(start = 2)] pub Vec<f64>,
 );
 
