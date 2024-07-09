@@ -161,7 +161,7 @@ impl StructIndex {
 			// Don't insert the field into the current struct
 			quote! {
 				// TODO: remove this field entirely using proc macro
-				Default::default(),
+				#index: Default::default(),
 			},
 			// Post process the field data with the struct
 			match &self.parsed.convert_fn {
