@@ -2,20 +2,19 @@
 
 use super::super::Error;
 use super::super::Revisioned;
+use super::vecs::serialize_slice;
 use uuid::Uuid;
 
 impl Revisioned for Uuid {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		writer.write_all(self.as_bytes()).map_err(|e| Error::Io(e.raw_os_error().unwrap_or(0)))
+		serialize_slice(self.as_bytes(), writer)
 	}
 
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		let mut v = vec![0u8; 16];
-		reader
-			.read_exact(v.as_mut_slice())
-			.map_err(|e| Error::Io(e.raw_os_error().unwrap_or(0)))?;
+		let mut v = [0u8; 16];
+		reader.read_exact(&mut v).map_err(Error::Io)?;
 		Uuid::from_slice(&v).map_err(|_| Error::Deserialize("invalid uuid".to_string()))
 	}
 
