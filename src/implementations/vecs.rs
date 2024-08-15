@@ -19,11 +19,7 @@ where
 {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		self.len().serialize_revisioned(writer)?;
-		for v in self {
-			v.serialize_revisioned(writer)?;
-		}
-		Ok(())
+		serialize_slice(self.as_slice(), writer)
 	}
 
 	#[inline]

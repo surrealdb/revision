@@ -2,13 +2,13 @@ use std::path::PathBuf;
 
 use super::super::Error;
 use super::super::Revisioned;
-use super::string::serialize_str;
+use super::vecs::serialize_slice;
 
 impl Revisioned for PathBuf {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		match self.to_str() {
-			Some(s) => serialize_str(writer, s),
+			Some(s) => serialize_slice(s.as_bytes(), writer),
 			None => Err(Error::InvalidPath),
 		}
 	}

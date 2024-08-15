@@ -2,10 +2,7 @@ use core::str;
 
 use crate::{Error, Revisioned};
 
-pub(crate) fn serialize_str<W: std::io::Write>(writer: &mut W, str: &str) -> Result<(), Error> {
-	(str.len() as u64).serialize_revisioned(writer)?;
-	writer.write_all(str.as_bytes()).map_err(Error::Io)
-}
+use super::vecs::serialize_slice;
 
 impl Revisioned for String {
 	fn revision() -> u16 {
@@ -14,16 +11,13 @@ impl Revisioned for String {
 
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		serialize_str(writer, self)
+		serialize_slice(self.as_bytes(), writer)
 	}
 
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		let len: usize =
-			u64::deserialize_revisioned(reader)?.try_into().map_err(|_| Error::IntegerOverflow)?;
-		let mut slice = vec![0u8; len];
-		reader.read_exact(&mut slice).map_err(Error::Io)?;
-		String::from_utf8(slice).map_err(|x| Error::Utf8Error(x.utf8_error()))
+		let bytes = Vec::<u8>::deserialize_revisioned(reader)?;
+		String::from_utf8(bytes).map_err(|x| Error::Utf8Error(x.utf8_error()))
 	}
 }
 
