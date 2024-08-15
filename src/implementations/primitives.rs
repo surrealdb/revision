@@ -1,4 +1,4 @@
-use std::{io, u64};
+use std::io;
 
 use super::super::Revisioned;
 use super::read_buffer;
@@ -295,7 +295,7 @@ impl Revisioned for i128 {
 	where
 		Self: Sized,
 	{
-		decode_u128(r).map(|x| gazgiz_128(x))
+		decode_u128(r).map(gazgiz_128)
 	}
 }
 

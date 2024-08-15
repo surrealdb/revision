@@ -2,13 +2,12 @@
 
 use super::super::Error;
 use super::super::Revisioned;
-use super::vecs::serialize_slice;
 use uuid::Uuid;
 
 impl Revisioned for Uuid {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		serialize_slice(self.as_bytes(), writer)
+		writer.write_all(self.as_bytes()).map_err(Error::Io)
 	}
 
 	#[inline]
