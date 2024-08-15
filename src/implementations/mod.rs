@@ -1,3 +1,7 @@
+use std::io;
+
+use crate::Error;
+
 pub mod arrays;
 pub mod bound;
 pub mod boxes;
@@ -20,3 +24,16 @@ pub mod tuple;
 pub mod uuid;
 pub mod vecs;
 pub mod wrapping;
+
+pub fn unexpected_eof() -> Error {
+	Error::Io(io::Error::new(io::ErrorKind::UnexpectedEof, ""))
+}
+
+pub fn read_buffer<const COUNT: usize, R: io::Read>(reader: &mut R) -> Result<[u8; COUNT], Error> {
+	let mut buffer = [0u8; COUNT];
+	let count = reader.read(&mut buffer).map_err(Error::Io)?;
+	if count != COUNT {
+		return Err(unexpected_eof());
+	}
+	Ok(buffer)
+}

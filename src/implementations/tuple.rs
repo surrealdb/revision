@@ -1,120 +1,73 @@
 use super::super::Error;
 use super::super::Revisioned;
 
-impl<A, B> Revisioned for (A, B)
-where
-	A: Revisioned,
-	B: Revisioned,
-{
-	#[inline]
-	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		self.0.serialize_revisioned(writer)?;
-		self.1.serialize_revisioned(writer)?;
-		Ok(())
-	}
+macro_rules! impl_tuple {
+	($($n:ident),*$(,)?) => {
+		impl_tuple!{@marker $($n,)*}
+	};
 
-	#[inline]
-	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		Ok((A::deserialize_revisioned(reader)?, B::deserialize_revisioned(reader)?))
-	}
+	($($n:ident,)* @marker $head:ident, $($tail:ident,)*) => {
+		impl<$($n),*> Revisioned for ($($n,)*)
+			where $($n: Revisioned),*
+		{
+			fn revision() -> u16{
+				1
+			}
 
-	fn revision() -> u16 {
-		1
-	}
+			#[inline]
+			#[allow(non_snake_case)]
+			fn serialize_revisioned<W: std::io::Write>(&self, _writer: &mut W) -> Result<(), Error> {
+				let ($(ref $n,)*) = *self;
+				$(
+					$n.serialize_revisioned(_writer)?;
+				)*
+				Ok(())
+			}
+
+			#[inline]
+			#[allow(non_snake_case)]
+			fn deserialize_revisioned<R: std::io::Read>(_reader: &mut R) -> Result<Self, Error> {
+				$(
+					let $n = Revisioned::deserialize_revisioned(_reader)?;
+				)*
+				Ok(($($n,)*))
+			}
+		}
+
+		impl_tuple!{$($n,)* $head, @marker $($tail,)*}
+
+	};
+	($($n:ident,)* @marker) => {
+		impl<$($n),*> Revisioned for ($($n),*)
+			where $($n: Revisioned),*
+		{
+			fn revision() -> u16{
+				1
+			}
+
+			#[inline]
+			#[allow(non_snake_case)]
+			fn serialize_revisioned<W: std::io::Write>(&self, _writer: &mut W) -> Result<(), Error> {
+				let ($(ref $n),*) = self;
+				$(
+					$n.serialize_revisioned(_writer)?;
+				)*
+				Ok(())
+			}
+
+			#[inline]
+			#[allow(non_snake_case)]
+			fn deserialize_revisioned<R: std::io::Read>(_reader: &mut R) -> Result<Self, Error> {
+				$(
+					let $n = Revisioned::deserialize_revisioned(_reader)?;
+				)*
+				Ok(($($n),*))
+			}
+		}
+	};
 }
 
-impl<A, B, C> Revisioned for (A, B, C)
-where
-	A: Revisioned,
-	B: Revisioned,
-	C: Revisioned,
-{
-	#[inline]
-	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		self.0.serialize_revisioned(writer)?;
-		self.1.serialize_revisioned(writer)?;
-		self.2.serialize_revisioned(writer)?;
-		Ok(())
-	}
-
-	#[inline]
-	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		Ok((
-			A::deserialize_revisioned(reader)?,
-			B::deserialize_revisioned(reader)?,
-			C::deserialize_revisioned(reader)?,
-		))
-	}
-
-	fn revision() -> u16 {
-		1
-	}
-}
-
-impl<A, B, C, D> Revisioned for (A, B, C, D)
-where
-	A: Revisioned,
-	B: Revisioned,
-	C: Revisioned,
-	D: Revisioned,
-{
-	#[inline]
-	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		self.0.serialize_revisioned(writer)?;
-		self.1.serialize_revisioned(writer)?;
-		self.2.serialize_revisioned(writer)?;
-		self.3.serialize_revisioned(writer)?;
-		Ok(())
-	}
-
-	#[inline]
-	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		Ok((
-			A::deserialize_revisioned(reader)?,
-			B::deserialize_revisioned(reader)?,
-			C::deserialize_revisioned(reader)?,
-			D::deserialize_revisioned(reader)?,
-		))
-	}
-
-	fn revision() -> u16 {
-		1
-	}
-}
-
-impl<A, B, C, D, E> Revisioned for (A, B, C, D, E)
-where
-	A: Revisioned,
-	B: Revisioned,
-	C: Revisioned,
-	D: Revisioned,
-	E: Revisioned,
-{
-	#[inline]
-	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		self.0.serialize_revisioned(writer)?;
-		self.1.serialize_revisioned(writer)?;
-		self.2.serialize_revisioned(writer)?;
-		self.3.serialize_revisioned(writer)?;
-		self.4.serialize_revisioned(writer)?;
-		Ok(())
-	}
-
-	#[inline]
-	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		Ok((
-			A::deserialize_revisioned(reader)?,
-			B::deserialize_revisioned(reader)?,
-			C::deserialize_revisioned(reader)?,
-			D::deserialize_revisioned(reader)?,
-			E::deserialize_revisioned(reader)?,
-		))
-	}
-
-	fn revision() -> u16 {
-		1
-	}
-}
+impl_tuple! { A,B,C,D,E,F }
 
 #[cfg(test)]
 mod tests {

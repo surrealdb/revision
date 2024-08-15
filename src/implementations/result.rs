@@ -1,24 +1,16 @@
 use super::super::Error;
 use super::super::Revisioned;
-use bincode::Options;
 
 impl<E: Revisioned, T: Revisioned> Revisioned for Result<T, E> {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		let opts = bincode::options()
-			.with_no_limit()
-			.with_little_endian()
-			.with_varint_encoding()
-			.reject_trailing_bytes();
 		match self {
 			Ok(v) => {
-				opts.serialize_into(&mut *writer, &0u32)
-					.map_err(|ref err| Error::Serialize(format!("{:?}", err)))?;
+				0u32.serialize_revisioned(writer)?;
 				v.serialize_revisioned(writer)
 			}
 			Err(e) => {
-				opts.serialize_into(&mut *writer, &1u32)
-					.map_err(|ref err| Error::Serialize(format!("{:?}", err)))?;
+				1u32.serialize_revisioned(writer)?;
 				e.serialize_revisioned(writer)
 			}
 		}
@@ -26,14 +18,7 @@ impl<E: Revisioned, T: Revisioned> Revisioned for Result<T, E> {
 
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		let opts = bincode::options()
-			.with_no_limit()
-			.with_little_endian()
-			.with_varint_encoding()
-			.reject_trailing_bytes();
-		let variant: u32 = opts
-			.deserialize_from(&mut *reader)
-			.map_err(|ref err| Error::Deserialize(format!("{:?}", err)))?;
+		let variant = u32::deserialize_revisioned(reader)?;
 		match variant {
 			0 => Ok(Ok(T::deserialize_revisioned(reader)
 				.map_err(|ref err| Error::Deserialize(format!("{:?}", err)))?)),
