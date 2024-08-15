@@ -240,7 +240,7 @@ macro_rules! impl_revisioned_int {
 			where
 				Self: Sized,
 			{
-				decode_u64(reader).map(|x| x as $ty)
+				decode_u64(reader).and_then(|x| x.try_into().map_err(|_| Error::IntegerOverflow))
 			}
 
 			fn revision() -> u16 {
@@ -263,7 +263,8 @@ macro_rules! impl_revisioned_signed_int {
 			where
 				Self: Sized,
 			{
-				decode_u64(reader).map(|x| gazgiz_64(x) as $ty)
+				decode_u64(reader)
+					.and_then(|x| gazgiz_64(x).try_into().map_err(|_| Error::IntegerOverflow))
 			}
 
 			fn revision() -> u16 {
