@@ -1,8 +1,13 @@
 use std::io;
 
 use super::super::Revisioned;
-use super::read_buffer;
 use crate::Error;
+
+pub fn read_buffer<const COUNT: usize, R: io::Read>(reader: &mut R) -> Result<[u8; COUNT], Error> {
+	let mut buffer = [0u8; COUNT];
+	reader.read_exact(&mut buffer).map_err(Error::Io)?;
+	Ok(buffer)
+}
 
 /// zigzag encode a 64bit integer
 fn zigzag_64(v: i64) -> u64 {
