@@ -356,9 +356,6 @@ impl Revisioned for f64 {
 
 #[cfg(test)]
 mod tests {
-	use core::{f32, f64};
-	use std::u64;
-
 	use crate::implementations::{
 		assert_bincode_compat,
 		primitives::{gazgiz_64, zigzag_64},
