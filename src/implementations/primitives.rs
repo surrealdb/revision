@@ -189,6 +189,44 @@ impl Revisioned for isize {
 	}
 }
 
+impl Revisioned for u8 {
+	#[inline]
+	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+		writer.write_all(&[*self]).map_err(Error::Io)
+	}
+
+	#[inline]
+	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error>
+	where
+		Self: Sized,
+	{
+		Ok(read_buffer::<1, _>(reader)?[0])
+	}
+
+	fn revision() -> u16 {
+		1
+	}
+}
+
+impl Revisioned for i8 {
+	#[inline]
+	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+		writer.write_all(&[*self as u8]).map_err(Error::Io)
+	}
+
+	#[inline]
+	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error>
+	where
+		Self: Sized,
+	{
+		Ok(read_buffer::<1, _>(reader)?[0] as i8)
+	}
+
+	fn revision() -> u16 {
+		1
+	}
+}
+
 macro_rules! impl_revisioned_int {
 	($ty:ident) => {
 		impl Revisioned for $ty {
@@ -235,12 +273,10 @@ macro_rules! impl_revisioned_signed_int {
 	};
 }
 
-impl_revisioned_int!(u8);
 impl_revisioned_int!(u16);
 impl_revisioned_int!(u32);
 impl_revisioned_int!(u64);
 
-impl_revisioned_signed_int!(i8);
 impl_revisioned_signed_int!(i16);
 impl_revisioned_signed_int!(i32);
 impl_revisioned_signed_int!(i64);
@@ -319,9 +355,13 @@ impl Revisioned for f64 {
 
 #[cfg(test)]
 mod tests {
+	use core::{f32, f64};
 	use std::u64;
 
-	use crate::implementations::primitives::{gazgiz_64, zigzag_64};
+	use crate::implementations::{
+		assert_bincode_compat,
+		primitives::{gazgiz_64, zigzag_64},
+	};
 
 	use super::Revisioned;
 
@@ -503,5 +543,51 @@ mod tests {
 		assert_eq!(mem.len(), 4);
 		let out = <char as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
+	}
+
+	macro_rules! test_integer_compat {
+		($n:ident,$ty:ident) => {
+			#[test]
+			fn $n() {
+				let zero: $ty = 0;
+				assert_bincode_compat(&zero);
+				assert_bincode_compat(&$ty::MAX);
+				assert_bincode_compat(&$ty::MIN);
+			}
+		};
+	}
+
+	test_integer_compat!(compat_i8, i8);
+	test_integer_compat!(compat_u8, u8);
+	test_integer_compat!(compat_i16, i16);
+	test_integer_compat!(compat_u16, u16);
+	test_integer_compat!(compat_i32, i32);
+	test_integer_compat!(compat_u32, u32);
+	test_integer_compat!(compat_i64, i64);
+	test_integer_compat!(compat_u64, u64);
+	test_integer_compat!(compat_i128, i128);
+	test_integer_compat!(compat_u128, u128);
+
+	#[test]
+	fn compat_f64() {
+		assert_bincode_compat(&0f64);
+		assert_bincode_compat(&f64::MAX);
+		assert_bincode_compat(&f64::MIN);
+		assert_bincode_compat(&f64::EPSILON);
+		assert_bincode_compat(&f64::INFINITY);
+		assert_bincode_compat(&f64::NEG_INFINITY);
+		assert_bincode_compat(&f64::NAN);
+	}
+
+	#[test]
+	fn compat_f32() {
+		assert_bincode_compat(&0f32);
+		assert_bincode_compat(&f32::MAX);
+		assert_bincode_compat(&f32::MIN);
+		assert_bincode_compat(&f32::EPSILON);
+		assert_bincode_compat(&f32::INFINITY);
+		assert_bincode_compat(&f32::NEG_INFINITY);
+		assert_bincode_compat(&f32::MIN_POSITIVE);
+		assert_bincode_compat(&f32::NAN);
 	}
 }

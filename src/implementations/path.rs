@@ -2,16 +2,13 @@ use std::path::PathBuf;
 
 use super::super::Error;
 use super::super::Revisioned;
+use super::string::serialize_str;
 
 impl Revisioned for PathBuf {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		match self.to_str() {
-			Some(s) => {
-				(s.len() as u64).serialize_revisioned(writer)?;
-				writer.write_all(s.as_bytes()).map_err(Error::Io)?;
-				Ok(())
-			}
+			Some(s) => serialize_str(writer, s),
 			None => Err(Error::InvalidPath),
 		}
 	}
@@ -32,11 +29,14 @@ mod tests {
 
 	use std::path::PathBuf;
 
+	use crate::implementations::assert_bincode_compat;
+
 	use super::Revisioned;
 
 	#[test]
 	fn test_pathbuf() {
 		let val = PathBuf::from("/test/path/to/file.txt");
+		assert_bincode_compat(&val);
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 23);

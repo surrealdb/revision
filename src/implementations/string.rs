@@ -2,6 +2,11 @@ use core::str;
 
 use crate::{Error, Revisioned};
 
+pub(crate) fn serialize_str<W: std::io::Write>(writer: &mut W, str: &str) -> Result<(), Error> {
+	(str.len() as u64).serialize_revisioned(writer)?;
+	writer.write_all(str.as_bytes()).map_err(Error::Io)
+}
+
 impl Revisioned for String {
 	fn revision() -> u16 {
 		1
@@ -9,16 +14,15 @@ impl Revisioned for String {
 
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		(self.len() as u64).serialize_revisioned(writer)?;
-		writer.write_all(self.as_bytes()).map_err(Error::Io)
+		serialize_str(writer, self)
 	}
 
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len: usize =
 			u64::deserialize_revisioned(reader)?.try_into().map_err(|_| Error::IntegerOverflow)?;
-		let slice = vec![0u8; len];
-
+		let mut slice = vec![0u8; len];
+		reader.read_exact(&mut slice).map_err(Error::Io)?;
 		String::from_utf8(slice).map_err(|x| Error::Utf8Error(x.utf8_error()))
 	}
 }
@@ -40,7 +44,10 @@ impl Revisioned for char {
 		let mut buffer = [0u8; 4];
 		r.read_exact(&mut buffer[..1]).map_err(Error::Io)?;
 
-		let len = CHAR_LENGTH[buffer[0] as usize];
+		dbg!(buffer[0]);
+		println!("{:b}", buffer[0]);
+
+		let len = dbg!(CHAR_LENGTH[buffer[0] as usize]);
 		if len == 0 {
 			return Err(Error::InvalidCharEncoding);
 		}
@@ -59,11 +66,11 @@ static CHAR_LENGTH: [u8; 256] = const {
 	while i < 256 {
 		if i & 0b1000_0000 == 0 {
 			r[i] = 1;
-		} else if i & 0b1110_000 == 0b1100_0000 {
+		} else if i & 0b1110_0000 == 0b1100_0000 {
 			r[i] = 2;
-		} else if i & 0b1111_000 == 0b1110_0000 {
+		} else if i & 0b1111_0000 == 0b1110_0000 {
 			r[i] = 3;
-		} else if i & 0b1111_100 == 0b1111_0000 {
+		} else if i & 0b1111_1000 == 0b1111_0000 {
 			r[i] = 4;
 		}
 
@@ -76,6 +83,10 @@ static CHAR_LENGTH: [u8; 256] = const {
 #[cfg(test)]
 mod tests {
 
+	use std::char;
+
+	use crate::implementations::assert_bincode_compat;
+
 	use super::Revisioned;
 
 	#[test]
@@ -86,5 +97,42 @@ mod tests {
 		assert_eq!(mem.len(), 15);
 		let out = <String as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
+	}
+
+	#[test]
+	fn test_char() {
+		let char = '𐃌';
+		let mut mem = Vec::new();
+		char.serialize_revisioned(&mut mem).unwrap();
+		let out = Revisioned::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		assert_eq!(char, out);
+	}
+
+	#[test]
+	fn bincode_compat_char() {
+		assert_bincode_compat(&char::MAX);
+		assert_bincode_compat(&'\0');
+		assert_bincode_compat(&'z');
+		assert_bincode_compat(&'0');
+		// in the 0x7F - 0x07FF range
+		assert_bincode_compat(&'ʘ');
+		// in the 0x7FF - 0xFFFF range
+		assert_bincode_compat(&'ꚸ');
+		// in the 0xFFFF - 0x10FFFF range
+		assert_bincode_compat(&'𐃌');
+	}
+
+	#[test]
+	fn bincode_compat_string() {
+		assert_bincode_compat(&char::MAX.to_string());
+		assert_bincode_compat(&'\0'.to_string());
+		assert_bincode_compat(&'z'.to_string());
+		assert_bincode_compat(&'0'.to_string());
+		// in the 0x7F - 0x07FF range
+		assert_bincode_compat(&'ʘ'.to_string());
+		// in the 0x7FF - 0xFFFF range
+		assert_bincode_compat(&'ꚸ'.to_string());
+		// in the 0xFFFF - 0x10FFFF range
+		assert_bincode_compat(&'𐃌'.to_string());
 	}
 }

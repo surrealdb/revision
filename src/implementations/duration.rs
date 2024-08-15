@@ -23,9 +23,10 @@ impl Revisioned for Duration {
 
 #[cfg(test)]
 mod tests {
+	use crate::implementations::assert_bincode_compat;
+
 	use super::Duration;
 	use super::Revisioned;
-	use bincode::Options as _;
 
 	#[test]
 	fn test_string() {
@@ -39,24 +40,9 @@ mod tests {
 
 	#[test]
 	fn bincode_compat() {
-		fn assert_compat(d: Duration) {
-			let bincode = bincode::options()
-				.with_no_limit()
-				.with_little_endian()
-				.with_varint_encoding()
-				.reject_trailing_bytes()
-				.serialize(&d)
-				.unwrap();
-
-			let mut revision = Vec::new();
-			d.serialize_revisioned(&mut revision).unwrap();
-
-			assert_eq!(revision, bincode)
-		}
-
-		assert_compat(Duration::ZERO);
-		assert_compat(Duration::MAX);
-		assert_compat(Duration::new(u64::MAX, 0));
-		assert_compat(Duration::new(0, 999_999_999));
+		assert_bincode_compat(&Duration::ZERO);
+		assert_bincode_compat(&Duration::MAX);
+		assert_bincode_compat(&Duration::new(u64::MAX, 0));
+		assert_bincode_compat(&Duration::new(0, 999_999_999));
 	}
 }

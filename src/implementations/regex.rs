@@ -2,31 +2,18 @@
 
 use super::super::Error;
 use super::super::Revisioned;
-use bincode::Options;
+use super::string::serialize_str;
 use regex::Regex;
-use std::borrow::Cow;
 
 impl Revisioned for Regex {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		bincode::options()
-			.with_no_limit()
-			.with_little_endian()
-			.with_varint_encoding()
-			.reject_trailing_bytes()
-			.serialize_into(writer, self.as_str())
-			.map_err(|ref err| Error::Serialize(format!("{:?}", err)))
+		serialize_str(writer, self.as_str())
 	}
 
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		let s: Cow<str> = bincode::options()
-			.with_no_limit()
-			.with_little_endian()
-			.with_varint_encoding()
-			.reject_trailing_bytes()
-			.deserialize_from(reader)
-			.map_err(|ref err| Error::Deserialize(format!("{:?}", err)))?;
+		let s = String::deserialize_revisioned(reader)?;
 		s.parse().map_err(|_| Error::Deserialize("invalid regex".to_string()))
 	}
 

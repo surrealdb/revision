@@ -1,8 +1,7 @@
 use std::{io, str::Utf8Error};
-use thiserror::Error;
 
 /// An error which occurs when revisioned serialization / deserialization fails.
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum Error {
 	/// An IO error occured.
 	Io(io::Error),
@@ -24,6 +23,16 @@ pub enum Error {
 	Deserialize(String),
 	/// Semantic translation/validation error.
 	Conversion(String),
+}
+
+impl std::error::Error for Error {
+	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+		match self {
+			Error::Io(ref x) => Some(x),
+			Error::Utf8Error(ref x) => Some(x),
+			_ => None,
+		}
+	}
 }
 
 impl std::fmt::Display for Error {

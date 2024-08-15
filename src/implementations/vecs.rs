@@ -1,6 +1,18 @@
 use super::super::Error;
 use super::super::Revisioned;
 
+pub(crate) fn serialize_slice<T, W>(v: &[T], writer: &mut W) -> Result<(), Error>
+where
+	W: std::io::Write,
+	T: Revisioned,
+{
+	v.len().serialize_revisioned(writer)?;
+	for v in v {
+		v.serialize_revisioned(writer)?;
+	}
+	Ok(())
+}
+
 impl<T> Revisioned for Vec<T>
 where
 	T: Revisioned,

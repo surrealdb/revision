@@ -72,11 +72,14 @@ impl_tuple! { A,B,C,D,E,F }
 #[cfg(test)]
 mod tests {
 
+	use crate::implementations::assert_bincode_compat;
+
 	use super::Revisioned;
 
 	#[test]
 	fn test_tuple_2() {
 		let val = (String::from("test"), true);
+		assert_bincode_compat(&val);
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 6);
@@ -88,6 +91,7 @@ mod tests {
 	#[test]
 	fn test_tuple_3() {
 		let val = (String::from("test"), true, 1419247293847192847.13947134978139487);
+		assert_bincode_compat(&val);
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 14);
@@ -99,6 +103,7 @@ mod tests {
 	#[test]
 	fn test_tuple_4() {
 		let val = (String::from("test"), true, 1419247293847192847.13947134978139487, Some('t'));
+		assert_bincode_compat(&val);
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 16);
@@ -118,6 +123,7 @@ mod tests {
 			Some('t'),
 			vec![4u8, 19u8, 133u8],
 		);
+		assert_bincode_compat(&val);
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 20);

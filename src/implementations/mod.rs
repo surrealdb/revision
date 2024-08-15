@@ -37,3 +37,25 @@ pub fn read_buffer<const COUNT: usize, R: io::Read>(reader: &mut R) -> Result<[u
 	}
 	Ok(buffer)
 }
+
+#[cfg(test)]
+#[track_caller]
+pub fn assert_bincode_compat<T>(v: &T)
+where
+	T: serde::Serialize + crate::Revisioned,
+{
+	use bincode::Options;
+
+	let bincode = bincode::options()
+		.with_no_limit()
+		.with_little_endian()
+		.with_varint_encoding()
+		.reject_trailing_bytes()
+		.serialize(&v)
+		.unwrap();
+
+	let mut revision = Vec::new();
+	v.serialize_revisioned(&mut revision).unwrap();
+
+	assert_eq!(revision, bincode)
+}
