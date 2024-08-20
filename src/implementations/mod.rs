@@ -20,3 +20,25 @@ pub mod tuple;
 pub mod uuid;
 pub mod vecs;
 pub mod wrapping;
+
+#[cfg(test)]
+#[track_caller]
+pub fn assert_bincode_compat<T>(v: &T)
+where
+	T: serde::Serialize + crate::Revisioned,
+{
+	use bincode::Options;
+
+	let bincode = bincode::options()
+		.with_no_limit()
+		.with_little_endian()
+		.with_varint_encoding()
+		.reject_trailing_bytes()
+		.serialize(&v)
+		.unwrap();
+
+	let mut revision = Vec::new();
+	v.serialize_revisioned(&mut revision).unwrap();
+
+	assert_eq!(revision, bincode)
+}
