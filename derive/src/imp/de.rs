@@ -4,8 +4,6 @@ use syn::Ident;
 
 use crate::ast::{Enum, Fields, Struct, Variant, Visit};
 
-use super::extend_from_filter;
-
 /// Visitor which creates structs for fields in a an enum variant.
 pub struct EnumStructsVisitor<'a> {
 	pub revision: usize,
@@ -156,19 +154,17 @@ impl<'a, 'ast> Visit<'ast> for DeserializeVisitor<'a> {
 			unreachable!();
 		};
 
-		extend_from_filter(fields, self.stream, |f| {
-			if f.attrs.options.exists_at(self.current) && !f.attrs.options.exists_at(self.target) {
-				return None;
-			}
-
+		for f in fields.iter().filter(|f| {
+			f.attrs.options.exists_at(self.current) && !f.attrs.options.exists_at(self.target)
+		}) {
 			let binding = f.name.to_binding();
 			let convert = f.attrs.options.convert.as_ref().unwrap();
 			let convert = Ident::new(&convert.value(), convert.span());
 			let revision = self.current as u16;
-			Some(quote! {
+			self.stream.append_all(quote! {
 				Self::#convert(&mut __this,#revision,#binding)?;
 			})
-		});
+		}
 
 		self.stream.append_all(quote! { Ok(__this) });
 		Ok(())
@@ -354,12 +350,17 @@ impl<'a, 'ast> Visit<'ast> for DeserializeFields<'a> {
 							let #binding = <#ty as ::revision::Revisioned>::deserialize_revisioned(reader)?;
 						})
 					} else if exists_target && !exists_current {
-						let default = f.attrs.options.default.as_ref().unwrap();
-						let default = Ident::new(&default.value(), default.span());
-						let revision = self.current as u16;
-						self.stream.append_all(quote! {
-							let #binding = Self::#default(#revision)?;
-						})
+						if let Some(default) = f.attrs.options.default.as_ref() {
+							let default = Ident::new(&default.value(), default.span());
+							let revision = self.current as u16;
+							self.stream.append_all(quote! {
+								let #binding = Self::#default(#revision)?;
+							})
+						} else {
+							self.stream.append_all(quote! {
+								let #binding = Default::default();
+							})
+						}
 					} else if !exists_target && exists_current {
 						let ty = &f.ty;
 						self.stream.append_all(quote! {

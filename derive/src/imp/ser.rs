@@ -1,9 +1,7 @@
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{quote, TokenStreamExt};
 
 use crate::ast::{Enum, Field, Fields, Struct, Variant, Visit};
-
-use super::extend_from_filter;
 
 pub struct SerializeVisitor<'a> {
 	pub revision: usize,
@@ -25,36 +23,32 @@ impl<'a, 'ast> Visit<'ast> for SerializeVisitor<'a> {
 				ref fields,
 				..
 			} => {
-				extend_from_filter(fields, self.stream, |field| {
-					if !field.attrs.options.exists_at(self.revision) {
-						return None;
-					}
-					let name = &field.name;
-					Some(quote! { let #name = &self.#name })
-				});
-
+				for f in fields.iter().filter(|x| x.attrs.options.exists_at(self.revision)) {
+					let name = &f.name;
+					self.stream.append_all(quote! { let #name = &self.#name; });
+				}
 				self.stream.append_all(ser_fields);
-				self.stream.append_all(quote! { Ok(()) });
-				Ok(())
 			}
 			Fields::Unnamed {
 				ref fields,
 				..
 			} => {
-				extend_from_filter(fields, self.stream, |field| {
-					if !field.attrs.options.exists_at(self.revision) {
-						return None;
-					}
-					let name = &field.name;
-					let binding = name.to_binding();
-					Some(quote! { let #binding = &self.#name })
-				});
+				for (idx, f) in
+					fields.iter().filter(|x| x.attrs.options.exists_at(self.revision)).enumerate()
+				{
+					let binding = f.name.to_binding();
+					let idx = syn::Index {
+						index: idx as u32,
+						span: Span::call_site(),
+					};
+					self.stream.append_all(quote! { let #binding = &self.#idx; });
+				}
 				self.stream.append_all(ser_fields);
-				self.stream.append_all(quote! { Ok(()) });
-				Ok(())
 			}
-			Fields::Unit => Ok(()),
+			Fields::Unit => {}
 		}
+		self.stream.append_all(quote! { Ok(()) });
+		Ok(())
 	}
 
 	fn visit_enum(&mut self, i: &'ast Enum) -> syn::Result<()> {

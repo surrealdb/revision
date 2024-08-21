@@ -14,16 +14,6 @@ use validate_version::ValidateRevision;
 
 use crate::ast::{self, Direct, ItemOptions, Visit};
 
-pub fn extend_from_filter<I, F>(iter: I, stream: &mut TokenStream, filter: F)
-where
-	I: IntoIterator,
-	F: FnMut(I::Item) -> Option<TokenStream>,
-{
-	for x in iter.into_iter().filter_map(filter) {
-		stream.append_all(x)
-	}
-}
-
 pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStream> {
 	let attrs: Direct<ItemOptions> = syn::parse2(attr)?;
 	let ast: ast::Item = syn::parse2(input)?;

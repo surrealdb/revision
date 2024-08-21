@@ -160,7 +160,6 @@ impl AttributeOptions for FieldOptions {
 	fn finish(_span: Span, options: Vec<Self::Option>) -> syn::Result<Self> {
 		let mut res = FieldOptions::default();
 
-		let mut start_kw = None;
 		let mut end_kw = None;
 
 		for option in options {
@@ -169,7 +168,6 @@ impl AttributeOptions for FieldOptions {
 					if res.start.is_some() {
 						return Err(Error::new(x.key.span(), "tried to set an option twice"));
 					}
-					start_kw = Some(x.key);
 					res.start = Some(x.value);
 				}
 				FieldOption::End(x) => {
@@ -191,15 +189,6 @@ impl AttributeOptions for FieldOptions {
 					}
 					res.default = Some(x.value);
 				}
-			}
-		}
-
-		if let Some(kw) = start_kw {
-			if res.default.is_none() {
-				return Err(Error::new(
-					kw.span(),
-					"setting a starting revision for a field also requires a default_fn",
-				));
 			}
 		}
 

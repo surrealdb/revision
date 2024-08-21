@@ -169,6 +169,7 @@ impl Parse for Struct {
 				fields,
 			}
 		} else {
+			input.parse::<Token![;]>()?;
 			Fields::Unit
 		};
 
