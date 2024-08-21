@@ -7,7 +7,7 @@ use std::u16;
 
 use de::{DeserializeVisitor, EnumStructsVisitor};
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, TokenStreamExt as _};
+use quote::quote;
 use reexport::Reexport;
 use ser::SerializeVisitor;
 use validate_version::ValidateRevision;
