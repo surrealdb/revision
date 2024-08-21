@@ -39,6 +39,7 @@ impl Revisioned for char {
 		r.read_exact(&mut buffer[..1]).map_err(Error::Io)?;
 
 		let len = CHAR_LENGTH[buffer[0] as usize];
+
 		if len == 0 {
 			return Err(Error::InvalidCharEncoding);
 		}
