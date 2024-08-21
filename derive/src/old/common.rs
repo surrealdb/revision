@@ -1,3 +1,6 @@
+use proc_macro::Ident;
+use syn::parse::{Parse, ParseStream};
+
 /// Describes a structure and it's fields.
 #[derive(Debug)]
 pub(crate) struct GenericDescriptor<T> {

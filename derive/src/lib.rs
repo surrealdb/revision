@@ -9,28 +9,10 @@
 //! chrono::DateTime<Utc>, geo::Point, geo::LineString geo::Polygon, geo::MultiPoint,
 //! geo::MultiLineString, and geo::MultiPolygon.
 
-mod common;
-mod descriptors;
-mod fields;
-mod helpers;
-
-use common::Descriptor;
-use darling::ast::NestedMeta;
-use darling::{Error, FromMeta};
-use descriptors::enum_desc::EnumDescriptor;
-use descriptors::struct_desc::StructDescriptor;
 use proc_macro::TokenStream;
-use proc_macro_error::proc_macro_error;
-use quote::quote;
-use syn::spanned::Spanned;
-use syn::{parse_macro_input, Item};
 
-#[derive(Debug, FromMeta)]
-struct Arguments {
-	revision: u16,
-	#[allow(dead_code)]
-	expire: Option<u16>,
-}
+mod ast;
+mod imp;
 
 /// Generates serialization and deserialization code as an implementation of
 /// the `Revisioned` trait for structs and enums.
@@ -182,8 +164,13 @@ struct Arguments {
 /// }
 /// ```
 #[proc_macro_attribute]
-#[proc_macro_error]
 pub fn revisioned(attrs: TokenStream, input: TokenStream) -> proc_macro::TokenStream {
+	match imp::revision(attrs.into(), input.into()) {
+		Ok(x) => x.into(),
+		Err(e) => e.into_compile_error().into(),
+	}
+
+	/*
 	// Parse the current struct input
 	let input: Item = parse_macro_input!(input as Item);
 
@@ -257,31 +244,32 @@ pub fn revisioned(attrs: TokenStream, input: TokenStream) -> proc_macro::TokenSt
 
 	if specified != revision {
 		return syn::Error::new(
-            span,
-            format!("Expected struct revision {revision}, but found {specified}. Ensure fields are versioned correctly."),
-        )
-        .to_compile_error()
-        .into();
+			span,
+			format!("Expected struct revision {revision}, but found {specified}. Ensure fields are versioned correctly."),
+		)
+		.to_compile_error()
+		.into();
 	}
 
 	(quote! {
 		#item
 
-        #[automatically_derived]
-        impl #impl_generics revision::Revisioned for #ident #ty_generics #where_clause {
-            /// Returns the current revision of this type.
-            fn revision() -> u16 {
-                #revision
-            }
-            /// Serializes the struct using the specficifed `writer`.
-            fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> std::result::Result<(), revision::Error> {
-                #serializer
-            }
-            /// Deserializes a new instance of the struct from the specficifed `reader`.
-            fn deserialize_revisioned<R: std::io::Read>(mut reader: &mut R) -> std::result::Result<Self, revision::Error> {
-                #deserializer
-            }
-        }
-    })
-    .into()
+		#[automatically_derived]
+		impl #impl_generics revision::Revisioned for #ident #ty_generics #where_clause {
+			/// Returns the current revision of this type.
+			fn revision() -> u16 {
+				#revision
+			}
+			/// Serializes the struct using the specficifed `writer`.
+			fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> std::result::Result<(), revision::Error> {
+				#serializer
+			}
+			/// Deserializes a new instance of the struct from the specficifed `reader`.
+			fn deserialize_revisioned<R: std::io::Read>(mut reader: &mut R) -> std::result::Result<Self, revision::Error> {
+				#deserializer
+			}
+		}
+	})
+	.into()
+		*/
 }
