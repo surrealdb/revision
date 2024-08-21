@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote, TokenStreamExt};
+use quote::{quote, TokenStreamExt};
 use syn::Ident;
 
 use crate::ast::{Enum, Fields, Struct, Variant, Visit};
@@ -15,7 +15,8 @@ pub struct EnumStructsVisitor<'a> {
 impl<'a, 'ast> Visit<'ast> for EnumStructsVisitor<'a> {
 	fn visit_enum(&mut self, i: &'ast Enum) -> syn::Result<()> {
 		for v in i.variants.iter() {
-			let name = format_ident!("{}{}Fields", i.name, v.ident);
+			let name = v.fields_name(&i.name.to_string());
+
 			let new_struct = match v.fields {
 				Fields::Named {
 					ref fields,
@@ -32,7 +33,6 @@ impl<'a, 'ast> Visit<'ast> for EnumStructsVisitor<'a> {
 							}
 						});
 					quote! {
-						#[allow(dead_code)]
 						struct #name{ #(#fields),* }
 					}
 				}
@@ -45,7 +45,6 @@ impl<'a, 'ast> Visit<'ast> for EnumStructsVisitor<'a> {
 						.filter(|x| x.attrs.options.exists_at(self.revision))
 						.map(|x| &x.ty);
 					quote! {
-						#[allow(dead_code)]
 						struct #name( #(#fields),* );
 					}
 				}
@@ -202,7 +201,7 @@ impl<'a, 'ast> Visit<'ast> for DeserializeVariant<'a> {
 		.visit_variant(i)
 		.unwrap();
 
-		let fields_struct_name = format_ident!("{}{}Fields", self.name, i.ident);
+		let fields_struct_name = i.fields_name(&self.name.to_string());
 
 		let (bindings, create) = match i.fields {
 			Fields::Named {
@@ -283,7 +282,9 @@ impl<'a, 'ast> Visit<'ast> for DeserializeVariant<'a> {
 			Fields::Unit => {
 				let name = &i.ident;
 				(
-					TokenStream::new(),
+					quote! {
+						let __fields = #fields_struct_name;
+					},
 					quote! {
 						Ok(Self::#name)
 					},

@@ -158,8 +158,8 @@ mod imp;
 /// }
 ///
 /// impl SomeTuple {
-///     fn convert_variant_two(_revision: u16, (a, b): (i64, u32)) -> Result<Self, Error> {
-///         Ok(Self::Three(a, b as u64, true))
+///     fn convert_variant_two(fields: SomeTupleTwoFields, _revision: u16) -> Result<Self, Error> {
+///         Ok(Self::Three(fields.a, fields.b as u64, true))
 ///     }
 /// }
 /// ```
@@ -169,107 +169,4 @@ pub fn revisioned(attrs: TokenStream, input: TokenStream) -> proc_macro::TokenSt
 		Ok(x) => x.into(),
 		Err(e) => e.into_compile_error().into(),
 	}
-
-	/*
-	// Parse the current struct input
-	let input: Item = parse_macro_input!(input as Item);
-
-	// Store the macro position
-	let span = input.span();
-
-	// Parse the current struct input
-	let attrs: proc_macro2::TokenStream = attrs.into();
-
-	let attrs_span = attrs.span();
-
-	// Parse the specified attributes
-	let attrs = match NestedMeta::parse_meta_list(attrs) {
-		Ok(v) => v,
-		Err(e) => {
-			return TokenStream::from(Error::from(e).write_errors());
-		}
-	};
-
-	let args = match Arguments::from_list(&attrs) {
-		Ok(v) => v,
-		Err(e) => {
-			return TokenStream::from(e.write_errors());
-		}
-	};
-
-	let (ident, generics, specified, descriptor) = match input {
-		Item::Enum(ref enum_) => {
-			let ident = enum_.ident.clone();
-			let generics = enum_.generics.clone();
-			let specified = args.revision;
-
-			let descriptor: Box<dyn Descriptor> = Box::new(EnumDescriptor::new(enum_));
-			(ident, generics, specified, descriptor)
-		}
-		Item::Struct(ref struct_) => {
-			let ident = struct_.ident.clone();
-			let generics = struct_.generics.clone();
-			let specified = args.revision;
-			let descriptor: Box<dyn Descriptor> = Box::new(StructDescriptor::new(struct_));
-			(ident, generics, specified, descriptor)
-		}
-		_ => {
-			return syn::Error::new(
-				attrs_span,
-				"the `revisioned` attribute can only be applied to enums or structs",
-			)
-			.into_compile_error()
-			.into()
-		}
-	};
-	let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-	//
-	// TODO: Parse the `input` struct fields or enum variants and comment
-	// them out in the source code. This allows us to completely remove a
-	// field or variant. The subsequent derive macro can then read all
-	// fields or variants, along with markup comments. So for example:
-	//    #[revision(end = 2)]
-	//    name: String,
-	// could become:
-	//    #[revision(end = 2)]
-	//    // revision:remove name: String
-	//
-	// Extract the specified revision
-
-	let revision = descriptor.revision();
-	let serializer = descriptor.generate_serializer();
-	let deserializer = descriptor.generate_deserializer();
-	let item = descriptor.reexpand();
-
-	if specified != revision {
-		return syn::Error::new(
-			span,
-			format!("Expected struct revision {revision}, but found {specified}. Ensure fields are versioned correctly."),
-		)
-		.to_compile_error()
-		.into();
-	}
-
-	(quote! {
-		#item
-
-		#[automatically_derived]
-		impl #impl_generics revision::Revisioned for #ident #ty_generics #where_clause {
-			/// Returns the current revision of this type.
-			fn revision() -> u16 {
-				#revision
-			}
-			/// Serializes the struct using the specficifed `writer`.
-			fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> std::result::Result<(), revision::Error> {
-				#serializer
-			}
-			/// Deserializes a new instance of the struct from the specficifed `reader`.
-			fn deserialize_revisioned<R: std::io::Read>(mut reader: &mut R) -> std::result::Result<Self, revision::Error> {
-				#deserializer
-			}
-		}
-	})
-	.into()
-		*/
 }

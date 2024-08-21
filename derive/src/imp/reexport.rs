@@ -135,7 +135,7 @@ impl<'a, 'ast> Visit<'ast> for Reexport<'a> {
 				});
 				Ok(())
 			}
-			ast::Fields::Unit => todo!(),
+			ast::Fields::Unit => Ok(()),
 		}
 	}
 

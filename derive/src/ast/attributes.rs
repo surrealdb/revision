@@ -13,6 +13,7 @@ mod kw {
 	syn::custom_keyword!(end);
 	syn::custom_keyword!(convert_fn);
 	syn::custom_keyword!(default_fn);
+	syn::custom_keyword!(fields_name);
 	syn::custom_keyword!(revision);
 	syn::custom_keyword!(variant_index);
 }
@@ -264,6 +265,7 @@ pub struct VariantOptions {
 	pub end: Option<SpannedLit<usize>>,
 	pub convert: Option<LitStr>,
 	pub default: Option<LitStr>,
+	pub fields_name: Option<LitStr>,
 }
 
 impl VariantOptions {
@@ -278,6 +280,7 @@ pub enum VariantOption {
 	End(ValueOption<kw::end, SpannedLit<usize>>),
 	Convert(ValueOption<kw::convert_fn, LitStr>),
 	Default(ValueOption<kw::default_fn, LitStr>),
+	Fields(ValueOption<kw::fields_name, LitStr>),
 }
 
 impl Parse for VariantOption {
@@ -293,6 +296,9 @@ impl Parse for VariantOption {
 		}
 		if input.peek(kw::default_fn) {
 			return Ok(VariantOption::Default(input.parse()?));
+		}
+		if input.peek(kw::fields_name) {
+			return Ok(VariantOption::Fields(input.parse()?));
 		}
 
 		Err(input.error("invalid field option"))
@@ -332,6 +338,12 @@ impl AttributeOptions for VariantOptions {
 						return Err(Error::new(x.key.span(), "tried to set an option twice"));
 					}
 					res.default = Some(x.value);
+				}
+				VariantOption::Fields(x) => {
+					if res.fields_name.is_some() {
+						return Err(Error::new(x.key.span(), "tried to set an option twice"));
+					}
+					res.fields_name = Some(x.value);
 				}
 			}
 		}

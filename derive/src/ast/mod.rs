@@ -79,6 +79,20 @@ pub struct Variant {
 	pub discriminant: Option<(Token![=], Expr)>,
 }
 
+impl Variant {
+	/// Returns the name of the fields struct of this variant
+	pub fn fields_name(&self, enum_name: &str) -> Ident {
+		self.attrs
+			.options
+			.fields_name
+			.as_ref()
+			.map(|x| Ident::new(&x.value(), x.span()))
+			.unwrap_or_else(|| {
+				Ident::new(&format!("{}{}Fields", enum_name, self.ident), self.ident.span())
+			})
+	}
+}
+
 impl Parse for Variant {
 	fn parse(input: ParseStream) -> Result<Self> {
 		let attrs = input.parse()?;

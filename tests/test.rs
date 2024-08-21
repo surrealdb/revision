@@ -19,9 +19,9 @@ pub enum TestEnum {
 		a: i64,
 		#[revision(end = 3, convert_fn = "upgrade_three_b")]
 		b: f32,
-		#[revision(start = 3)]
+		#[revision(start = 3, default_fn = "default_three_c")]
 		c: f64,
-		#[revision(start = 3)]
+		#[revision(start = 3, default_fn = "default_three_d")]
 		d: String,
 	},
 	#[revision(end = 3, convert_fn = "upgrade_four")]
@@ -31,19 +31,23 @@ pub enum TestEnum {
 }
 
 impl TestEnum {
-	fn upgrade_one(_revision: u16, (v0,): (u32,)) -> Result<TestEnum, Error> {
-		Ok(Self::Two(v0 as u64))
+	fn default_three_c(_revision: u16) -> Result<f64, Error> {
+		Ok(0.0)
 	}
-	fn upgrade_three_b(&mut self, _revision: u16, value: f32) -> Result<(), Error> {
-		match self {
-			TestEnum::Three {
-				ref mut c,
-				..
-			} => {
-				*c = value as f64;
-			}
-			_ => unreachable!(),
-		}
+
+	fn default_three_d(_revision: u16) -> Result<String, Error> {
+		Ok("Foo".to_string())
+	}
+
+	fn upgrade_one(fields: TestEnumOneFields, _revision: u16) -> Result<Self, Error> {
+		Ok(Self::Two(fields.0 as u64))
+	}
+	fn upgrade_three_b(
+		fields: &mut TestEnumThreeFields,
+		_revision: u16,
+		value: f32,
+	) -> Result<(), Error> {
+		fields.c = value as f64;
 		Ok(())
 	}
 
