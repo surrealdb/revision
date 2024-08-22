@@ -1,13 +1,26 @@
+use std::collections::HashMap;
+
 use proc_macro2::TokenStream;
 use quote::{quote, TokenStreamExt};
 use syn::Ident;
 
 use crate::ast::{Enum, Fields, Struct, Variant, Visit};
 
+use super::common::CalcDiscriminant;
+
 /// Visitor which creates structs for fields in a an enum variant.
 pub struct EnumStructsVisitor<'a> {
 	pub revision: usize,
 	pub stream: &'a mut TokenStream,
+}
+
+impl<'a> EnumStructsVisitor<'a> {
+	pub fn new(revision: usize, stream: &'a mut TokenStream) -> Self {
+		Self {
+			revision,
+			stream,
+		}
+	}
 }
 
 impl<'a, 'ast> Visit<'ast> for EnumStructsVisitor<'a> {
@@ -67,13 +80,16 @@ pub struct DeserializeVisitor<'a> {
 
 impl<'a, 'ast> Visit<'ast> for DeserializeVisitor<'a> {
 	fn visit_enum(&mut self, i: &'ast Enum) -> syn::Result<()> {
+		let mut discriminants = HashMap::new();
+		CalcDiscriminant::new(self.current, &mut discriminants).visit_enum(i)?;
+
 		let mut variants = TokenStream::new();
 		DeserializeVariant {
 			name: i.name.clone(),
 			target: self.target,
 			current: self.current,
 			stream: &mut variants,
-			next_discriminant: 0,
+			discriminants,
 		}
 		.visit_enum(i)
 		.unwrap();
@@ -176,7 +192,7 @@ pub struct DeserializeVariant<'a> {
 	pub current: usize,
 	pub name: Ident,
 	pub stream: &'a mut TokenStream,
-	pub next_discriminant: u32,
+	pub discriminants: HashMap<Ident, u32>,
 }
 
 impl<'a, 'ast> Visit<'ast> for DeserializeVariant<'a> {
@@ -289,8 +305,10 @@ impl<'a, 'ast> Visit<'ast> for DeserializeVariant<'a> {
 		};
 
 		if exists_target && exists_current {
-			let discr = self.next_discriminant;
-			self.next_discriminant += 1;
+			let discr = self
+				.discriminants
+				.get(&i.ident)
+				.expect("missed variant during discriminant calculation");
 
 			self.stream.append_all(quote! {
 				#discr => {
@@ -300,8 +318,10 @@ impl<'a, 'ast> Visit<'ast> for DeserializeVariant<'a> {
 				}
 			});
 		} else if !exists_target && exists_current {
-			let discr = self.next_discriminant;
-			self.next_discriminant += 1;
+			let discr = self
+				.discriminants
+				.get(&i.ident)
+				.expect("missed variant during discriminant calculation");
 			let convert = i.attrs.options.convert.as_ref().unwrap();
 			let convert = Ident::new(&convert.value(), convert.span());
 			let revision = self.current as u16;

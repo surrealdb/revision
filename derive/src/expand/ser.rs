@@ -1,11 +1,24 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, TokenStreamExt};
+use std::collections::HashMap;
+use syn::Ident;
 
 use crate::ast::{Enum, Field, Fields, Struct, Variant, Visit};
+
+use super::common::CalcDiscriminant;
 
 pub struct SerializeVisitor<'a> {
 	pub revision: usize,
 	pub stream: &'a mut TokenStream,
+}
+
+impl<'a> SerializeVisitor<'a> {
+	pub fn new(revision: usize, stream: &'a mut TokenStream) -> Self {
+		Self {
+			revision,
+			stream,
+		}
+	}
 }
 
 impl<'a, 'ast> Visit<'ast> for SerializeVisitor<'a> {
@@ -52,10 +65,13 @@ impl<'a, 'ast> Visit<'ast> for SerializeVisitor<'a> {
 	}
 
 	fn visit_enum(&mut self, i: &'ast Enum) -> syn::Result<()> {
+		let mut discriminants = HashMap::new();
+		CalcDiscriminant::new(self.revision, &mut discriminants).visit_enum(i)?;
+
 		let mut ser_variants = TokenStream::new();
 		SerializeVariant {
 			revision: self.revision,
-			discriminant: 0,
+			discriminants,
 			stream: &mut ser_variants,
 		}
 		.visit_enum(i)
@@ -103,7 +119,7 @@ impl<'a, 'ast> Visit<'ast> for SerializeFields<'a> {
 
 pub struct SerializeVariant<'a> {
 	pub revision: usize,
-	pub discriminant: u32,
+	pub discriminants: HashMap<Ident, u32>,
 	pub stream: &'a mut TokenStream,
 }
 
@@ -117,8 +133,8 @@ impl<'a, 'ast> Visit<'ast> for SerializeVariant<'a> {
 
 		self.stream.append_all(quote! {Self::#name});
 
-		let discr = self.discriminant;
-		self.discriminant += 1;
+		let discr =
+			self.discriminants.get(name).expect("missed variant during discriminants calculation");
 
 		match i.fields {
 			Fields::Named {

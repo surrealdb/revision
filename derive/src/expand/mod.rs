@@ -1,3 +1,4 @@
+mod common;
 mod de;
 mod reexport;
 mod ser;
@@ -54,20 +55,10 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 
 	// serialize implementation
 	let mut serialize = TokenStream::new();
-	SerializeVisitor {
-		revision,
-		stream: &mut serialize,
-	}
-	.visit_item(&ast)
-	.unwrap();
+	SerializeVisitor::new(revision, &mut serialize).visit_item(&ast).unwrap();
 
 	let mut deserialize_structs = TokenStream::new();
-	EnumStructsVisitor {
-		revision,
-		stream: &mut deserialize_structs,
-	}
-	.visit_item(&ast)
-	.unwrap();
+	EnumStructsVisitor::new(revision, &mut deserialize_structs).visit_item(&ast).unwrap();
 
 	// deserialize implementation
 	let deserialize = (1..=revision)

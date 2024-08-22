@@ -1,7 +1,8 @@
-use std::{fmt::Display, str::FromStr};
+use std::{collections::HashMap, fmt::Display, str::FromStr};
 
 use proc_macro2::Span;
 use syn::{
+	parenthesized,
 	parse::{Parse, ParseStream},
 	punctuated::Punctuated,
 	spanned::Spanned,
@@ -16,6 +17,30 @@ mod kw {
 	syn::custom_keyword!(fields_name);
 	syn::custom_keyword!(revision);
 	syn::custom_keyword!(variant_index);
+	syn::custom_keyword!(order);
+	syn::custom_keyword!(discriminant);
+}
+
+#[derive(Debug)]
+pub struct GroupOption<K, V> {
+	key: K,
+	_paren: token::Paren,
+	value: Punctuated<V, token::Comma>,
+}
+
+impl<K, V> Parse for GroupOption<K, V>
+where
+	K: Parse,
+	V: Parse,
+{
+	fn parse(input: ParseStream) -> syn::Result<Self> {
+		let content;
+		Ok(Self {
+			key: input.parse()?,
+			_paren: parenthesized!(content in input),
+			value: content.parse_terminated(|x| x.parse(), Token![,])?,
+		})
+	}
 }
 
 #[derive(Debug)]
@@ -255,6 +280,13 @@ pub struct VariantOptions {
 	pub convert: Option<LitStr>,
 	pub default: Option<LitStr>,
 	pub fields_name: Option<LitStr>,
+	pub overrides: HashMap<usize, VariantOverrides>,
+}
+
+#[derive(Default, Debug)]
+pub struct VariantOverrides {
+	pub revision: Option<SpannedLit<usize>>,
+	pub discriminant: Option<SpannedLit<u32>>,
 }
 
 impl VariantOptions {
@@ -270,6 +302,12 @@ pub enum VariantOption {
 	Convert(ValueOption<kw::convert_fn, LitStr>),
 	Default(ValueOption<kw::default_fn, LitStr>),
 	Fields(ValueOption<kw::fields_name, LitStr>),
+	Override(GroupOption<Token![override], VariantOverride>),
+}
+
+pub enum VariantOverride {
+	Discriminant(ValueOption<kw::discriminant, SpannedLit<u32>>),
+	Revision(ValueOption<kw::revision, SpannedLit<usize>>),
 }
 
 impl Parse for VariantOption {
@@ -289,8 +327,23 @@ impl Parse for VariantOption {
 		if input.peek(kw::fields_name) {
 			return Ok(VariantOption::Fields(input.parse()?));
 		}
+		if input.peek(Token![override]) {
+			return Ok(VariantOption::Override(input.parse()?));
+		}
 
 		Err(input.error("invalid field option"))
+	}
+}
+
+impl Parse for VariantOverride {
+	fn parse(input: ParseStream) -> syn::Result<Self> {
+		if input.peek(kw::discriminant) {
+			return Ok(VariantOverride::Discriminant(input.parse()?));
+		}
+		if input.peek(kw::revision) {
+			return Ok(VariantOverride::Revision(input.parse()?));
+		}
+		Err(input.error("invalid field override"))
 	}
 }
 
@@ -333,6 +386,39 @@ impl AttributeOptions for VariantOptions {
 						return Err(Error::new(x.key.span(), "tried to set an option twice"));
 					}
 					res.fields_name = Some(x.value);
+				}
+				VariantOption::Override(x) => {
+					let mut overrides = VariantOverrides::default();
+					for x in x.value.into_iter() {
+						match x {
+							VariantOverride::Discriminant(x) => {
+								if overrides.discriminant.is_some() {
+									return Err(Error::new(
+										x.key.span(),
+										"tried to set an override option twice",
+									));
+								}
+								overrides.discriminant = Some(x.value);
+							}
+							VariantOverride::Revision(x) => {
+								if overrides.revision.is_some() {
+									return Err(Error::new(
+										x.key.span(),
+										"tried to set an override option twice",
+									));
+								}
+								overrides.revision = Some(x.value);
+							}
+						}
+					}
+					let Some(revision) = overrides.revision.as_ref() else {
+						return Err(Error::new(
+							x.key.span(),
+							"missing the revision on which the override applies",
+						));
+					};
+					let revision = revision.value;
+					res.overrides.insert(revision, overrides);
 				}
 			}
 		}

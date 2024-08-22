@@ -12,7 +12,7 @@
 use proc_macro::TokenStream;
 
 mod ast;
-mod imp;
+mod expand;
 
 /// Generates serialization and deserialization code as an implementation of
 /// the `Revisioned` trait for structs and enums.
@@ -165,7 +165,7 @@ mod imp;
 /// ```
 #[proc_macro_attribute]
 pub fn revisioned(attrs: TokenStream, input: TokenStream) -> proc_macro::TokenStream {
-	match imp::revision(attrs.into(), input.into()) {
+	match expand::revision(attrs.into(), input.into()) {
 		Ok(x) => x.into(),
 		Err(e) => e.into_compile_error().into(),
 	}
