@@ -331,8 +331,8 @@ impl<'a, 'ast> Visit<'ast> for DeserializeVariant<'a> {
 					#fields
 					#bindings
 
-					let (__conv_fn): fn(#fields_struct_name, u16) -> Result<Self,::revision::Error> = Self::#convert;
-					(__conv_fn)(__fields,#revision)
+					let __conv_fn: fn(#fields_struct_name, u16) -> ::std::result::Result<Self,::revision::Error> = Self::#convert;
+					Self::#convert(__fields,#revision)
 				}
 			})
 		}

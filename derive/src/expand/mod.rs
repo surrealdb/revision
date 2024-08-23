@@ -99,12 +99,12 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 				#revision
 			}
 
-			fn serialize_revisioned<W: ::std::io::Write>(&self, writer: &mut W) -> Result<(), ::revision::Error> {
+			fn serialize_revisioned<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::result::Result<(), ::revision::Error> {
 				::revision::Revisioned::serialize_revisioned(&Self::revision(),writer)?;
 				#serialize
 			}
 
-			fn deserialize_revisioned<R: ::std::io::Read>(reader: &mut R) -> Result<Self, ::revision::Error> {
+			fn deserialize_revisioned<R: ::std::io::Read>(reader: &mut R) -> ::std::result::Result<Self, ::revision::Error> {
 				let __revision = <u16 as ::revision::Revisioned>::deserialize_revisioned(reader)?;
 				match __revision {
 					#(#deserialize)*
