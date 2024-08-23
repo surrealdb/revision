@@ -38,10 +38,8 @@ impl Revisioned for char {
 		let mut buffer = [0u8; 4];
 		r.read_exact(&mut buffer[..1]).map_err(Error::Io)?;
 
-		dbg!(buffer[0]);
-		println!("{:b}", buffer[0]);
+		let len = CHAR_LENGTH[buffer[0] as usize];
 
-		let len = dbg!(CHAR_LENGTH[buffer[0] as usize]);
 		if len == 0 {
 			return Err(Error::InvalidCharEncoding);
 		}

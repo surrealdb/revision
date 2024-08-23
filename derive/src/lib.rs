@@ -9,28 +9,10 @@
 //! chrono::DateTime<Utc>, geo::Point, geo::LineString geo::Polygon, geo::MultiPoint,
 //! geo::MultiLineString, and geo::MultiPolygon.
 
-mod common;
-mod descriptors;
-mod fields;
-mod helpers;
-
-use common::Descriptor;
-use darling::ast::NestedMeta;
-use darling::{Error, FromMeta};
-use descriptors::enum_desc::EnumDescriptor;
-use descriptors::struct_desc::StructDescriptor;
 use proc_macro::TokenStream;
-use proc_macro_error::proc_macro_error;
-use quote::quote;
-use syn::spanned::Spanned;
-use syn::{parse_macro_input, Item};
 
-#[derive(Debug, FromMeta)]
-struct Arguments {
-	revision: u16,
-	#[allow(dead_code)]
-	expire: Option<u16>,
-}
+mod ast;
+mod expand;
 
 /// Generates serialization and deserialization code as an implementation of
 /// the `Revisioned` trait for structs and enums.
@@ -104,9 +86,10 @@ struct Arguments {
 ///
 /// The function name needs to be specified as a string. The first function
 /// argument is the source revision that is being deserialized, and the return
-/// value is the same type as the field.
+/// value is the same type as the field or an error.
 ///
 /// ```ignore
+/// use revision::Error;
 /// use revision::revisioned;
 ///
 /// #[derive(Debug)]
@@ -118,7 +101,7 @@ struct Arguments {
 /// }
 ///
 /// impl TestStruct {
-///     fn default_b(_revision: u16) -> u8 {
+///     fn default_b(_revision: u16) -> Result<u8, Error> {
 ///         12u8
 ///     }
 /// }
@@ -129,20 +112,32 @@ struct Arguments {
 /// If defined, the method is called when the field existed at some previous
 /// revision, but no longer exists in the latest revision. The implementation
 /// and behaviour is slightly different depending on whether it is applied to
-/// a removed struct field or a removed enum variant. If defined, the function
-/// name needs to be specified as a string, and will be called when the field
-/// existed at a previous revision, but no longer exists in the latest revision.
+/// a removed struct field or a removed enum variant or a removed field from an
+/// enum variant. If defined, the function name needs to be specified as a
+/// string, and will be called when the field existed at a previous revision,
+/// but no longer exists in the latest revision.
 ///
 /// When defined on a removed struct field, the first function argument is the
 /// `&mut self` of the struct to update, the second argument is the source
 /// revision that was deserialized, and the third argument is the deserialized
 /// value from the field which has been removed.
 ///
-/// When defined on a removed enum variant field, the first function argument
-/// is the source revision that was deserialized, and the second argument is a
-/// tuple with the enum variant field values for the variant which has been
-/// removed. If the enum variant is unit-like, then an empty tuple will be used
-/// for the second argument.
+/// When working with an enum variant the convert function works with a fields
+/// struct. This is a generated structure which has the same fields as the enum
+/// variant. By default this struct is named
+/// '`{enum name}{variant name}Fields`', this name can be changed with the
+/// `fields_name` if desired.
+///
+/// When a field in a variant is removed the convert
+/// function takes a mutable reference to this fields struct as its first
+/// argument, it's second argument is the revision from which this field is
+/// being deserialized and it's third argument is the deserialized value.
+///
+/// When the entire variant is remove the first argument is the fields
+/// struct with it's fields containing the values of the deserialized removed
+/// variant. In both situations the convert_fn function takes as a second
+/// argument the revision from which this was serialized. The function should
+/// return a result with either the right deserialized value or an error.
 ///
 /// ```ignore
 /// use revision::Error;
@@ -166,122 +161,29 @@ struct Arguments {
 /// }
 ///
 /// #[derive(Debug)]
-/// #[revisioned(revision = 2)]
+/// #[revisioned(revision = 3)]
 /// enum SomeTuple {
 ///     One,
 ///     #[revision(end = 2, convert_fn = "convert_variant_two")]
 ///     Two(i64, u32),
 ///     #[revision(start = 2)]
-///     Three(i64, u64, bool),
+///     Three(i64, u64, #[revision(end = 3, convert_fn = "convert_variant_three_field")] bool),
 /// }
 ///
 /// impl SomeTuple {
-///     fn convert_variant_two(_revision: u16, (a, b): (i64, u32)) -> Result<Self, Error> {
-///         Ok(Self::Three(a, b as u64, true))
+///     fn convert_variant_two(fields: SomeTupleTwoFields, _revision: u16) -> Result<Self, Error> {
+///         Ok(Self::Three(fields.a, fields.b as u64, true))
+///     }
+///
+///     fn convert_variant_three_field(fields: &mut SomeTupleTwoFields, _revision: u16, v: bool) -> Result<(), Error> {
+///			Ok(())
 ///     }
 /// }
 /// ```
 #[proc_macro_attribute]
-#[proc_macro_error]
 pub fn revisioned(attrs: TokenStream, input: TokenStream) -> proc_macro::TokenStream {
-	// Parse the current struct input
-	let input: Item = parse_macro_input!(input as Item);
-
-	// Store the macro position
-	let span = input.span();
-
-	// Parse the current struct input
-	let attrs: proc_macro2::TokenStream = attrs.into();
-
-	let attrs_span = attrs.span();
-
-	// Parse the specified attributes
-	let attrs = match NestedMeta::parse_meta_list(attrs) {
-		Ok(v) => v,
-		Err(e) => {
-			return TokenStream::from(Error::from(e).write_errors());
-		}
-	};
-
-	let args = match Arguments::from_list(&attrs) {
-		Ok(v) => v,
-		Err(e) => {
-			return TokenStream::from(e.write_errors());
-		}
-	};
-
-	let (ident, generics, specified, descriptor) = match input {
-		Item::Enum(ref enum_) => {
-			let ident = enum_.ident.clone();
-			let generics = enum_.generics.clone();
-			let specified = args.revision;
-
-			let descriptor: Box<dyn Descriptor> = Box::new(EnumDescriptor::new(enum_));
-			(ident, generics, specified, descriptor)
-		}
-		Item::Struct(ref struct_) => {
-			let ident = struct_.ident.clone();
-			let generics = struct_.generics.clone();
-			let specified = args.revision;
-			let descriptor: Box<dyn Descriptor> = Box::new(StructDescriptor::new(struct_));
-			(ident, generics, specified, descriptor)
-		}
-		_ => {
-			return syn::Error::new(
-				attrs_span,
-				"the `revisioned` attribute can only be applied to enums or structs",
-			)
-			.into_compile_error()
-			.into()
-		}
-	};
-	let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-	//
-	// TODO: Parse the `input` struct fields or enum variants and comment
-	// them out in the source code. This allows us to completely remove a
-	// field or variant. The subsequent derive macro can then read all
-	// fields or variants, along with markup comments. So for example:
-	//    #[revision(end = 2)]
-	//    name: String,
-	// could become:
-	//    #[revision(end = 2)]
-	//    // revision:remove name: String
-	//
-	// Extract the specified revision
-
-	let revision = descriptor.revision();
-	let serializer = descriptor.generate_serializer();
-	let deserializer = descriptor.generate_deserializer();
-	let item = descriptor.reexpand();
-
-	if specified != revision {
-		return syn::Error::new(
-            span,
-            format!("Expected struct revision {revision}, but found {specified}. Ensure fields are versioned correctly."),
-        )
-        .to_compile_error()
-        .into();
+	match expand::revision(attrs.into(), input.into()) {
+		Ok(x) => x.into(),
+		Err(e) => e.into_compile_error().into(),
 	}
-
-	(quote! {
-		#item
-
-        #[automatically_derived]
-        impl #impl_generics revision::Revisioned for #ident #ty_generics #where_clause {
-            /// Returns the current revision of this type.
-            fn revision() -> u16 {
-                #revision
-            }
-            /// Serializes the struct using the specficifed `writer`.
-            fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> std::result::Result<(), revision::Error> {
-                #serializer
-            }
-            /// Deserializes a new instance of the struct from the specficifed `reader`.
-            fn deserialize_revisioned<R: std::io::Read>(mut reader: &mut R) -> std::result::Result<Self, revision::Error> {
-                #deserializer
-            }
-        }
-    })
-    .into()
 }
