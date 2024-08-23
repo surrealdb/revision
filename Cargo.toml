@@ -22,7 +22,7 @@ default = []
 
 [dependencies]
 chrono = { version = "0.4.26", features = ["serde"], optional = true }
-derive = { version = "0.8.0", package = "revision-derive", path = "derive" }
+derive = { version = "0.9.0", package = "revision-derive", path = "derive" }
 geo = { version = "0.26.0", features = ["use-serde"], optional = true }
 ordered-float = { version = "3", optional = true }
 regex = { version = "1.9.3", optional = true }
