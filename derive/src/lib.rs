@@ -86,9 +86,10 @@ mod expand;
 ///
 /// The function name needs to be specified as a string. The first function
 /// argument is the source revision that is being deserialized, and the return
-/// value is the same type as the field.
+/// value is the same type as the field or an error.
 ///
 /// ```ignore
+/// use revision::Error;
 /// use revision::revisioned;
 ///
 /// #[derive(Debug)]
@@ -100,7 +101,7 @@ mod expand;
 /// }
 ///
 /// impl TestStruct {
-///     fn default_b(_revision: u16) -> u8 {
+///     fn default_b(_revision: u16) -> Result<u8, Error> {
 ///         12u8
 ///     }
 /// }
@@ -111,20 +112,32 @@ mod expand;
 /// If defined, the method is called when the field existed at some previous
 /// revision, but no longer exists in the latest revision. The implementation
 /// and behaviour is slightly different depending on whether it is applied to
-/// a removed struct field or a removed enum variant. If defined, the function
-/// name needs to be specified as a string, and will be called when the field
-/// existed at a previous revision, but no longer exists in the latest revision.
+/// a removed struct field or a removed enum variant or a removed field from an
+/// enum variant. If defined, the function name needs to be specified as a
+/// string, and will be called when the field existed at a previous revision,
+/// but no longer exists in the latest revision.
 ///
 /// When defined on a removed struct field, the first function argument is the
 /// `&mut self` of the struct to update, the second argument is the source
 /// revision that was deserialized, and the third argument is the deserialized
 /// value from the field which has been removed.
 ///
-/// When defined on a removed enum variant field, the first function argument
-/// is the source revision that was deserialized, and the second argument is a
-/// tuple with the enum variant field values for the variant which has been
-/// removed. If the enum variant is unit-like, then an empty tuple will be used
-/// for the second argument.
+/// When working with an enum variant the convert function works with a fields
+/// struct. This is a generated structure which has the same fields as the enum
+/// variant. By default this struct is named
+/// '`{enum name}{variant name}Fields`', this name can be changed with the
+/// `fields_name` if desired.
+///
+/// When a field in a variant is removed the convert
+/// function takes a mutable reference to this fields struct as its first
+/// argument, it's second argument is the revision from which this field is
+/// being deserialized and it's third argument is the deserialized value.
+///
+/// When the entire variant is remove the first argument is the fields
+/// struct with it's fields containing the values of the deserialized removed
+/// variant. In both situations the convert_fn function takes as a second
+/// argument the revision from which this was serialized. The function should
+/// return a result with either the right deserialized value or an error.
 ///
 /// ```ignore
 /// use revision::Error;
@@ -148,18 +161,22 @@ mod expand;
 /// }
 ///
 /// #[derive(Debug)]
-/// #[revisioned(revision = 2)]
+/// #[revisioned(revision = 3)]
 /// enum SomeTuple {
 ///     One,
 ///     #[revision(end = 2, convert_fn = "convert_variant_two")]
 ///     Two(i64, u32),
 ///     #[revision(start = 2)]
-///     Three(i64, u64, bool),
+///     Three(i64, u64, #[revision(end = 3, convert_fn = "convert_variant_three_field")] bool),
 /// }
 ///
 /// impl SomeTuple {
 ///     fn convert_variant_two(fields: SomeTupleTwoFields, _revision: u16) -> Result<Self, Error> {
 ///         Ok(Self::Three(fields.a, fields.b as u64, true))
+///     }
+///
+///     fn convert_variant_three_field(fields: &mut SomeTupleTwoFields, _revision: u16, v: bool) -> Result<(), Error> {
+///			Ok(())
 ///     }
 /// }
 /// ```
