@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{quote, TokenStreamExt};
-use syn::Ident;
+use syn::{Ident, Index};
 
 use crate::ast::{Enum, Fields, Struct, Variant, Visit};
 
@@ -271,7 +271,11 @@ impl<'a, 'ast> Visit<'ast> for DeserializeVariant<'a> {
 				let field_names = fields
 					.iter()
 					.filter(|x| x.attrs.options.exists_at(self.target))
-					.map(|x| &x.name);
+					.enumerate()
+					.map(|(idx, _)| Index {
+						index: idx as u32,
+						span: Span::call_site(),
+					});
 				let variant_name = &i.ident;
 				create.append_all(quote! {
 					Ok(Self::#variant_name( #(__fields.#field_names,)*))

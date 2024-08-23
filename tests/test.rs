@@ -28,6 +28,7 @@ pub enum TestEnum {
 	Four,
 	#[revision(start = 3)]
 	Four(usize),
+	Five(#[revision(end = 3, convert_fn = "upgrade_five_field")] u64, #[revision(start = 3)] i64),
 }
 
 impl TestEnum {
@@ -53,6 +54,15 @@ impl TestEnum {
 
 	fn upgrade_four(_fields: OldTestEnumFourFields, _revision: u16) -> Result<TestEnum, Error> {
 		Ok(TestEnum::Four(0))
+	}
+
+	fn upgrade_five_field(
+		fields: &mut TestEnumFiveFields,
+		_revision: u16,
+		v: u64,
+	) -> Result<(), Error> {
+		fields.0 = v as i64;
+		Ok(())
 	}
 }
 
