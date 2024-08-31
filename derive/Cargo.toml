@@ -17,6 +17,6 @@ categories = ["encoding"]
 proc-macro = true
 
 [dependencies]
-proc-macro2 = "1.0.66"
-quote = "1.0.32"
-syn = { version = "2.0.28", features = ["full", "extra-traits", "parsing"] }
+proc-macro2 = "1.0.86"
+quote = "1.0.37"
+syn = { version = "2.0.77", features = ["full", "extra-traits", "parsing"] }
