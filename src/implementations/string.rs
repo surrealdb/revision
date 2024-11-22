@@ -19,30 +19,6 @@ impl Revisioned for String {
 		let bytes = Vec::<u8>::deserialize_revisioned(reader)?;
 		String::from_utf8(bytes).map_err(|x| Error::Utf8Error(x.utf8_error()))
 	}
-
-	fn serialize_revisioned<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
-		let buffer = &mut [0u8; 4];
-		w.write_all(self.encode_utf8(buffer).as_bytes()).map_err(Error::Io)
-	}
-
-	fn deserialize_revisioned<R: std::io::Read>(r: &mut R) -> Result<Self, Error>
-	where
-		Self: Sized,
-	{
-		let mut buffer = [0u8; 4];
-		r.read_exact(&mut buffer[..1]).map_err(Error::Io)?;
-
-		let len = CHAR_LENGTH[buffer[0] as usize];
-		if len == 0 {
-			return Err(Error::InvalidCharEncoding);
-		}
-
-		r.read_exact(&mut buffer[1..(len as usize)]).map_err(Error::Io)?;
-
-		str::from_utf8(&buffer[..(len as usize)])
-			.map_err(|_| Error::InvalidCharEncoding)
-			.map(|x| x.chars().next().unwrap())
-	}
 }
 
 impl Revisioned for char {

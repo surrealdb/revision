@@ -63,3 +63,39 @@ pub trait Revisioned {
 		TypeId::of::<Self>()
 	}
 }
+
+/// Deserialize a revisioned type from a reader
+pub fn from_reader<R, T>(rdr: &mut R) -> Result<T, Error>
+where
+	R: Read,
+	T: Revisioned,
+{
+	Revisioned::deserialize_revisioned(rdr)
+}
+
+/// Deserialize a revisioned type from a slice of bytes
+pub fn from_slice<T>(mut bytes: &[u8]) -> Result<T, Error>
+where
+	T: Revisioned,
+{
+	Revisioned::deserialize_revisioned(&mut bytes)
+}
+
+/// Serialize a revisioned type into a vec of bytes
+pub fn to_writer<W, T>(writer: &mut W, t: &T) -> Result<(), Error>
+where
+	W: Write,
+	T: Revisioned,
+{
+	Revisioned::serialize_revisioned(t, writer)
+}
+
+/// Serialize a revisioned type into a vec of bytes
+pub fn to_vec<T>(t: &T) -> Result<Vec<u8>, Error>
+where
+	T: Revisioned,
+{
+	let mut res = Vec::new();
+	Revisioned::serialize_revisioned(t, &mut res)?;
+	Ok(res)
+}

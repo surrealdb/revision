@@ -27,7 +27,6 @@ mod tests {
 
 	use super::Duration;
 	use super::Revisioned;
-	use bincode::Options as _;
 
 	#[test]
 	fn test_string() {
