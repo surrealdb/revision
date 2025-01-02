@@ -6,8 +6,8 @@
 //! String, Vec<T>, Arrays up to 32 elements, Option<T>, Box<T>, Bound<T>, Wrapping<T>,
 //! (A, B), (A, B, C), (A, B, C, D), (A, B, C, D, E), Duration, HashMap<K, V>,
 //! BTreeMap<K, V>, Result<T, E>, Cow<'_, T>, Decimal, regex::Regex, uuid::Uuid,
-//! chrono::DateTime<Utc>, geo::Point, geo::LineString geo::Polygon, geo::MultiPoint,
-//! geo::MultiLineString, and geo::MultiPolygon.
+//! chrono::Duration, chrono::DateTime<Utc>, geo::Point, geo::LineString geo::Polygon,
+//! geo::MultiPoint, geo::MultiLineString, and geo::MultiPolygon.
 
 use proc_macro::TokenStream;
 

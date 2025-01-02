@@ -2,7 +2,7 @@
 
 use super::super::Error;
 use super::super::Revisioned;
-use chrono::{offset::TimeZone, DateTime, Datelike, NaiveDate, NaiveTime, Timelike, Utc};
+use chrono::{offset::TimeZone, DateTime, Datelike, Duration, NaiveDate, NaiveTime, Timelike, Utc};
 
 impl Revisioned for DateTime<Utc> {
 	#[inline]
@@ -74,12 +74,48 @@ impl Revisioned for NaiveTime {
 	}
 }
 
+impl Revisioned for Duration {
+	#[inline]
+	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+		let mut secs = self.num_seconds();
+		let mut nano = self.subsec_nanos();
+
+		if nano < 0 {
+			secs = secs
+				.checked_sub(1)
+				.ok_or_else(|| Error::Serialize("invalid duration".to_string()))?;
+			nano = nano
+				.checked_add(1_000_000_000)
+				.ok_or_else(|| Error::Serialize("invalid duration".to_string()))?;
+		}
+
+		secs.serialize_revisioned(writer)?;
+		nano.serialize_revisioned(writer)?;
+
+		Ok(())
+	}
+
+	#[inline]
+	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+		let secs = <i64 as Revisioned>::deserialize_revisioned(reader)?;
+		let nano = <i32 as Revisioned>::deserialize_revisioned(reader)?;
+		let nano =
+			u32::try_from(nano).map_err(|_| Error::Deserialize("invalid duration".to_string()))?;
+
+		Duration::new(secs, nano).ok_or_else(|| Error::Deserialize("invalid duration".to_string()))
+	}
+
+	fn revision() -> u16 {
+		1
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::DateTime;
 	use super::Revisioned;
 	use super::Utc;
-	use chrono::{NaiveDate, NaiveTime};
+	use chrono::{Duration, NaiveDate, NaiveTime};
 
 	#[test]
 	fn test_datetime_min() {
@@ -140,6 +176,36 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 8);
 		let out = <NaiveTime as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		assert_eq!(val, out);
+	}
+
+	#[test]
+	fn test_duration_min() {
+		let val = Duration::MIN;
+		let mut mem: Vec<u8> = vec![];
+		val.serialize_revisioned(&mut mem).unwrap();
+		assert_eq!(mem.len(), 14);
+		let out = <Duration as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		assert_eq!(val, out);
+	}
+
+	#[test]
+	fn test_duration_zero() {
+		let val = Duration::zero();
+		let mut mem: Vec<u8> = vec![];
+		val.serialize_revisioned(&mut mem).unwrap();
+		assert_eq!(mem.len(), 2);
+		let out = <Duration as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		assert_eq!(val, out);
+	}
+
+	#[test]
+	fn test_duration_max() {
+		let val = Duration::MAX;
+		let mut mem: Vec<u8> = vec![];
+		val.serialize_revisioned(&mut mem).unwrap();
+		assert_eq!(mem.len(), 14);
+		let out = <Duration as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 }
