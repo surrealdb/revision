@@ -2,11 +2,11 @@
 
 use super::super::Error;
 use super::super::Revisioned;
-use ordered_float::{Float, NotNan};
+use ordered_float::{FloatCore, NotNan};
 
 impl<T> Revisioned for NotNan<T>
 where
-	T: Revisioned + Float,
+	T: Revisioned + FloatCore,
 {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
