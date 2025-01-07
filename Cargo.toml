@@ -20,7 +20,7 @@ members = ["derive"]
 default = []
 
 [dependencies]
-chrono = { version = "0.4.38", features = ["serde"], optional = true }
+chrono = { version = "0.4.39", features = ["serde"], optional = true }
 derive = { version = "0.10.0", package = "revision-derive", path = "derive" }
 geo = { version = "0.28.0", features = ["use-serde"], optional = true }
 ordered-float = { version = "4.2.2", optional = true }
