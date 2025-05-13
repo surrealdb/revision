@@ -3,7 +3,7 @@
 
 use revision::revisioned;
 use revision::Error;
-use revision::Revisioned;
+use revision::{SerializeRevisioned, DeserializeRevisioned};
 use std::num::Wrapping;
 
 #[revisioned(revision = 3)]

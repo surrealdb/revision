@@ -1,19 +1,17 @@
 use core::str;
 
-use crate::{Error, Revisioned};
+use crate::{DeserializeRevisioned, Error, Revisioned, SerializeRevisioned};
 
 use super::vecs::serialize_slice;
 
-impl Revisioned for String {
-	fn revision() -> u16 {
-		1
-	}
-
+impl SerializeRevisioned for String {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		serialize_slice(self.as_bytes(), writer)
 	}
+}
 
+impl DeserializeRevisioned for String {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let bytes = Vec::<u8>::deserialize_revisioned(reader)?;
@@ -21,22 +19,25 @@ impl Revisioned for String {
 	}
 }
 
-impl Revisioned for char {
+impl Revisioned for String {
 	fn revision() -> u16 {
 		1
 	}
+}
 
-	fn serialize_revisioned<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
-		let buffer = &mut [0u8; 4];
-		w.write_all(self.encode_utf8(buffer).as_bytes()).map_err(Error::Io)
-	}
-
-	fn deserialize_revisioned<R: std::io::Read>(r: &mut R) -> Result<Self, Error>
-	where
-		Self: Sized,
-	{
+impl SerializeRevisioned for char {
+	#[inline]
+	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		let mut buffer = [0u8; 4];
-		r.read_exact(&mut buffer[..1]).map_err(Error::Io)?;
+		writer.write_all(self.encode_utf8(&mut buffer).as_bytes()).map_err(Error::Io)
+	}
+}
+
+impl DeserializeRevisioned for char {
+	#[inline]
+	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+		let mut buffer = [0u8; 4];
+		reader.read_exact(&mut buffer[..1]).map_err(Error::Io)?;
 
 		let len = CHAR_LENGTH[buffer[0] as usize];
 
@@ -44,11 +45,17 @@ impl Revisioned for char {
 			return Err(Error::InvalidCharEncoding);
 		}
 
-		r.read_exact(&mut buffer[1..(len as usize)]).map_err(Error::Io)?;
+		reader.read_exact(&mut buffer[1..(len as usize)]).map_err(Error::Io)?;
 
 		str::from_utf8(&buffer[..(len as usize)])
 			.map_err(|_| Error::InvalidCharEncoding)
 			.map(|x| x.chars().next().unwrap())
+	}
+}
+
+impl Revisioned for char {
+	fn revision() -> u16 {
+		1
 	}
 }
 
@@ -75,11 +82,9 @@ static CHAR_LENGTH: [u8; 256] = const {
 #[cfg(test)]
 mod tests {
 
-	use std::char;
+	use super::*;
 
 	use crate::implementations::assert_bincode_compat;
-
-	use super::Revisioned;
 
 	#[test]
 	fn test_string() {
@@ -87,7 +92,7 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 15);
-		let out = <String as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <String as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -96,7 +101,7 @@ mod tests {
 		let char = '𐃌';
 		let mut mem = Vec::new();
 		char.serialize_revisioned(&mut mem).unwrap();
-		let out = Revisioned::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = DeserializeRevisioned::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(char, out);
 	}
 

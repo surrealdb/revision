@@ -98,7 +98,7 @@ impl<'a, 'ast> Visit<'ast> for DeserializeVisitor<'a> {
 			format!("Invalid discriminant `{{x}}` for enum `{}` revision `{{__revision}}`", i.name);
 
 		self.stream.append_all(quote! {
-			let __discriminant = <u32 as ::revision::Revisioned>::deserialize_revisioned(reader)?;
+			let __discriminant = <u32 as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
 			match __discriminant {
 				#variants
 				x => {
@@ -371,7 +371,7 @@ impl<'a, 'ast> Visit<'ast> for DeserializeFields<'a> {
 					if exists_target && exists_current {
 						let ty = &f.ty;
 						self.stream.append_all(quote! {
-							let #binding = <#ty as ::revision::Revisioned>::deserialize_revisioned(reader)?;
+							let #binding = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
 						})
 					} else if exists_target && !exists_current {
 						if let Some(default) = f.attrs.options.default.as_ref() {
@@ -388,7 +388,7 @@ impl<'a, 'ast> Visit<'ast> for DeserializeFields<'a> {
 					} else if !exists_target && exists_current {
 						let ty = &f.ty;
 						self.stream.append_all(quote! {
-							let #binding = <#ty as ::revision::Revisioned>::deserialize_revisioned(reader)?;
+							let #binding = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
 						})
 					}
 				}

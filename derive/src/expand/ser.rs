@@ -90,7 +90,7 @@ impl<'a, 'ast> Visit<'ast> for SerializeVisitor<'a> {
 		let name = &i.name;
 
 		self.stream.append_all(quote! {
-			::revision::Revisioned::serialize_revisioned(#name,writer)?;
+			::revision::SerializeRevisioned::serialize_revisioned(#name,writer)?;
 		});
 
 		Ok(())
@@ -110,7 +110,7 @@ impl<'a, 'ast> Visit<'ast> for SerializeFields<'a> {
 
 		let name = i.name.to_binding();
 		self.stream.append_all(quote! {
-			::revision::Revisioned::serialize_revisioned(#name,writer)?;
+			::revision::SerializeRevisioned::serialize_revisioned(#name,writer)?;
 		});
 
 		Ok(())
@@ -160,7 +160,7 @@ impl<'a, 'ast> Visit<'ast> for SerializeVariant<'a> {
 
 				self.stream.append_all(quote! {
 					=> {
-						::revision::Revisioned::serialize_revisioned(&#discr,writer)?;
+						::revision::SerializeRevisioned::serialize_revisioned(&#discr,writer)?;
 						#fields_ser
 						Ok(())
 					},
@@ -189,7 +189,7 @@ impl<'a, 'ast> Visit<'ast> for SerializeVariant<'a> {
 
 				self.stream.append_all(quote! {
 					=> {
-						::revision::Revisioned::serialize_revisioned(&#discr,writer)?;
+						::revision::SerializeRevisioned::serialize_revisioned(&#discr,writer)?;
 						#fields_ser
 						Ok(())
 					}
@@ -197,7 +197,7 @@ impl<'a, 'ast> Visit<'ast> for SerializeVariant<'a> {
 			}
 			Fields::Unit => {
 				self.stream.append_all(quote! { => {
-					::revision::Revisioned::serialize_revisioned(&#discr,writer)?;
+					::revision::SerializeRevisioned::serialize_revisioned(&#discr,writer)?;
 					Ok(())
 				}});
 			}

@@ -1,8 +1,11 @@
+use crate::DeserializeRevisioned;
+use crate::SerializeRevisioned;
+
 use super::super::Error;
 use super::super::Revisioned;
 use std::ops::Bound;
 
-impl<T: Revisioned> Revisioned for Bound<T> {
+impl<T: SerializeRevisioned> SerializeRevisioned for Bound<T> {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		match *self {
@@ -17,7 +20,9 @@ impl<T: Revisioned> Revisioned for Bound<T> {
 			}
 		}
 	}
+}
 
+impl<T: DeserializeRevisioned> DeserializeRevisioned for Bound<T> {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let variant = u32::deserialize_revisioned(reader)?;
@@ -34,7 +39,9 @@ impl<T: Revisioned> Revisioned for Bound<T> {
 			_ => Err(Error::Deserialize("Unknown variant index".to_string())),
 		}
 	}
+}
 
+impl<T: Revisioned> Revisioned for Bound<T> {
 	fn revision() -> u16 {
 		1
 	}
@@ -42,9 +49,7 @@ impl<T: Revisioned> Revisioned for Bound<T> {
 
 #[cfg(test)]
 mod tests {
-
-	use super::Bound;
-	use super::Revisioned;
+	use super::*;
 
 	#[test]
 	fn test_bound_unbounded() {
@@ -53,7 +58,7 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 1);
 		let out =
-			<Bound<String> as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<Bound<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -64,7 +69,7 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 16);
 		let out =
-			<Bound<String> as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<Bound<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -75,7 +80,7 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 16);
 		let out =
-			<Bound<String> as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<Bound<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 }

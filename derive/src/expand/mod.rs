@@ -94,18 +94,16 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 		#reexport
 		#deserialize_structs
 
-		impl ::revision::Revisioned for #name {
-			fn revision() -> u16{
-				#revision
-			}
-
+		impl ::revision::SerializeRevisioned for #name {
 			fn serialize_revisioned<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::result::Result<(), ::revision::Error> {
-				::revision::Revisioned::serialize_revisioned(&Self::revision(),writer)?;
+				::revision::SerializeRevisioned::serialize_revisioned(&<Self as ::revision::Revisioned>::revision(),writer)?;
 				#serialize
 			}
+		}
 
+		impl ::revision::DeserializeRevisioned for #name {
 			fn deserialize_revisioned<R: ::std::io::Read>(reader: &mut R) -> ::std::result::Result<Self, ::revision::Error> {
-				let __revision = <u16 as ::revision::Revisioned>::deserialize_revisioned(reader)?;
+				let __revision = <u16 as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
 				match __revision {
 					#(#deserialize)*
 					x => {
@@ -114,6 +112,12 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 						))
 					}
 				}
+			}
+		}
+
+		impl ::revision::Revisioned for #name {
+			fn revision() -> u16{
+				#revision
 			}
 		}
 	})

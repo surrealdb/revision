@@ -1,5 +1,5 @@
 use super::super::Error;
-use super::super::Revisioned;
+use super::super::{Revisioned, SerializeRevisioned, DeserializeRevisioned};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::BinaryHeap;
@@ -8,8 +8,8 @@ use std::collections::HashSet;
 use std::hash::BuildHasher;
 use std::hash::Hash;
 
-impl<K: Revisioned + Eq + Hash, V: Revisioned, S: BuildHasher + Default> Revisioned
-	for HashMap<K, V, S>
+impl<K: SerializeRevisioned + Eq + Hash, V: SerializeRevisioned> SerializeRevisioned
+	for HashMap<K, V>
 {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
@@ -20,11 +20,15 @@ impl<K: Revisioned + Eq + Hash, V: Revisioned, S: BuildHasher + Default> Revisio
 		}
 		Ok(())
 	}
+}
 
+impl<K: DeserializeRevisioned + Eq + Hash, V: DeserializeRevisioned> DeserializeRevisioned
+	for HashMap<K, V>
+{
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
-		let mut map = Self::with_capacity_and_hasher(len, S::default());
+		let mut map = Self::with_capacity(len);
 		for _ in 0..len {
 			let k = K::deserialize_revisioned(reader)?;
 			let v = V::deserialize_revisioned(reader)?;
@@ -32,13 +36,19 @@ impl<K: Revisioned + Eq + Hash, V: Revisioned, S: BuildHasher + Default> Revisio
 		}
 		Ok(map)
 	}
+}
 
+impl<K: Revisioned + Eq + Hash, V: Revisioned, S: BuildHasher + Default> Revisioned
+	for HashMap<K, V, S>
+{
 	fn revision() -> u16 {
 		1
 	}
 }
 
-impl<K: Revisioned + Ord, V: Revisioned> Revisioned for BTreeMap<K, V> {
+impl<K: SerializeRevisioned + Ord, V: SerializeRevisioned> SerializeRevisioned
+	for BTreeMap<K, V>
+{
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.len().serialize_revisioned(writer)?;
@@ -48,11 +58,15 @@ impl<K: Revisioned + Ord, V: Revisioned> Revisioned for BTreeMap<K, V> {
 		}
 		Ok(())
 	}
+}
 
+impl<K: DeserializeRevisioned + Ord, V: DeserializeRevisioned> DeserializeRevisioned
+	for BTreeMap<K, V>
+{
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
-		let mut map = BTreeMap::new();
+		let mut map = Self::new();
 		for _ in 0..len {
 			let k = K::deserialize_revisioned(reader)?;
 			let v = V::deserialize_revisioned(reader)?;
@@ -60,13 +74,15 @@ impl<K: Revisioned + Ord, V: Revisioned> Revisioned for BTreeMap<K, V> {
 		}
 		Ok(map)
 	}
+}
 
+impl<K: Revisioned + Ord, V: Revisioned> Revisioned for BTreeMap<K, V> {
 	fn revision() -> u16 {
 		1
 	}
 }
 
-impl<T: Revisioned + Eq + Hash, S: BuildHasher + Default> Revisioned for HashSet<T, S> {
+impl<T: SerializeRevisioned + Eq + Hash> SerializeRevisioned for HashSet<T> {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.len().serialize_revisioned(writer)?;
@@ -75,24 +91,28 @@ impl<T: Revisioned + Eq + Hash, S: BuildHasher + Default> Revisioned for HashSet
 		}
 		Ok(())
 	}
+}
 
+impl<T: DeserializeRevisioned + Eq + Hash> DeserializeRevisioned for HashSet<T> {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
-		let mut set = Self::with_capacity_and_hasher(len, S::default());
+		let mut set = Self::with_capacity(len);
 		for _ in 0..len {
 			let v = T::deserialize_revisioned(reader)?;
 			set.insert(v);
 		}
 		Ok(set)
 	}
+}
 
+impl<T: Revisioned + Eq + Hash, S: BuildHasher + Default> Revisioned for HashSet<T, S> {
 	fn revision() -> u16 {
 		1
 	}
 }
 
-impl<T: Revisioned + Eq + Ord> Revisioned for BTreeSet<T> {
+impl<T: SerializeRevisioned + Ord> SerializeRevisioned for BTreeSet<T> {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.len().serialize_revisioned(writer)?;
@@ -101,7 +121,9 @@ impl<T: Revisioned + Eq + Ord> Revisioned for BTreeSet<T> {
 		}
 		Ok(())
 	}
+}
 
+impl<T: DeserializeRevisioned + Ord> DeserializeRevisioned for BTreeSet<T> {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
@@ -112,13 +134,15 @@ impl<T: Revisioned + Eq + Ord> Revisioned for BTreeSet<T> {
 		}
 		Ok(set)
 	}
+}
 
+impl<T: Revisioned + Eq + Ord> Revisioned for BTreeSet<T> {
 	fn revision() -> u16 {
 		1
 	}
 }
 
-impl<T: Revisioned + Ord> Revisioned for BinaryHeap<T> {
+impl<T: SerializeRevisioned + Ord> SerializeRevisioned for BinaryHeap<T> {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.len().serialize_revisioned(writer)?;
@@ -127,18 +151,22 @@ impl<T: Revisioned + Ord> Revisioned for BinaryHeap<T> {
 		}
 		Ok(())
 	}
+}
 
+impl<T: DeserializeRevisioned + Ord> DeserializeRevisioned for BinaryHeap<T> {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
-		let mut heap = BinaryHeap::with_capacity(len);
+		let mut heap = Self::with_capacity(len);
 		for _ in 0..len {
 			let v = T::deserialize_revisioned(reader)?;
 			heap.push(v);
 		}
 		Ok(heap)
 	}
+}
 
+impl<T: Revisioned + Ord> Revisioned for BinaryHeap<T> {
 	fn revision() -> u16 {
 		1
 	}
@@ -147,12 +175,7 @@ impl<T: Revisioned + Ord> Revisioned for BinaryHeap<T> {
 #[cfg(test)]
 mod tests {
 
-	use super::BTreeMap;
-	use super::BTreeSet;
-	use super::BinaryHeap;
-	use super::HashMap;
-	use super::HashSet;
-	use super::Revisioned;
+	use super::*;
 
 	#[test]
 	fn test_hashmap() {
@@ -163,7 +186,7 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 61);
 		let out =
-			<HashMap<String, Vec<f64>> as Revisioned>::deserialize_revisioned(&mut mem.as_slice())
+			<HashMap<String, Vec<f64>> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 				.unwrap();
 		assert_eq!(val, out);
 	}
@@ -177,7 +200,7 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 61);
 		let out =
-			<BTreeMap<String, Vec<f64>> as Revisioned>::deserialize_revisioned(&mut mem.as_slice())
+			<BTreeMap<String, Vec<f64>> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 				.unwrap();
 		assert_eq!(val, out);
 	}
@@ -191,7 +214,7 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 11);
 		let out =
-			<HashSet<String> as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<HashSet<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -204,7 +227,7 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 11);
 		let out =
-			<BTreeSet<String> as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<BTreeSet<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -216,7 +239,7 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 11);
-		let out = <BinaryHeap<String> as Revisioned>::deserialize_revisioned(&mut mem.as_slice())
+		let out = <BinaryHeap<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 			.unwrap();
 		assert_eq!(val.into_sorted_vec(), out.into_sorted_vec());
 	}
