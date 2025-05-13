@@ -28,17 +28,17 @@ impl Revisioned for String {
 
 impl SerializeRevisioned for char {
 	#[inline]
-	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		let mut buffer = [0u8; 4];
-		writer.write_all(self.encode_utf8(&mut buffer).as_bytes()).map_err(Error::Io)
+	fn serialize_revisioned<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
+		let buffer = &mut [0u8; 4];
+		w.write_all(self.encode_utf8(buffer).as_bytes()).map_err(Error::Io)
 	}
 }
 
 impl DeserializeRevisioned for char {
 	#[inline]
-	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+	fn deserialize_revisioned<R: std::io::Read>(r: &mut R) -> Result<Self, Error> {
 		let mut buffer = [0u8; 4];
-		reader.read_exact(&mut buffer[..1]).map_err(Error::Io)?;
+		r.read_exact(&mut buffer[..1]).map_err(Error::Io)?;
 
 		let len = CHAR_LENGTH[buffer[0] as usize];
 
@@ -46,7 +46,7 @@ impl DeserializeRevisioned for char {
 			return Err(Error::InvalidCharEncoding);
 		}
 
-		reader.read_exact(&mut buffer[1..(len as usize)]).map_err(Error::Io)?;
+		r.read_exact(&mut buffer[1..(len as usize)]).map_err(Error::Io)?;
 
 		str::from_utf8(&buffer[..(len as usize)])
 			.map_err(|_| Error::InvalidCharEncoding)

@@ -22,13 +22,13 @@ impl<K: SerializeRevisioned + Eq + Hash, V: SerializeRevisioned> SerializeRevisi
 	}
 }
 
-impl<K: DeserializeRevisioned + Eq + Hash, V: DeserializeRevisioned> DeserializeRevisioned
-	for HashMap<K, V>
+impl<K: DeserializeRevisioned + Eq + Hash, V: DeserializeRevisioned, S: BuildHasher + Default>
+	DeserializeRevisioned for HashMap<K, V, S>
 {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
-		let mut map = Self::with_capacity(len);
+		let mut map = Self::with_capacity_and_hasher(len, S::default());
 		for _ in 0..len {
 			let k = K::deserialize_revisioned(reader)?;
 			let v = V::deserialize_revisioned(reader)?;
@@ -82,7 +82,9 @@ impl<K: Revisioned + Ord, V: Revisioned> Revisioned for BTreeMap<K, V> {
 	}
 }
 
-impl<T: SerializeRevisioned + Eq + Hash> SerializeRevisioned for HashSet<T> {
+impl<T: SerializeRevisioned + Eq + Hash, S: BuildHasher + Default> SerializeRevisioned
+	for HashSet<T, S>
+{
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.len().serialize_revisioned(writer)?;
@@ -93,11 +95,13 @@ impl<T: SerializeRevisioned + Eq + Hash> SerializeRevisioned for HashSet<T> {
 	}
 }
 
-impl<T: DeserializeRevisioned + Eq + Hash> DeserializeRevisioned for HashSet<T> {
+impl<T: DeserializeRevisioned + Eq + Hash, S: BuildHasher + Default> DeserializeRevisioned
+	for HashSet<T, S>
+{
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
-		let mut set = Self::with_capacity(len);
+		let mut set = Self::with_capacity_and_hasher(len, S::default());
 		for _ in 0..len {
 			let v = T::deserialize_revisioned(reader)?;
 			set.insert(v);

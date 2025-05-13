@@ -53,7 +53,7 @@ macro_rules! impl_tuple {
 			#[inline]
 			#[allow(non_snake_case)]
 			fn serialize_revisioned<W: std::io::Write>(&self, _writer: &mut W) -> Result<(), Error> {
-				let ($(ref $n),*) = *self;
+				let ($(ref $n),*) = self;
 				$(
 					$n.serialize_revisioned(_writer)?;
 				)*
