@@ -9,7 +9,7 @@ pub struct Reexport<'a> {
 	pub revision: usize,
 	pub stream: &'a mut TokenStream,
 }
-impl<'a, 'ast> Visit<'ast> for Reexport<'a> {
+impl<'ast> Visit<'ast> for Reexport<'_> {
 	fn visit_item(&mut self, i: &'ast ast::Item) -> syn::Result<()> {
 		for attr in i.attrs.other.iter() {
 			attr.to_tokens(self.stream)
@@ -146,7 +146,9 @@ impl<'a, 'ast> Visit<'ast> for Reexport<'a> {
 			ast::FieldName::Ident(ref x) => x.to_tokens(self.stream),
 			ast::FieldName::Index(_) => {}
 		}
-		i.colon_token.map(|x| x.to_tokens(self.stream));
+		if let Some(x) = i.colon_token {
+			x.to_tokens(self.stream);
+		}
 		i.ty.to_tokens(self.stream);
 		Ok(())
 	}

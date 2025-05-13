@@ -26,6 +26,7 @@ impl DeserializeRevisioned for PathBuf {
 }
 
 impl Revisioned for PathBuf {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

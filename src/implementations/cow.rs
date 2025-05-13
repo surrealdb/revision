@@ -32,6 +32,7 @@ where
 	T: Sized + ToOwned + Revisioned,
 	T::Owned: Revisioned,
 {
+	#[inline]
 	fn revision() -> u16 {
 		T::revision()
 	}

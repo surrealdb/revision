@@ -21,6 +21,7 @@ impl DeserializeRevisioned for Regex {
 }
 
 impl Revisioned for Regex {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

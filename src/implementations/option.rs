@@ -39,6 +39,7 @@ impl<T> Revisioned for Option<T>
 where
 	T: Revisioned,
 {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

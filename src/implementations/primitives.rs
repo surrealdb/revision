@@ -3,6 +3,7 @@ use std::io;
 use super::super::Revisioned;
 use crate::{DeserializeRevisioned, Error, SerializeRevisioned};
 
+#[inline]
 pub fn read_buffer<const COUNT: usize, R: io::Read>(reader: &mut R) -> Result<[u8; COUNT], Error> {
 	let mut buffer = [0u8; COUNT];
 	reader.read_exact(&mut buffer).map_err(Error::Io)?;
@@ -137,6 +138,7 @@ where
 }
 
 impl SerializeRevisioned for bool {
+	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
 		let v = *self as u8;
 		w.write(&[v]).map_err(Error::Io)?;
@@ -145,6 +147,7 @@ impl SerializeRevisioned for bool {
 }
 
 impl DeserializeRevisioned for bool {
+	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(r: &mut R) -> Result<Self, Error> {
 		let buffer = read_buffer::<1, _>(r)?;
 		match buffer[0] {
@@ -156,18 +159,21 @@ impl DeserializeRevisioned for bool {
 }
 
 impl Revisioned for bool {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
 impl SerializeRevisioned for usize {
+	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
 		((*self) as u64).serialize_revisioned(w)
 	}
 }
 
 impl DeserializeRevisioned for usize {
+	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(r: &mut R) -> Result<Self, Error>
 	where
 		Self: Sized,
@@ -177,18 +183,21 @@ impl DeserializeRevisioned for usize {
 }
 
 impl Revisioned for usize {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
 impl SerializeRevisioned for isize {
+	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
 		((*self) as i64).serialize_revisioned(w)
 	}
 }
 
 impl DeserializeRevisioned for isize {
+	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(r: &mut R) -> Result<Self, Error>
 	where
 		Self: Sized,
@@ -198,18 +207,21 @@ impl DeserializeRevisioned for isize {
 }
 
 impl Revisioned for isize {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
 impl SerializeRevisioned for u8 {
+	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		writer.write_all(&[*self]).map_err(Error::Io)
 	}
 }
 
 impl DeserializeRevisioned for u8 {
+	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error>
 	where
 		Self: Sized,
@@ -219,18 +231,21 @@ impl DeserializeRevisioned for u8 {
 }
 
 impl Revisioned for u8 {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
 impl SerializeRevisioned for i8 {
+	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		writer.write_all(&[*self as u8]).map_err(Error::Io)
 	}
 }
 
 impl DeserializeRevisioned for i8 {
+	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error>
 	where
 		Self: Sized,
@@ -240,6 +255,7 @@ impl DeserializeRevisioned for i8 {
 }
 
 impl Revisioned for i8 {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -265,6 +281,7 @@ macro_rules! impl_revisioned_int {
 		}
 
 		impl Revisioned for $ty {
+			#[inline]
 			fn revision() -> u16 {
 				1
 			}
@@ -293,6 +310,7 @@ macro_rules! impl_revisioned_signed_int {
 		}
 
 		impl Revisioned for $ty {
+			#[inline]
 			fn revision() -> u16 {
 				1
 			}
@@ -309,12 +327,14 @@ impl_revisioned_signed_int!(i32);
 impl_revisioned_signed_int!(i64);
 
 impl SerializeRevisioned for i128 {
+	#[inline]
 	fn serialize_revisioned<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		encode_u128(writer, zigzag_128(*self))
 	}
 }
 
 impl DeserializeRevisioned for i128 {
+	#[inline]
 	fn deserialize_revisioned<R: io::Read>(reader: &mut R) -> Result<Self, Error>
 	where
 		Self: Sized,
@@ -324,18 +344,21 @@ impl DeserializeRevisioned for i128 {
 }
 
 impl Revisioned for i128 {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
 impl SerializeRevisioned for u128 {
+	#[inline]
 	fn serialize_revisioned<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		encode_u128(writer, *self)
 	}
 }
 
 impl DeserializeRevisioned for u128 {
+	#[inline]
 	fn deserialize_revisioned<R: io::Read>(reader: &mut R) -> Result<Self, Error>
 	where
 		Self: Sized,
@@ -345,12 +368,14 @@ impl DeserializeRevisioned for u128 {
 }
 
 impl Revisioned for u128 {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
 impl SerializeRevisioned for f32 {
+	#[inline]
 	fn serialize_revisioned<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		let bytes = self.to_le_bytes();
 		writer.write_all(&bytes).map_err(Error::Io)
@@ -358,6 +383,7 @@ impl SerializeRevisioned for f32 {
 }
 
 impl DeserializeRevisioned for f32 {
+	#[inline]
 	fn deserialize_revisioned<R: io::Read>(reader: &mut R) -> Result<Self, Error>
 	where
 		Self: Sized,
@@ -368,12 +394,14 @@ impl DeserializeRevisioned for f32 {
 }
 
 impl Revisioned for f32 {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
 impl SerializeRevisioned for f64 {
+	#[inline]
 	fn serialize_revisioned<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		let bytes = self.to_le_bytes();
 		writer.write_all(&bytes).map_err(Error::Io)
@@ -381,6 +409,7 @@ impl SerializeRevisioned for f64 {
 }
 
 impl DeserializeRevisioned for f64 {
+	#[inline]
 	fn deserialize_revisioned<R: io::Read>(reader: &mut R) -> Result<Self, Error>
 	where
 		Self: Sized,
@@ -391,6 +420,7 @@ impl DeserializeRevisioned for f64 {
 }
 
 impl Revisioned for f64 {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

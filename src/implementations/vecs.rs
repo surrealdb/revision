@@ -46,6 +46,7 @@ impl<T> Revisioned for Vec<T>
 where
 	T: Revisioned,
 {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

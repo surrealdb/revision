@@ -37,6 +37,7 @@ macro_rules! impl_tuple {
 		impl<$($n),*> Revisioned for ($($n,)*)
 			where $($n: Revisioned),*
 		{
+			#[inline]
 			fn revision() -> u16{
 				1
 			}
@@ -76,6 +77,7 @@ macro_rules! impl_tuple {
 		impl<$($n),*> Revisioned for ($($n),*)
 			where $($n: Revisioned),*
 		{
+			#[inline]
 			fn revision() -> u16{
 				1
 			}

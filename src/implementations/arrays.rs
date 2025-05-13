@@ -36,6 +36,7 @@ macro_rules! impl_revisioned_array_with_size {
 		where
 			T: Copy + Default + Revisioned,
 		{
+			#[inline]
 			fn revision() -> u16 {
 				1
 			}

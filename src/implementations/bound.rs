@@ -42,6 +42,7 @@ impl<T: DeserializeRevisioned> DeserializeRevisioned for Bound<T> {
 }
 
 impl<T: Revisioned> Revisioned for Bound<T> {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

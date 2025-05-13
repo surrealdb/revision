@@ -23,6 +23,7 @@ impl DeserializeRevisioned for Duration {
 }
 
 impl Revisioned for Duration {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

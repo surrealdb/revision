@@ -20,6 +20,7 @@ impl DeserializeRevisioned for String {
 }
 
 impl Revisioned for String {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -54,6 +55,7 @@ impl DeserializeRevisioned for char {
 }
 
 impl Revisioned for char {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

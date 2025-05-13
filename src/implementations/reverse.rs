@@ -29,6 +29,7 @@ impl<T> Revisioned for Reverse<T>
 where
 	T: Revisioned,
 {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

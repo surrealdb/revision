@@ -28,6 +28,7 @@ impl<T> Revisioned for Box<T>
 where
 	T: Revisioned,
 {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

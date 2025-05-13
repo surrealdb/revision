@@ -19,6 +19,7 @@ impl DeserializeRevisioned for RoaringTreemap {
 }
 
 impl Revisioned for RoaringTreemap {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -39,6 +40,7 @@ impl DeserializeRevisioned for RoaringBitmap {
 }
 
 impl Revisioned for RoaringBitmap {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

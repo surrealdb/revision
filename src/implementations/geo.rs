@@ -26,6 +26,7 @@ impl DeserializeRevisioned for Coord {
 }
 
 impl Revisioned for Coord {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -46,6 +47,7 @@ impl DeserializeRevisioned for Point {
 }
 
 impl Revisioned for Point {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -66,6 +68,7 @@ impl DeserializeRevisioned for LineString {
 }
 
 impl Revisioned for LineString {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -90,6 +93,7 @@ impl DeserializeRevisioned for Polygon {
 }
 
 impl Revisioned for Polygon {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -110,6 +114,7 @@ impl DeserializeRevisioned for MultiPoint {
 }
 
 impl Revisioned for MultiPoint {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -130,6 +135,7 @@ impl DeserializeRevisioned for MultiLineString {
 }
 
 impl Revisioned for MultiLineString {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -150,6 +156,7 @@ impl DeserializeRevisioned for MultiPolygon {
 }
 
 impl Revisioned for MultiPolygon {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

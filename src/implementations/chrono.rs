@@ -25,6 +25,7 @@ impl DeserializeRevisioned for DateTime<Utc> {
 }
 
 impl Revisioned for DateTime<Utc> {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -52,6 +53,7 @@ impl DeserializeRevisioned for NaiveDate {
 }
 
 impl Revisioned for NaiveDate {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -81,6 +83,7 @@ impl DeserializeRevisioned for NaiveTime {
 }
 
 impl Revisioned for NaiveTime {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -121,6 +124,7 @@ impl DeserializeRevisioned for Duration {
 }
 
 impl Revisioned for Duration {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

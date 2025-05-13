@@ -6,7 +6,7 @@ use syn::{
 	parse::{Parse, ParseStream},
 	punctuated::Punctuated,
 	spanned::Spanned,
-	token, Attribute, Error, LitInt, LitStr, Token,
+	token, Attribute, Error, LitBool, LitInt, LitStr, Token,
 };
 
 mod kw {
@@ -19,6 +19,8 @@ mod kw {
 	syn::custom_keyword!(variant_index);
 	syn::custom_keyword!(order);
 	syn::custom_keyword!(discriminant);
+	syn::custom_keyword!(serialize);
+	syn::custom_keyword!(deserialize);
 }
 
 #[derive(Debug)]
@@ -233,10 +235,14 @@ impl AttributeOptions for FieldOptions {
 #[derive(Debug)]
 pub struct ItemOptions {
 	pub revision: Option<usize>,
+	pub serialize: bool,
+	pub deserialize: bool,
 }
 
 pub enum ItemOption {
 	Revision(ValueOption<kw::revision, LitInt>),
+	Serialize(ValueOption<kw::serialize, LitBool>),
+	Deserialize(ValueOption<kw::deserialize, LitBool>),
 }
 
 impl Parse for ItemOption {
@@ -244,8 +250,14 @@ impl Parse for ItemOption {
 		if input.peek(kw::revision) {
 			return Ok(ItemOption::Revision(input.parse()?));
 		}
+		if input.peek(kw::serialize) {
+			return Ok(ItemOption::Serialize(input.parse()?));
+		}
+		if input.peek(kw::deserialize) {
+			return Ok(ItemOption::Deserialize(input.parse()?));
+		}
 
-		return Err(input.error("invalid item option"));
+		Err(input.error("invalid item option"))
 	}
 }
 
@@ -254,6 +266,8 @@ impl AttributeOptions for ItemOptions {
 
 	fn finish(_path: Span, options: Vec<Self::Option>) -> syn::Result<Self> {
 		let mut revision = None;
+		let mut serialize = true;
+		let mut deserialize = true;
 
 		for option in options {
 			match option {
@@ -264,11 +278,19 @@ impl AttributeOptions for ItemOptions {
 
 					revision = Some(x.value.base10_parse()?);
 				}
+				ItemOption::Serialize(x) => {
+					serialize = x.value.value();
+				}
+				ItemOption::Deserialize(x) => {
+					deserialize = x.value.value();
+				}
 			}
 		}
 
 		Ok(Self {
 			revision,
+			serialize,
+			deserialize,
 		})
 	}
 }

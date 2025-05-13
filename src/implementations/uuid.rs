@@ -21,6 +21,7 @@ impl DeserializeRevisioned for Uuid {
 }
 
 impl Revisioned for Uuid {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

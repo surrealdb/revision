@@ -19,7 +19,7 @@ use std::any::TypeId;
 use std::io::{Read, Write};
 
 pub mod prelude {
-	pub use super::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
+	pub use crate::{revisioned, DeserializeRevisioned, Revisioned, SerializeRevisioned};
 }
 
 /// Trait that provides an interface for version aware serialization and deserialization.
@@ -37,7 +37,7 @@ pub mod prelude {
 /// {
 ///    #[inline]
 ///   fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-/// 	  self.0.serialize_revisioned(writer)
+///       self.0.serialize_revisioned(writer)
 ///   }
 /// }
 ///
@@ -47,7 +47,7 @@ pub mod prelude {
 /// {
 ///   #[inline]
 ///   fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-/// 	  Ok(MyType(T::deserialize_revisioned(reader)?))
+///       Ok(MyType(T::deserialize_revisioned(reader)?))
 ///   }
 /// }
 ///
@@ -64,6 +64,7 @@ pub trait Revisioned {
 	/// Returns the current revision of this type.
 	fn revision() -> u16;
 	/// Returns the type id of this type.
+	#[inline]
 	fn type_id() -> std::any::TypeId
 	where
 		Self: 'static,
@@ -85,6 +86,7 @@ pub trait DeserializeRevisioned {
 }
 
 /// Deserialize a revisioned type from a reader
+#[inline]
 pub fn from_reader<R, T>(rdr: &mut R) -> Result<T, Error>
 where
 	R: Read,
@@ -94,6 +96,7 @@ where
 }
 
 /// Deserialize a revisioned type from a slice of bytes
+#[inline]
 pub fn from_slice<T>(mut bytes: &[u8]) -> Result<T, Error>
 where
 	T: DeserializeRevisioned,
@@ -102,6 +105,7 @@ where
 }
 
 /// Serialize a revisioned type into a vec of bytes
+#[inline]
 pub fn to_writer<W, T>(writer: &mut W, t: &T) -> Result<(), Error>
 where
 	W: Write,
@@ -111,6 +115,7 @@ where
 }
 
 /// Serialize a revisioned type into a vec of bytes
+#[inline]
 pub fn to_vec<T>(t: &T) -> Result<Vec<u8>, Error>
 where
 	T: SerializeRevisioned,

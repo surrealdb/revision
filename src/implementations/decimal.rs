@@ -21,6 +21,7 @@ impl DeserializeRevisioned for Decimal {
 }
 
 impl Revisioned for Decimal {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

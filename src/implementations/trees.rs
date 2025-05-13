@@ -41,6 +41,7 @@ impl<K: DeserializeRevisioned + Eq + Hash, V: DeserializeRevisioned> Deserialize
 impl<K: Revisioned + Eq + Hash, V: Revisioned, S: BuildHasher + Default> Revisioned
 	for HashMap<K, V, S>
 {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -75,6 +76,7 @@ impl<K: DeserializeRevisioned + Ord, V: DeserializeRevisioned> DeserializeRevisi
 }
 
 impl<K: Revisioned + Ord, V: Revisioned> Revisioned for BTreeMap<K, V> {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -105,6 +107,7 @@ impl<T: DeserializeRevisioned + Eq + Hash> DeserializeRevisioned for HashSet<T> 
 }
 
 impl<T: Revisioned + Eq + Hash, S: BuildHasher + Default> Revisioned for HashSet<T, S> {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -135,6 +138,7 @@ impl<T: DeserializeRevisioned + Ord> DeserializeRevisioned for BTreeSet<T> {
 }
 
 impl<T: Revisioned + Eq + Ord> Revisioned for BTreeSet<T> {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -165,6 +169,7 @@ impl<T: DeserializeRevisioned + Ord> DeserializeRevisioned for BinaryHeap<T> {
 }
 
 impl<T: Revisioned + Ord> Revisioned for BinaryHeap<T> {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

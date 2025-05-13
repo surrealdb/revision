@@ -26,6 +26,7 @@ pub enum Error {
 }
 
 impl std::error::Error for Error {
+	#[inline]
 	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
 		match self {
 			Error::Io(ref x) => Some(x),
@@ -36,6 +37,7 @@ impl std::error::Error for Error {
 }
 
 impl std::fmt::Display for Error {
+	#[inline]
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
 		match self {
 			Self::Io(e) => write!(f, "An IO error occured: {}", e),

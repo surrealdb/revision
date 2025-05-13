@@ -35,6 +35,7 @@ impl<E: DeserializeRevisioned, T: DeserializeRevisioned> DeserializeRevisioned f
 }
 
 impl<E: Revisioned, T: Revisioned> Revisioned for Result<T, E> {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}

@@ -192,6 +192,48 @@ pub struct Tester4 {
 	wrapping_1: Wrapping<u32>,
 }
 
+#[revisioned(revision = 1)]
+#[derive(Debug, PartialEq)]
+pub struct TestSerializeAndDeserialize {
+	usize_1: usize,
+}
+
+#[revisioned(revision = 1, serialize = false)]
+#[derive(Debug, PartialEq)]
+pub struct TestDeserializeOnly {
+	usize_1: usize,
+}
+
+impl PartialEq<TestDeserializeOnly> for TestSerializeAndDeserialize {
+	fn eq(&self, other: &TestDeserializeOnly) -> bool {
+		self.usize_1 == other.usize_1
+	}
+}
+
+impl PartialEq<TestSerializeAndDeserialize> for TestDeserializeOnly {
+	fn eq(&self, other: &TestSerializeAndDeserialize) -> bool {
+		self.usize_1 == other.usize_1
+	}
+}
+
+#[revisioned(revision = 1, deserialize = false)]
+#[derive(Debug, PartialEq)]
+pub struct TestSerializeOnly {
+	usize_1: usize,
+}
+
+impl PartialEq<TestSerializeOnly> for TestSerializeAndDeserialize {
+	fn eq(&self, other: &TestSerializeOnly) -> bool {
+		self.usize_1 == other.usize_1
+	}
+}
+
+impl PartialEq<TestSerializeAndDeserialize> for TestSerializeOnly {
+	fn eq(&self, other: &TestSerializeAndDeserialize) -> bool {
+		self.usize_1 == other.usize_1
+	}
+}
+
 impl Tester4 {
 	pub fn default_bool(_revision: u16) -> Result<bool, revision::Error> {
 		Ok(true)
@@ -352,4 +394,30 @@ fn test_enum() {
 	let result = Tester4::deserialize_revisioned(&mut data_4.as_slice());
 	assert!(result.is_ok());
 	assert_eq!(result.unwrap(), version_final);
+}
+
+#[test]
+fn test_serialize_disabled() {
+	let val = TestSerializeAndDeserialize {
+		usize_1: 57918374,
+	};
+	let mut mem: Vec<u8> = vec![];
+	val.serialize_revisioned(&mut mem).unwrap();
+	assert_eq!(mem.len(), 6);
+
+	let out = TestDeserializeOnly::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+	assert_eq!(val, out);
+}
+
+#[test]
+fn test_deserialize_disabled() {
+	let val = TestSerializeOnly {
+		usize_1: 57918374,
+	};
+	let mut mem: Vec<u8> = vec![];
+	val.serialize_revisioned(&mut mem).unwrap();
+	assert_eq!(mem.len(), 6);
+
+	let out = TestSerializeAndDeserialize::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+	assert_eq!(val, out);
 }
