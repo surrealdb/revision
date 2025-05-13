@@ -431,7 +431,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 1);
-		let out = <bool as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<bool as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -441,7 +442,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 9);
-		let out = <isize as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<isize as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -451,7 +453,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 1);
-		let out = <i8 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<i8 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -461,7 +464,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 3);
-		let out = <i16 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<i16 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -471,7 +475,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 5);
-		let out = <i32 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<i32 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -481,7 +486,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 9);
-		let out = <i64 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<i64 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -491,7 +497,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 17);
-		let out = <i128 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<i128 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -501,7 +508,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 9);
-		let out = <usize as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<usize as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -511,7 +519,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 1);
-		let out = <u8 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<u8 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -521,7 +530,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 3);
-		let out = <u16 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<u16 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -531,7 +541,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 5);
-		let out = <u32 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<u32 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -541,7 +552,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 9);
-		let out = <u64 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<u64 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -551,7 +563,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 17);
-		let out = <u128 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<u128 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -561,7 +574,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 4);
-		let out = <f32 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<f32 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -571,7 +585,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 8);
-		let out = <f64 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<f64 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -581,7 +596,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 4);
-		let out = <char as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<char as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 

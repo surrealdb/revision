@@ -1,7 +1,7 @@
 #![cfg(feature = "rust_decimal")]
 
 use super::super::Error;
-use super::super::{Revisioned, DeserializeRevisioned, SerializeRevisioned};
+use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
 use rust_decimal::Decimal;
 
 impl SerializeRevisioned for Decimal {
@@ -37,7 +37,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 16);
-		let out = <Decimal as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <Decimal as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -47,7 +48,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 16);
-		let out = <Decimal as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <Decimal as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val, out);
 	}
 }

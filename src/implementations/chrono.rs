@@ -1,7 +1,7 @@
 #![cfg(feature = "chrono")]
 
 use super::super::Error;
-use super::super::{Revisioned, DeserializeRevisioned, SerializeRevisioned};
+use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
 use chrono::{offset::TimeZone, DateTime, Datelike, Duration, NaiveDate, NaiveTime, Timelike, Utc};
 
 impl SerializeRevisioned for DateTime<Utc> {
@@ -137,7 +137,8 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 10);
 		let out =
-			<DateTime<Utc> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<DateTime<Utc> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+				.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -148,7 +149,8 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 14);
 		let out =
-			<DateTime<Utc> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<DateTime<Utc> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+				.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -158,7 +160,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 3);
-		let out = <NaiveDate as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <NaiveDate as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -168,7 +171,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 5);
-		let out = <NaiveDate as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <NaiveDate as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -178,7 +182,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 4);
-		let out = <NaiveTime as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <NaiveTime as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -188,7 +193,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 8);
-		let out = <NaiveTime as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <NaiveTime as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -198,7 +204,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 14);
-		let out = <Duration as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <Duration as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -208,7 +215,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 2);
-		let out = <Duration as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <Duration as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -218,7 +226,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 14);
-		let out = <Duration as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <Duration as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val, out);
 	}
 }

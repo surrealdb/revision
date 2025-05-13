@@ -1,9 +1,9 @@
 #![cfg(feature = "geo")]
 
 use super::super::Error;
-use super::super::{Revisioned, DeserializeRevisioned, SerializeRevisioned};
+use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
 use super::vecs::serialize_slice;
-use geo::{Coord, Point, LineString, Polygon, MultiPoint, MultiLineString, MultiPolygon};
+use geo::{Coord, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon};
 
 impl SerializeRevisioned for Coord {
 	#[inline]

@@ -40,7 +40,7 @@ pub mod prelude {
 /// 	  self.0.serialize_revisioned(writer)
 ///   }
 /// }
-/// 
+///
 /// impl<T> DeserializeRevisioned for MyType<T>
 /// where
 ///    T: DeserializeRevisioned,
@@ -50,7 +50,7 @@ pub mod prelude {
 /// 	  Ok(MyType(T::deserialize_revisioned(reader)?))
 ///   }
 /// }
-/// 
+///
 /// impl<T> Revisioned for MyType<T>
 /// where
 ///     T: Revisioned,
@@ -79,7 +79,9 @@ pub trait SerializeRevisioned {
 
 pub trait DeserializeRevisioned {
 	/// Deserializes a new instance of the struct from the specficifed `reader`.
-	fn deserialize_revisioned<R: Read>(r: &mut R) -> Result<Self, Error> where Self: Sized;
+	fn deserialize_revisioned<R: Read>(r: &mut R) -> Result<Self, Error>
+	where
+		Self: Sized;
 }
 
 /// Deserialize a revisioned type from a reader

@@ -1,5 +1,5 @@
 use super::super::Error;
-use super::super::{Revisioned, SerializeRevisioned, DeserializeRevisioned};
+use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
 
 macro_rules! impl_tuple {
 	($($n:ident),*$(,)?) => {
@@ -100,7 +100,8 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 6);
 		let out =
-			<(String, bool) as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<(String, bool) as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+				.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -111,8 +112,10 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 14);
-		let out = <(String, bool, f64) as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
-			.unwrap();
+		let out = <(String, bool, f64) as DeserializeRevisioned>::deserialize_revisioned(
+			&mut mem.as_slice(),
+		)
+		.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -123,10 +126,11 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 16);
-		let out = <(String, bool, f64, Option<char>) as DeserializeRevisioned>::deserialize_revisioned(
-			&mut mem.as_slice(),
-		)
-		.unwrap();
+		let out =
+			<(String, bool, f64, Option<char>) as DeserializeRevisioned>::deserialize_revisioned(
+				&mut mem.as_slice(),
+			)
+			.unwrap();
 		assert_eq!(val, out);
 	}
 

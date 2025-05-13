@@ -39,7 +39,6 @@ impl<T> Revisioned for Option<T>
 where
 	T: Revisioned,
 {
-
 	fn revision() -> u16 {
 		1
 	}
@@ -57,7 +56,8 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 1);
 		let out =
-			<Option<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<Option<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+				.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -68,7 +68,8 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 16);
 		let out =
-			<Option<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<Option<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+				.unwrap();
 		assert_eq!(val, out);
 	}
 }

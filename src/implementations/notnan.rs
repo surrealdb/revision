@@ -1,7 +1,7 @@
 #![cfg(feature = "ordered-float")]
 
 use super::super::Error;
-use super::super::{Revisioned, DeserializeRevisioned, SerializeRevisioned};
+use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
 use ordered_float::{FloatCore, NotNan};
 
 impl<T> SerializeRevisioned for NotNan<T>
@@ -45,7 +45,9 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 4);
-		let out = <NotNan<f32> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<NotNan<f32> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+				.unwrap();
 		assert_eq!(val, out);
 	}
 }

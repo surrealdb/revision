@@ -1,7 +1,7 @@
 #![cfg(feature = "roaring")]
 
 use super::super::Error;
-use super::super::{Revisioned, DeserializeRevisioned, SerializeRevisioned};
+use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
 use roaring::{RoaringBitmap, RoaringTreemap};
 
 impl SerializeRevisioned for RoaringTreemap {
@@ -55,7 +55,8 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 8);
 		let out =
-			<RoaringTreemap as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<RoaringTreemap as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+				.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -66,7 +67,8 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 8);
 		let out =
-			<RoaringBitmap as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<RoaringBitmap as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+				.unwrap();
 		assert_eq!(val, out);
 	}
 }

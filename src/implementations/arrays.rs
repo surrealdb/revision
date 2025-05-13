@@ -1,11 +1,10 @@
+use super::super::DeserializeRevisioned;
 use super::super::Error;
 use super::super::Revisioned;
 use super::super::SerializeRevisioned;
-use super::super::DeserializeRevisioned;
 
 macro_rules! impl_revisioned_array_with_size {
 	($ty:literal) => {
-
 		impl<T> SerializeRevisioned for [T; $ty]
 		where
 			T: Copy + Default + SerializeRevisioned,

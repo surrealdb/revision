@@ -58,7 +58,8 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 1);
 		let out =
-			<Bound<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<Bound<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+				.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -69,7 +70,8 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 16);
 		let out =
-			<Bound<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<Bound<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+				.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -80,7 +82,8 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 16);
 		let out =
-			<Bound<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<Bound<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+				.unwrap();
 		assert_eq!(val, out);
 	}
 }

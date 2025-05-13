@@ -51,8 +51,10 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 2);
-		let out = <Result<bool, String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
-			.unwrap();
+		let out = <Result<bool, String> as DeserializeRevisioned>::deserialize_revisioned(
+			&mut mem.as_slice(),
+		)
+		.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -62,8 +64,10 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 12);
-		let out = <Result<bool, String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
-			.unwrap();
+		let out = <Result<bool, String> as DeserializeRevisioned>::deserialize_revisioned(
+			&mut mem.as_slice(),
+		)
+		.unwrap();
 		assert_eq!(val, out);
 	}
 }

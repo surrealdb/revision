@@ -1,5 +1,5 @@
 use super::super::Error;
-use super::super::{Revisioned, SerializeRevisioned, DeserializeRevisioned};
+use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::BinaryHeap;
@@ -46,9 +46,7 @@ impl<K: Revisioned + Eq + Hash, V: Revisioned, S: BuildHasher + Default> Revisio
 	}
 }
 
-impl<K: SerializeRevisioned + Ord, V: SerializeRevisioned> SerializeRevisioned
-	for BTreeMap<K, V>
-{
+impl<K: SerializeRevisioned + Ord, V: SerializeRevisioned> SerializeRevisioned for BTreeMap<K, V> {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.len().serialize_revisioned(writer)?;
@@ -185,9 +183,10 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 61);
-		let out =
-			<HashMap<String, Vec<f64>> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
-				.unwrap();
+		let out = <HashMap<String, Vec<f64>> as DeserializeRevisioned>::deserialize_revisioned(
+			&mut mem.as_slice(),
+		)
+		.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -199,9 +198,10 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 61);
-		let out =
-			<BTreeMap<String, Vec<f64>> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
-				.unwrap();
+		let out = <BTreeMap<String, Vec<f64>> as DeserializeRevisioned>::deserialize_revisioned(
+			&mut mem.as_slice(),
+		)
+		.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -214,7 +214,8 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 11);
 		let out =
-			<HashSet<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<HashSet<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+				.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -226,8 +227,10 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 11);
-		let out =
-			<BTreeSet<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <BTreeSet<String> as DeserializeRevisioned>::deserialize_revisioned(
+			&mut mem.as_slice(),
+		)
+		.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -239,8 +242,10 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 11);
-		let out = <BinaryHeap<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
-			.unwrap();
+		let out = <BinaryHeap<String> as DeserializeRevisioned>::deserialize_revisioned(
+			&mut mem.as_slice(),
+		)
+		.unwrap();
 		assert_eq!(val.into_sorted_vec(), out.into_sorted_vec());
 	}
 }
