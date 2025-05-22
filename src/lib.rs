@@ -73,12 +73,12 @@ pub trait Revisioned {
 	}
 }
 
-pub trait SerializeRevisioned {
+pub trait SerializeRevisioned: Revisioned {
 	/// Serializes the struct using the specficifed `writer`.
 	fn serialize_revisioned<W: Write>(&self, w: &mut W) -> Result<(), Error>;
 }
 
-pub trait DeserializeRevisioned {
+pub trait DeserializeRevisioned: Revisioned {
 	/// Deserializes a new instance of the struct from the specficifed `reader`.
 	fn deserialize_revisioned<R: Read>(r: &mut R) -> Result<Self, Error>
 	where
