@@ -60,6 +60,33 @@ mod expand;
 /// and removed in version 3. The generated code will ensure that this field
 /// will only be deserialized for version 2 of the structure.
 ///
+/// ## Disabling serialization or deserialization
+///
+/// You can disable serialization or deserialization of a struct by using the
+/// `#[revision(serialize = false)]` or `#[revision(deserialize = false)]`.
+/// This is useful for data migrations when you no longer want to write the
+/// struct but still want to read it or vice versa.
+///
+/// By default both serialization and deserialization are enabled.
+///
+/// ## Example
+///
+/// ```
+/// use revision::prelude::*;
+///
+/// #[derive(Debug)]
+/// #[revisioned(revision = 2, serialize = false)]
+/// struct ReadOnlyStruct {
+///    a: u32,
+/// }
+///
+/// #[derive(Debug)]
+/// #[revisioned(revision = 2, deserialize = false)]
+/// struct WriteOnlyStruct {
+///    a: u32,
+/// }
+/// ```
+///
 /// ## Supported field attributes and usage
 ///
 /// The struct field and enum variant `revision` attribute accepts several key-
@@ -176,7 +203,7 @@ mod expand;
 ///     }
 ///
 ///     fn convert_variant_three_field(fields: &mut SomeTupleTwoFields, _revision: u16, v: bool) -> Result<(), Error> {
-///			Ok(())
+///         Ok(())
 ///     }
 /// }
 /// ```

@@ -4,8 +4,6 @@ mod reexport;
 mod ser;
 mod validate_version;
 
-use std::u16;
-
 use de::{DeserializeVisitor, EnumStructsVisitor};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
@@ -90,30 +88,50 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 	let revision = revision as u16;
 	let revision_error = format!("Invalid revision `{{}}` for type `{}`", name);
 
+	let serialize_impl = if attrs.0.serialize {
+		quote! {
+			impl ::revision::SerializeRevisioned for #name {
+				fn serialize_revisioned<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::result::Result<(), ::revision::Error> {
+					::revision::SerializeRevisioned::serialize_revisioned(&<Self as ::revision::Revisioned>::revision(),writer)?;
+					#serialize
+				}
+			}
+		}
+	} else {
+		quote! {}
+	};
+
+	let deserialize_impl = if attrs.0.deserialize {
+		quote! {
+			impl ::revision::DeserializeRevisioned for #name {
+				fn deserialize_revisioned<R: ::std::io::Read>(reader: &mut R) -> ::std::result::Result<Self, ::revision::Error> {
+					let __revision = <u16 as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
+					match __revision {
+						#(#deserialize)*
+						x => {
+							return Err(::revision::Error::Deserialize(
+								format!(#revision_error,x)
+							))
+						}
+					}
+				}
+			}
+		}
+	} else {
+		quote! {}
+	};
+
 	Ok(quote! {
 		#reexport
 		#deserialize_structs
 
+		#serialize_impl
+		#deserialize_impl
+
 		impl ::revision::Revisioned for #name {
+			#[inline]
 			fn revision() -> u16{
 				#revision
-			}
-
-			fn serialize_revisioned<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::result::Result<(), ::revision::Error> {
-				::revision::Revisioned::serialize_revisioned(&Self::revision(),writer)?;
-				#serialize
-			}
-
-			fn deserialize_revisioned<R: ::std::io::Read>(reader: &mut R) -> ::std::result::Result<Self, ::revision::Error> {
-				let __revision = <u16 as ::revision::Revisioned>::deserialize_revisioned(reader)?;
-				match __revision {
-					#(#deserialize)*
-					x => {
-						return Err(::revision::Error::Deserialize(
-							format!(#revision_error,x)
-						))
-					}
-				}
 			}
 		}
 	})

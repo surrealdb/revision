@@ -1,8 +1,9 @@
 use std::io;
 
 use super::super::Revisioned;
-use crate::Error;
+use crate::{DeserializeRevisioned, Error, SerializeRevisioned};
 
+#[inline]
 pub fn read_buffer<const COUNT: usize, R: io::Read>(reader: &mut R) -> Result<[u8; COUNT], Error> {
 	let mut buffer = [0u8; COUNT];
 	reader.read_exact(&mut buffer).map_err(Error::Io)?;
@@ -136,21 +137,18 @@ where
 	Ok(v)
 }
 
-impl Revisioned for bool {
-	fn revision() -> u16 {
-		1
-	}
-
+impl SerializeRevisioned for bool {
+	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
 		let v = *self as u8;
 		w.write(&[v]).map_err(Error::Io)?;
 		Ok(())
 	}
+}
 
-	fn deserialize_revisioned<R: std::io::Read>(r: &mut R) -> Result<Self, Error>
-	where
-		Self: Sized,
-	{
+impl DeserializeRevisioned for bool {
+	#[inline]
+	fn deserialize_revisioned<R: std::io::Read>(r: &mut R) -> Result<Self, Error> {
 		let buffer = read_buffer::<1, _>(r)?;
 		match buffer[0] {
 			0 => Ok(false),
@@ -160,15 +158,22 @@ impl Revisioned for bool {
 	}
 }
 
-impl Revisioned for usize {
+impl Revisioned for bool {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
+}
 
+impl SerializeRevisioned for usize {
+	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
 		((*self) as u64).serialize_revisioned(w)
 	}
+}
 
+impl DeserializeRevisioned for usize {
+	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(r: &mut R) -> Result<Self, Error>
 	where
 		Self: Sized,
@@ -177,15 +182,22 @@ impl Revisioned for usize {
 	}
 }
 
-impl Revisioned for isize {
+impl Revisioned for usize {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
+}
 
+impl SerializeRevisioned for isize {
+	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
 		((*self) as i64).serialize_revisioned(w)
 	}
+}
 
+impl DeserializeRevisioned for isize {
+	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(r: &mut R) -> Result<Self, Error>
 	where
 		Self: Sized,
@@ -194,12 +206,21 @@ impl Revisioned for isize {
 	}
 }
 
-impl Revisioned for u8 {
+impl Revisioned for isize {
+	#[inline]
+	fn revision() -> u16 {
+		1
+	}
+}
+
+impl SerializeRevisioned for u8 {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		writer.write_all(&[*self]).map_err(Error::Io)
 	}
+}
 
+impl DeserializeRevisioned for u8 {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error>
 	where
@@ -207,18 +228,23 @@ impl Revisioned for u8 {
 	{
 		Ok(read_buffer::<1, _>(reader)?[0])
 	}
+}
 
+impl Revisioned for u8 {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
-impl Revisioned for i8 {
+impl SerializeRevisioned for i8 {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		writer.write_all(&[*self as u8]).map_err(Error::Io)
 	}
+}
 
+impl DeserializeRevisioned for i8 {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error>
 	where
@@ -226,7 +252,10 @@ impl Revisioned for i8 {
 	{
 		Ok(read_buffer::<1, _>(reader)?[0] as i8)
 	}
+}
 
+impl Revisioned for i8 {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -234,12 +263,14 @@ impl Revisioned for i8 {
 
 macro_rules! impl_revisioned_int {
 	($ty:ident) => {
-		impl Revisioned for $ty {
+		impl SerializeRevisioned for $ty {
 			#[inline]
 			fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 				encode_u64(writer, (*self) as u64)
 			}
+		}
 
+		impl DeserializeRevisioned for $ty {
 			#[inline]
 			fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error>
 			where
@@ -247,7 +278,10 @@ macro_rules! impl_revisioned_int {
 			{
 				decode_u64(reader).and_then(|x| x.try_into().map_err(|_| Error::IntegerOverflow))
 			}
+		}
 
+		impl Revisioned for $ty {
+			#[inline]
 			fn revision() -> u16 {
 				1
 			}
@@ -257,12 +291,14 @@ macro_rules! impl_revisioned_int {
 
 macro_rules! impl_revisioned_signed_int {
 	($ty:ident) => {
-		impl Revisioned for $ty {
+		impl SerializeRevisioned for $ty {
 			#[inline]
 			fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 				encode_u64(writer, zigzag_64((*self) as i64))
 			}
+		}
 
+		impl DeserializeRevisioned for $ty {
 			#[inline]
 			fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error>
 			where
@@ -271,7 +307,10 @@ macro_rules! impl_revisioned_signed_int {
 				decode_u64(reader)
 					.and_then(|x| gazgiz_64(x).try_into().map_err(|_| Error::IntegerOverflow))
 			}
+		}
 
+		impl Revisioned for $ty {
+			#[inline]
 			fn revision() -> u16 {
 				1
 			}
@@ -287,75 +326,103 @@ impl_revisioned_signed_int!(i16);
 impl_revisioned_signed_int!(i32);
 impl_revisioned_signed_int!(i64);
 
-impl Revisioned for i128 {
-	fn revision() -> u16 {
-		1
+impl SerializeRevisioned for i128 {
+	#[inline]
+	fn serialize_revisioned<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+		encode_u128(writer, zigzag_128(*self))
 	}
+}
 
-	fn serialize_revisioned<W: io::Write>(&self, w: &mut W) -> Result<(), Error> {
-		encode_u128(w, zigzag_128(*self))
-	}
-
-	fn deserialize_revisioned<R: io::Read>(r: &mut R) -> Result<Self, Error>
+impl DeserializeRevisioned for i128 {
+	#[inline]
+	fn deserialize_revisioned<R: io::Read>(reader: &mut R) -> Result<Self, Error>
 	where
 		Self: Sized,
 	{
-		decode_u128(r).map(gazgiz_128)
+		decode_u128(reader).map(gazgiz_128)
+	}
+}
+
+impl Revisioned for i128 {
+	#[inline]
+	fn revision() -> u16 {
+		1
+	}
+}
+
+impl SerializeRevisioned for u128 {
+	#[inline]
+	fn serialize_revisioned<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+		encode_u128(writer, *self)
+	}
+}
+
+impl DeserializeRevisioned for u128 {
+	#[inline]
+	fn deserialize_revisioned<R: io::Read>(reader: &mut R) -> Result<Self, Error>
+	where
+		Self: Sized,
+	{
+		decode_u128(reader)
 	}
 }
 
 impl Revisioned for u128 {
+	#[inline]
 	fn revision() -> u16 {
 		1
-	}
-
-	fn serialize_revisioned<W: io::Write>(&self, w: &mut W) -> Result<(), Error> {
-		encode_u128(w, *self)
-	}
-
-	fn deserialize_revisioned<R: io::Read>(r: &mut R) -> Result<Self, Error>
-	where
-		Self: Sized,
-	{
-		decode_u128(r)
 	}
 }
 
-impl Revisioned for f32 {
-	fn revision() -> u16 {
-		1
-	}
-
-	fn serialize_revisioned<W: io::Write>(&self, w: &mut W) -> Result<(), Error> {
+impl SerializeRevisioned for f32 {
+	#[inline]
+	fn serialize_revisioned<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		let bytes = self.to_le_bytes();
-		w.write_all(&bytes).map_err(Error::Io)
+		writer.write_all(&bytes).map_err(Error::Io)
 	}
+}
 
-	fn deserialize_revisioned<R: io::Read>(r: &mut R) -> Result<Self, Error>
+impl DeserializeRevisioned for f32 {
+	#[inline]
+	fn deserialize_revisioned<R: io::Read>(reader: &mut R) -> Result<Self, Error>
 	where
 		Self: Sized,
 	{
-		let b = read_buffer::<4, _>(r)?;
+		let b = read_buffer::<4, _>(reader)?;
 		Ok(f32::from_le_bytes(b))
 	}
 }
 
-impl Revisioned for f64 {
+impl Revisioned for f32 {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
+}
 
-	fn serialize_revisioned<W: io::Write>(&self, w: &mut W) -> Result<(), Error> {
+impl SerializeRevisioned for f64 {
+	#[inline]
+	fn serialize_revisioned<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		let bytes = self.to_le_bytes();
-		w.write_all(&bytes).map_err(Error::Io)
+		writer.write_all(&bytes).map_err(Error::Io)
 	}
+}
 
-	fn deserialize_revisioned<R: io::Read>(r: &mut R) -> Result<Self, Error>
+impl DeserializeRevisioned for f64 {
+	#[inline]
+	fn deserialize_revisioned<R: io::Read>(reader: &mut R) -> Result<Self, Error>
 	where
 		Self: Sized,
 	{
-		let b = read_buffer::<8, _>(r)?;
+		let b = read_buffer::<8, _>(reader)?;
 		Ok(f64::from_le_bytes(b))
+	}
+}
+
+impl Revisioned for f64 {
+	#[inline]
+	fn revision() -> u16 {
+		1
 	}
 }
 
@@ -366,7 +433,7 @@ mod tests {
 		primitives::{gazgiz_64, zigzag_64},
 	};
 
-	use super::Revisioned;
+	use super::*;
 
 	#[test]
 	fn test_zigzag() {
@@ -394,7 +461,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 1);
-		let out = <bool as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<bool as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -404,7 +472,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 9);
-		let out = <isize as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<isize as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -414,7 +483,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 1);
-		let out = <i8 as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<i8 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -424,7 +494,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 3);
-		let out = <i16 as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<i16 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -434,7 +505,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 5);
-		let out = <i32 as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<i32 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -444,7 +516,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 9);
-		let out = <i64 as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<i64 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -454,7 +527,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 17);
-		let out = <i128 as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<i128 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -464,7 +538,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 9);
-		let out = <usize as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<usize as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -474,7 +549,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 1);
-		let out = <u8 as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<u8 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -484,7 +560,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 3);
-		let out = <u16 as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<u16 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -494,7 +571,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 5);
-		let out = <u32 as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<u32 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -504,7 +582,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 9);
-		let out = <u64 as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<u64 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -514,7 +593,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 17);
-		let out = <u128 as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<u128 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -524,7 +604,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 4);
-		let out = <f32 as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<f32 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -534,7 +615,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 8);
-		let out = <f64 as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<f64 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -544,7 +626,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 4);
-		let out = <char as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out =
+			<char as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
 

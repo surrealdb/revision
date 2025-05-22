@@ -21,7 +21,7 @@ impl<'a> SerializeVisitor<'a> {
 	}
 }
 
-impl<'a, 'ast> Visit<'ast> for SerializeVisitor<'a> {
+impl<'ast> Visit<'ast> for SerializeVisitor<'_> {
 	fn visit_struct(&mut self, i: &'ast Struct) -> syn::Result<()> {
 		let mut ser_fields = TokenStream::new();
 		SerializeFields {
@@ -90,7 +90,7 @@ impl<'a, 'ast> Visit<'ast> for SerializeVisitor<'a> {
 		let name = &i.name;
 
 		self.stream.append_all(quote! {
-			::revision::Revisioned::serialize_revisioned(#name,writer)?;
+			::revision::SerializeRevisioned::serialize_revisioned(#name,writer)?;
 		});
 
 		Ok(())
@@ -102,7 +102,7 @@ pub struct SerializeFields<'a> {
 	pub stream: &'a mut TokenStream,
 }
 
-impl<'a, 'ast> Visit<'ast> for SerializeFields<'a> {
+impl<'ast> Visit<'ast> for SerializeFields<'_> {
 	fn visit_field(&mut self, i: &'ast Field) -> syn::Result<()> {
 		if !i.attrs.options.exists_at(self.revision) {
 			return Ok(());
@@ -110,7 +110,7 @@ impl<'a, 'ast> Visit<'ast> for SerializeFields<'a> {
 
 		let name = i.name.to_binding();
 		self.stream.append_all(quote! {
-			::revision::Revisioned::serialize_revisioned(#name,writer)?;
+			::revision::SerializeRevisioned::serialize_revisioned(#name,writer)?;
 		});
 
 		Ok(())
@@ -123,7 +123,7 @@ pub struct SerializeVariant<'a> {
 	pub stream: &'a mut TokenStream,
 }
 
-impl<'a, 'ast> Visit<'ast> for SerializeVariant<'a> {
+impl<'ast> Visit<'ast> for SerializeVariant<'_> {
 	fn visit_variant(&mut self, i: &'ast Variant) -> syn::Result<()> {
 		if !i.attrs.options.exists_at(self.revision) {
 			return Ok(());
@@ -160,7 +160,7 @@ impl<'a, 'ast> Visit<'ast> for SerializeVariant<'a> {
 
 				self.stream.append_all(quote! {
 					=> {
-						::revision::Revisioned::serialize_revisioned(&#discr,writer)?;
+						::revision::SerializeRevisioned::serialize_revisioned(&#discr,writer)?;
 						#fields_ser
 						Ok(())
 					},
@@ -189,7 +189,7 @@ impl<'a, 'ast> Visit<'ast> for SerializeVariant<'a> {
 
 				self.stream.append_all(quote! {
 					=> {
-						::revision::Revisioned::serialize_revisioned(&#discr,writer)?;
+						::revision::SerializeRevisioned::serialize_revisioned(&#discr,writer)?;
 						#fields_ser
 						Ok(())
 					}
@@ -197,7 +197,7 @@ impl<'a, 'ast> Visit<'ast> for SerializeVariant<'a> {
 			}
 			Fields::Unit => {
 				self.stream.append_all(quote! { => {
-					::revision::Revisioned::serialize_revisioned(&#discr,writer)?;
+					::revision::SerializeRevisioned::serialize_revisioned(&#discr,writer)?;
 					Ok(())
 				}});
 			}

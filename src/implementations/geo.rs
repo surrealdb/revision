@@ -1,16 +1,19 @@
 #![cfg(feature = "geo")]
 
 use super::super::Error;
-use super::super::Revisioned;
+use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
 use super::vecs::serialize_slice;
+use geo::{Coord, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon};
 
-impl Revisioned for geo::Coord {
+impl SerializeRevisioned for Coord {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.x.serialize_revisioned(writer)?;
 		self.y.serialize_revisioned(writer)
 	}
+}
 
+impl DeserializeRevisioned for Coord {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let x = f64::deserialize_revisioned(reader)?;
@@ -20,107 +23,140 @@ impl Revisioned for geo::Coord {
 			y,
 		})
 	}
+}
 
+impl Revisioned for Coord {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
-impl Revisioned for geo::Point {
+impl SerializeRevisioned for Point {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.0.serialize_revisioned(writer)
 	}
+}
 
+impl DeserializeRevisioned for Point {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		Ok(Self(Revisioned::deserialize_revisioned(reader)?))
+		Ok(Self(DeserializeRevisioned::deserialize_revisioned(reader)?))
 	}
+}
 
+impl Revisioned for Point {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
-impl Revisioned for geo::LineString {
+impl SerializeRevisioned for LineString {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.0.serialize_revisioned(writer)
 	}
+}
 
+impl DeserializeRevisioned for LineString {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		Ok(Self(Revisioned::deserialize_revisioned(reader)?))
+		Ok(Self(DeserializeRevisioned::deserialize_revisioned(reader)?))
 	}
+}
 
+impl Revisioned for LineString {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
-impl Revisioned for geo::Polygon {
+impl SerializeRevisioned for Polygon {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.exterior().serialize_revisioned(writer)?;
 		serialize_slice(self.interiors(), writer)
 	}
+}
 
+impl DeserializeRevisioned for Polygon {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		Ok(Self::new(
-			Revisioned::deserialize_revisioned(reader)?,
-			Revisioned::deserialize_revisioned(reader)?,
+			DeserializeRevisioned::deserialize_revisioned(reader)?,
+			DeserializeRevisioned::deserialize_revisioned(reader)?,
 		))
 	}
+}
 
+impl Revisioned for Polygon {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
-impl Revisioned for geo::MultiPoint {
+impl SerializeRevisioned for MultiPoint {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.0.serialize_revisioned(writer)
 	}
+}
 
+impl DeserializeRevisioned for MultiPoint {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		Ok(Self(Revisioned::deserialize_revisioned(reader)?))
+		Ok(Self(DeserializeRevisioned::deserialize_revisioned(reader)?))
 	}
+}
 
+impl Revisioned for MultiPoint {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
-impl Revisioned for geo::MultiLineString {
+impl SerializeRevisioned for MultiLineString {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.0.serialize_revisioned(writer)
 	}
+}
 
+impl DeserializeRevisioned for MultiLineString {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		Ok(Self(Revisioned::deserialize_revisioned(reader)?))
+		Ok(Self(DeserializeRevisioned::deserialize_revisioned(reader)?))
 	}
+}
 
+impl Revisioned for MultiLineString {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
-impl Revisioned for geo::MultiPolygon {
+impl SerializeRevisioned for MultiPolygon {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.0.serialize_revisioned(writer)
 	}
+}
 
+impl DeserializeRevisioned for MultiPolygon {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		Ok(Self(Revisioned::deserialize_revisioned(reader)?))
+		Ok(Self(DeserializeRevisioned::deserialize_revisioned(reader)?))
 	}
+}
 
+impl Revisioned for MultiPolygon {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -130,7 +166,7 @@ impl Revisioned for geo::MultiPolygon {
 mod test {
 	use std::cell::Cell;
 
-	use geo::{Coord, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon};
+	use super::*;
 
 	use crate::implementations::assert_bincode_compat;
 

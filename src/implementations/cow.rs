@@ -1,29 +1,46 @@
 use std::borrow::Cow;
 
-use crate::Revisioned;
+use crate::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
+
+impl<T> SerializeRevisioned for Cow<'_, T>
+where
+	T: Sized + ToOwned + SerializeRevisioned,
+	T::Owned: SerializeRevisioned,
+{
+	#[inline]
+	fn serialize_revisioned<W: std::io::Write>(&self, w: &mut W) -> Result<(), crate::Error> {
+		match self {
+			Cow::Borrowed(b) => b.serialize_revisioned(w),
+			Cow::Owned(o) => o.serialize_revisioned(w),
+		}
+	}
+}
+
+impl<T> DeserializeRevisioned for Cow<'_, T>
+where
+	T: Sized + ToOwned + DeserializeRevisioned,
+	T::Owned: DeserializeRevisioned,
+{
+	#[inline]
+	fn deserialize_revisioned<R: std::io::Read>(r: &mut R) -> Result<Self, crate::Error> {
+		T::Owned::deserialize_revisioned(r).map(Cow::Owned)
+	}
+}
 
 impl<T> Revisioned for Cow<'_, T>
 where
 	T: Sized + ToOwned + Revisioned,
 	T::Owned: Revisioned,
 {
+	#[inline]
 	fn revision() -> u16 {
 		T::revision()
-	}
-
-	fn serialize_revisioned<W: std::io::Write>(&self, w: &mut W) -> Result<(), crate::Error> {
-		(**self).serialize_revisioned(w)
-	}
-
-	fn deserialize_revisioned<R: std::io::Read>(r: &mut R) -> Result<Self, crate::Error> {
-		T::Owned::deserialize_revisioned(r).map(Cow::Owned)
 	}
 }
 
 #[cfg(test)]
 mod test {
-	use super::Revisioned;
-	use std::borrow::Cow;
+	use super::*;
 
 	#[test]
 	fn cow_borrow() {

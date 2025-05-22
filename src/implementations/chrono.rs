@@ -1,32 +1,37 @@
 #![cfg(feature = "chrono")]
 
 use super::super::Error;
-use super::super::Revisioned;
+use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
 use chrono::{offset::TimeZone, DateTime, Datelike, Duration, NaiveDate, NaiveTime, Timelike, Utc};
 
-impl Revisioned for DateTime<Utc> {
+impl SerializeRevisioned for DateTime<Utc> {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.timestamp().serialize_revisioned(writer)?;
 		self.timestamp_subsec_nanos().serialize_revisioned(writer)?;
 		Ok(())
 	}
+}
 
+impl DeserializeRevisioned for DateTime<Utc> {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		let secs = <i64 as Revisioned>::deserialize_revisioned(reader)?;
-		let nano = <u32 as Revisioned>::deserialize_revisioned(reader)?;
+		let secs = <i64 as DeserializeRevisioned>::deserialize_revisioned(reader)?;
+		let nano = <u32 as DeserializeRevisioned>::deserialize_revisioned(reader)?;
 		Utc.timestamp_opt(secs, nano)
 			.single()
 			.ok_or_else(|| Error::Deserialize("invalid datetime".to_string()))
 	}
+}
 
+impl Revisioned for DateTime<Utc> {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
-impl Revisioned for NaiveDate {
+impl SerializeRevisioned for NaiveDate {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.year().serialize_revisioned(writer)?;
@@ -34,22 +39,27 @@ impl Revisioned for NaiveDate {
 		self.day().serialize_revisioned(writer)?;
 		Ok(())
 	}
+}
 
+impl DeserializeRevisioned for NaiveDate {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		let year = <i32 as Revisioned>::deserialize_revisioned(reader)?;
-		let month = <u32 as Revisioned>::deserialize_revisioned(reader)?;
-		let day = <u32 as Revisioned>::deserialize_revisioned(reader)?;
+		let year = <i32 as DeserializeRevisioned>::deserialize_revisioned(reader)?;
+		let month = <u32 as DeserializeRevisioned>::deserialize_revisioned(reader)?;
+		let day = <u32 as DeserializeRevisioned>::deserialize_revisioned(reader)?;
 		NaiveDate::from_ymd_opt(year, month, day)
 			.ok_or_else(|| Error::Deserialize("invalid date".to_string()))
 	}
+}
 
+impl Revisioned for NaiveDate {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
-impl Revisioned for NaiveTime {
+impl SerializeRevisioned for NaiveTime {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.hour().serialize_revisioned(writer)?;
@@ -58,23 +68,28 @@ impl Revisioned for NaiveTime {
 		self.nanosecond().serialize_revisioned(writer)?;
 		Ok(())
 	}
+}
 
+impl DeserializeRevisioned for NaiveTime {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		let hour = <u32 as Revisioned>::deserialize_revisioned(reader)?;
-		let minute = <u32 as Revisioned>::deserialize_revisioned(reader)?;
-		let second = <u32 as Revisioned>::deserialize_revisioned(reader)?;
-		let nano = <u32 as Revisioned>::deserialize_revisioned(reader)?;
+		let hour = <u32 as DeserializeRevisioned>::deserialize_revisioned(reader)?;
+		let minute = <u32 as DeserializeRevisioned>::deserialize_revisioned(reader)?;
+		let second = <u32 as DeserializeRevisioned>::deserialize_revisioned(reader)?;
+		let nano = <u32 as DeserializeRevisioned>::deserialize_revisioned(reader)?;
 		NaiveTime::from_hms_nano_opt(hour, minute, second, nano)
 			.ok_or_else(|| Error::Deserialize("invalid time".to_string()))
 	}
+}
 
+impl Revisioned for NaiveTime {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
 }
 
-impl Revisioned for Duration {
+impl SerializeRevisioned for Duration {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		let mut secs = self.num_seconds();
@@ -94,17 +109,22 @@ impl Revisioned for Duration {
 
 		Ok(())
 	}
+}
 
+impl DeserializeRevisioned for Duration {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		let secs = <i64 as Revisioned>::deserialize_revisioned(reader)?;
-		let nano = <i32 as Revisioned>::deserialize_revisioned(reader)?;
+		let secs = <i64 as DeserializeRevisioned>::deserialize_revisioned(reader)?;
+		let nano = <i32 as DeserializeRevisioned>::deserialize_revisioned(reader)?;
 		let nano =
 			u32::try_from(nano).map_err(|_| Error::Deserialize("invalid duration".to_string()))?;
 
 		Duration::new(secs, nano).ok_or_else(|| Error::Deserialize("invalid duration".to_string()))
 	}
+}
 
+impl Revisioned for Duration {
+	#[inline]
 	fn revision() -> u16 {
 		1
 	}
@@ -112,10 +132,7 @@ impl Revisioned for Duration {
 
 #[cfg(test)]
 mod tests {
-	use super::DateTime;
-	use super::Revisioned;
-	use super::Utc;
-	use chrono::{Duration, NaiveDate, NaiveTime};
+	use super::*;
 
 	#[test]
 	fn test_datetime_min() {
@@ -124,7 +141,8 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 10);
 		let out =
-			<DateTime<Utc> as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<DateTime<Utc> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+				.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -135,7 +153,8 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 14);
 		let out =
-			<DateTime<Utc> as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+			<DateTime<Utc> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+				.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -145,7 +164,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 3);
-		let out = <NaiveDate as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <NaiveDate as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -155,7 +175,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 5);
-		let out = <NaiveDate as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <NaiveDate as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -165,7 +186,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 4);
-		let out = <NaiveTime as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <NaiveTime as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -175,7 +197,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 8);
-		let out = <NaiveTime as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <NaiveTime as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -185,7 +208,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 14);
-		let out = <Duration as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <Duration as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -195,7 +219,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 2);
-		let out = <Duration as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <Duration as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -205,7 +230,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 14);
-		let out = <Duration as Revisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		let out = <Duration as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
 		assert_eq!(val, out);
 	}
 }

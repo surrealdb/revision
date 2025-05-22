@@ -1,11 +1,13 @@
+use super::super::DeserializeRevisioned;
 use super::super::Error;
 use super::super::Revisioned;
+use super::super::SerializeRevisioned;
 
 macro_rules! impl_revisioned_array_with_size {
 	($ty:literal) => {
-		impl<T> Revisioned for [T; $ty]
+		impl<T> SerializeRevisioned for [T; $ty]
 		where
-			T: Copy + Default + Revisioned,
+			T: Copy + Default + SerializeRevisioned,
 		{
 			#[inline]
 			fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
@@ -14,7 +16,12 @@ macro_rules! impl_revisioned_array_with_size {
 				}
 				Ok(())
 			}
+		}
 
+		impl<T> DeserializeRevisioned for [T; $ty]
+		where
+			T: Copy + Default + DeserializeRevisioned,
+		{
 			#[inline]
 			fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 				let mut array = [T::default(); $ty];
@@ -23,7 +30,13 @@ macro_rules! impl_revisioned_array_with_size {
 				}
 				Ok(array)
 			}
+		}
 
+		impl<T> Revisioned for [T; $ty]
+		where
+			T: Copy + Default + Revisioned,
+		{
+			#[inline]
 			fn revision() -> u16 {
 				1
 			}

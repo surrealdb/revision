@@ -23,7 +23,7 @@ impl<'a> CalcDiscriminant<'a> {
 	}
 }
 
-impl<'a, 'ast> Visit<'ast> for CalcDiscriminant<'a> {
+impl<'ast> Visit<'ast> for CalcDiscriminant<'_> {
 	fn visit_enum(&mut self, i: &'ast crate::ast::Enum) -> syn::Result<()> {
 		GatherOverrides {
 			revision: self.revision,
@@ -60,7 +60,7 @@ pub struct GatherOverrides<'a> {
 	used: &'a mut HashSet<u32>,
 }
 
-impl<'a, 'ast> Visit<'ast> for GatherOverrides<'a> {
+impl<'ast> Visit<'ast> for GatherOverrides<'_> {
 	fn visit_variant(&mut self, i: &'ast crate::ast::Variant) -> syn::Result<()> {
 		if !i.attrs.options.exists_at(self.revision) {
 			return Ok(());

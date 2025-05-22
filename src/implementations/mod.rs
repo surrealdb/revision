@@ -25,7 +25,7 @@ pub mod wrapping;
 #[track_caller]
 pub fn assert_bincode_compat<T>(v: &T)
 where
-	T: serde::Serialize + crate::Revisioned,
+	T: serde::Serialize + crate::SerializeRevisioned,
 {
 	use bincode::Options;
 

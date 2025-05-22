@@ -23,7 +23,7 @@ impl<'a> EnumStructsVisitor<'a> {
 	}
 }
 
-impl<'a, 'ast> Visit<'ast> for EnumStructsVisitor<'a> {
+impl<'ast> Visit<'ast> for EnumStructsVisitor<'_> {
 	fn visit_enum(&mut self, i: &'ast Enum) -> syn::Result<()> {
 		for v in i.variants.iter() {
 			let name = v.fields_name(&i.name.to_string());
@@ -78,7 +78,7 @@ pub struct DeserializeVisitor<'a> {
 	pub stream: &'a mut TokenStream,
 }
 
-impl<'a, 'ast> Visit<'ast> for DeserializeVisitor<'a> {
+impl<'ast> Visit<'ast> for DeserializeVisitor<'_> {
 	fn visit_enum(&mut self, i: &'ast Enum) -> syn::Result<()> {
 		let mut discriminants = HashMap::new();
 		CalcDiscriminant::new(self.current, &mut discriminants).visit_enum(i)?;
@@ -98,7 +98,7 @@ impl<'a, 'ast> Visit<'ast> for DeserializeVisitor<'a> {
 			format!("Invalid discriminant `{{x}}` for enum `{}` revision `{{__revision}}`", i.name);
 
 		self.stream.append_all(quote! {
-			let __discriminant = <u32 as ::revision::Revisioned>::deserialize_revisioned(reader)?;
+			let __discriminant = <u32 as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
 			match __discriminant {
 				#variants
 				x => {
@@ -195,7 +195,7 @@ pub struct DeserializeVariant<'a> {
 	pub discriminants: HashMap<Ident, u32>,
 }
 
-impl<'a, 'ast> Visit<'ast> for DeserializeVariant<'a> {
+impl<'ast> Visit<'ast> for DeserializeVariant<'_> {
 	fn visit_variant(&mut self, i: &'ast Variant) -> syn::Result<()> {
 		let exists_current = i.attrs.options.exists_at(self.current);
 		let exists_target = i.attrs.options.exists_at(self.target);
@@ -351,7 +351,7 @@ pub struct DeserializeFields<'a> {
 	pub stream: &'a mut TokenStream,
 }
 
-impl<'a, 'ast> Visit<'ast> for DeserializeFields<'a> {
+impl<'ast> Visit<'ast> for DeserializeFields<'_> {
 	fn visit_fields(&mut self, i: &'ast Fields) -> syn::Result<()> {
 		match *i {
 			Fields::Named {
@@ -371,7 +371,7 @@ impl<'a, 'ast> Visit<'ast> for DeserializeFields<'a> {
 					if exists_target && exists_current {
 						let ty = &f.ty;
 						self.stream.append_all(quote! {
-							let #binding = <#ty as ::revision::Revisioned>::deserialize_revisioned(reader)?;
+							let #binding = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
 						})
 					} else if exists_target && !exists_current {
 						if let Some(default) = f.attrs.options.default.as_ref() {
@@ -388,7 +388,7 @@ impl<'a, 'ast> Visit<'ast> for DeserializeFields<'a> {
 					} else if !exists_target && exists_current {
 						let ty = &f.ty;
 						self.stream.append_all(quote! {
-							let #binding = <#ty as ::revision::Revisioned>::deserialize_revisioned(reader)?;
+							let #binding = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
 						})
 					}
 				}
