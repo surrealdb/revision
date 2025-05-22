@@ -5,6 +5,9 @@ run-name: "Release run '${{ github.head_ref || github.ref_name }}'"
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   semver:
     name: semver
@@ -17,6 +20,9 @@ jobs:
   release:
     name: Process Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
 
     steps:
       - uses: actions/checkout@v4
