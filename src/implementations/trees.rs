@@ -8,8 +8,8 @@ use std::collections::HashSet;
 use std::hash::BuildHasher;
 use std::hash::Hash;
 
-impl<K: SerializeRevisioned + Eq + Hash, V: SerializeRevisioned> SerializeRevisioned
-	for HashMap<K, V>
+impl<K: SerializeRevisioned + Eq + Hash, V: SerializeRevisioned, S: BuildHasher + Default>
+	SerializeRevisioned for HashMap<K, V, S>
 {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
@@ -193,6 +193,31 @@ mod tests {
 		val.serialize_revisioned(&mut mem).unwrap();
 		assert_eq!(mem.len(), 61);
 		let out = <HashMap<String, Vec<f64>> as DeserializeRevisioned>::deserialize_revisioned(
+			&mut mem.as_slice(),
+		)
+		.unwrap();
+		assert_eq!(val, out);
+	}
+
+	#[test]
+	fn test_hashmap_nondefault_hasher() {
+		#[derive(Default)]
+		struct TestHasher(std::hash::RandomState);
+		impl BuildHasher for TestHasher {
+			type Hasher = <std::hash::RandomState as std::hash::BuildHasher>::Hasher;
+			fn build_hasher(&self) -> Self::Hasher {
+				self.0.build_hasher()
+			}
+		}
+
+		let mut val: HashMap<String, Vec<f64>, TestHasher> =
+			HashMap::with_hasher(Default::default());
+		val.insert("some".into(), vec![1.449, -5365.3849, 97194619.117391]);
+		val.insert("test".into(), vec![-3917.195, 19461.3849, -365.195759]);
+		let mut mem: Vec<u8> = vec![];
+		val.serialize_revisioned(&mut mem).unwrap();
+		assert_eq!(mem.len(), 61);
+		let out = <HashMap<String, Vec<f64>, TestHasher> as DeserializeRevisioned>::deserialize_revisioned(
 			&mut mem.as_slice(),
 		)
 		.unwrap();
