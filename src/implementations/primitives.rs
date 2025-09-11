@@ -35,23 +35,21 @@ where
 	W: io::Write,
 {
 	if i < 251 {
-		writer.write_all(&[i as u8]).map_err(Error::Io)?;
+		writer.write_all(&[i as u8]).map_err(Error::Io)
 	} else if i < (1 << 16) {
 		let bytes = (i as u16).to_le_bytes();
-		writer.write_all(&[251, bytes[0], bytes[1]]).map_err(Error::Io)?;
+		writer.write_all(&[251, bytes[0], bytes[1]]).map_err(Error::Io)
 	} else if i < (1 << 32) {
 		let bytes = (i as u32).to_le_bytes();
-		writer.write_all(&[252, bytes[0], bytes[1], bytes[2], bytes[3]]).map_err(Error::Io)?;
+		writer.write_all(&[252, bytes[0], bytes[1], bytes[2], bytes[3]]).map_err(Error::Io)
 	} else {
 		let bytes = i.to_le_bytes();
 		writer
 			.write_all(&[
 				253, bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
 			])
-			.map_err(Error::Io)?;
+			.map_err(Error::Io)
 	}
-
-	Ok(())
 }
 
 fn encode_u128<W>(writer: &mut W, i: u128) -> Result<(), Error>
@@ -59,30 +57,28 @@ where
 	W: io::Write,
 {
 	if i < 251 {
-		writer.write_all(&[i as u8]).map_err(Error::Io)?;
+		writer.write_all(&[i as u8]).map_err(Error::Io)
 	} else if i < (1 << 16) {
 		let bytes = (i as u16).to_le_bytes();
-		writer.write_all(&[251, bytes[0], bytes[1]]).map_err(Error::Io)?;
+		writer.write_all(&[251, bytes[0], bytes[1]]).map_err(Error::Io)
 	} else if i < (1 << 32) {
 		let bytes = (i as u32).to_le_bytes();
-		writer.write_all(&[252, bytes[0], bytes[1], bytes[2], bytes[3]]).map_err(Error::Io)?;
+		writer.write_all(&[252, bytes[0], bytes[1], bytes[2], bytes[3]]).map_err(Error::Io)
 	} else if i < (1 << 64) {
 		let bytes = (i as u64).to_le_bytes();
 		writer
 			.write_all(&[
 				253, bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
 			])
-			.map_err(Error::Io)?;
+			.map_err(Error::Io)
 	} else {
 		let bytes = i.to_le_bytes();
 		let bytes = [
 			254, bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
 			bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
 		];
-		writer.write_all(&bytes).map_err(Error::Io)?;
+		writer.write_all(&bytes).map_err(Error::Io)
 	}
-
-	Ok(())
 }
 fn decode_u64<R>(reader: &mut R) -> Result<u64, Error>
 where
