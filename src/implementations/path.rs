@@ -5,13 +5,13 @@ use crate::SerializeRevisioned;
 
 use super::super::Error;
 use super::super::Revisioned;
-use super::vecs::serialize_slice;
+use super::vecs::serialize_bytes;
 
 impl SerializeRevisioned for PathBuf {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		match self.to_str() {
-			Some(s) => serialize_slice(s.as_bytes(), writer),
+			Some(s) => serialize_bytes(s.as_bytes(), writer),
 			None => Err(Error::InvalidPath),
 		}
 	}

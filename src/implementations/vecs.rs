@@ -1,19 +1,14 @@
 use crate::DeserializeRevisioned;
+use crate::Error;
+use crate::Revisioned;
 use crate::SerializeRevisioned;
 
-use super::super::Error;
-use super::super::Revisioned;
-
-pub(crate) fn serialize_slice<T, W>(v: &[T], writer: &mut W) -> Result<(), Error>
+pub(crate) fn serialize_bytes<W>(v: &[u8], writer: &mut W) -> Result<(), Error>
 where
 	W: std::io::Write,
-	T: SerializeRevisioned,
 {
 	v.len().serialize_revisioned(writer)?;
-	for v in v {
-		v.serialize_revisioned(writer)?;
-	}
-	Ok(())
+	writer.write_all(v).map_err(Error::Io)
 }
 
 impl<T> SerializeRevisioned for Vec<T>
@@ -22,7 +17,11 @@ where
 {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		serialize_slice(self.as_slice(), writer)
+		self.len().serialize_revisioned(writer)?;
+		for v in self {
+			v.serialize_revisioned(writer)?;
+		}
+		Ok(())
 	}
 }
 

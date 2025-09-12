@@ -2,13 +2,13 @@
 
 use super::super::Error;
 use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
-use super::vecs::serialize_slice;
+use super::vecs::serialize_bytes;
 use regex::Regex;
 
 impl SerializeRevisioned for Regex {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		serialize_slice(self.as_str().as_bytes(), writer)
+		serialize_bytes(self.as_str().as_bytes(), writer)
 	}
 }
 
