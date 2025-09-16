@@ -39,3 +39,7 @@ serde = "1.0.209"
 name = "roaring"
 harness = false
 required-features = ["roaring"]
+
+[[bench]]
+name = "generic"
+harness = false
