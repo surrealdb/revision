@@ -225,7 +225,7 @@ impl SerializeRevisioned for RevisionSpecialisedVecI8 {
 		// Safety: i8 and u8 have the same size and alignment, and we're only reading
 		unsafe {
 			let byte_slice =
-				std::slice::from_raw_parts(self.inner.as_ptr() as *const u8, self.inner.len());
+				std::slice::from_raw_parts(self.inner.as_ptr().cast::<u8>(), self.inner.len());
 			writer.write_all(byte_slice).map_err(Error::Io)
 		}
 	}
@@ -249,7 +249,7 @@ impl DeserializeRevisioned for RevisionSpecialisedVecI8 {
 		// 2. MaybeUninit<i8> has the same layout as i8, and i8 has same representation as u8
 		// 3. We only set the length after successful read
 		let uninit_slice =
-			unsafe { std::slice::from_raw_parts_mut(spare.as_mut_ptr() as *mut u8, len) };
+			unsafe { std::slice::from_raw_parts_mut(spare.as_mut_ptr().cast::<u8>(), len) };
 		// Read the data - this is now safe because spare_capacity_mut() prevents UB
 		reader.read_exact(uninit_slice).map_err(Error::Io)?;
 		// Only set the length after successful read

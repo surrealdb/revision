@@ -230,7 +230,7 @@ impl SerializeRevisioned for RevisionSpecialisedVecF64 {
 			// 3. We're only reading from the slice, not modifying it
 			unsafe {
 				let byte_slice = std::slice::from_raw_parts(
-					self.inner.as_ptr() as *const u8,
+					self.inner.as_ptr().cast::<u8>(),
 					self.inner.len() * std::mem::size_of::<f64>(),
 				);
 				writer.write_all(byte_slice).map_err(Error::Io)
@@ -268,8 +268,9 @@ impl DeserializeRevisioned for RevisionSpecialisedVecF64 {
 			// 1. spare_capacity_mut() provides access to allocated but uninitialized memory
 			// 2. MaybeUninit<T> has the same layout as T
 			// 3. We only set the length after successful read
-			let byte_slice =
-				unsafe { std::slice::from_raw_parts_mut(spare.as_mut_ptr() as *mut u8, byte_len) };
+			let byte_slice = unsafe {
+				std::slice::from_raw_parts_mut(spare.as_mut_ptr().cast::<u8>(), byte_len)
+			};
 			// Read the data - this is now safe because spare_capacity_mut() prevents UB
 			reader.read_exact(byte_slice).map_err(Error::Io)?;
 			// Only set the length after successful read
