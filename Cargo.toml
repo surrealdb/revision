@@ -43,3 +43,19 @@ required-features = ["roaring"]
 [[bench]]
 name = "generic"
 harness = false
+
+[[bench]]
+name = "vec_u8_comparison"
+harness = false
+
+[[bench]]
+name = "vec_f32_comparison"
+harness = false
+
+[[bench]]
+name = "vec_f64_comparison"
+harness = false
+
+[[bench]]
+name = "vec_i8_comparison"
+harness = false

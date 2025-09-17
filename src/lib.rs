@@ -11,6 +11,7 @@
 
 pub mod error;
 pub mod implementations;
+pub mod specialised;
 
 pub use crate::error::Error;
 pub use derive::revisioned;
