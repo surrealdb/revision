@@ -25,11 +25,8 @@ impl<K: SerializeRevisioned + Eq + Hash, V: SerializeRevisioned, S: BuildHasher 
 	}
 }
 
-impl<
-		K: DeserializeRevisioned + Eq + Hash + 'static,
-		V: DeserializeRevisioned,
-		S: BuildHasher + Default,
-	> DeserializeRevisioned for HashMap<K, V, S>
+impl<K: DeserializeRevisioned + Eq + Hash, V: DeserializeRevisioned, S: BuildHasher + Default>
+	DeserializeRevisioned for HashMap<K, V, S>
 {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
@@ -53,9 +50,7 @@ impl<K: Revisioned + Eq + Hash, V: Revisioned, S: BuildHasher + Default> Revisio
 	}
 }
 
-impl<K: SerializeRevisioned + Ord + 'static, V: SerializeRevisioned> SerializeRevisioned
-	for BTreeMap<K, V>
-{
+impl<K: SerializeRevisioned + Ord, V: SerializeRevisioned> SerializeRevisioned for BTreeMap<K, V> {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.len().serialize_revisioned(writer)?;
@@ -67,7 +62,7 @@ impl<K: SerializeRevisioned + Ord + 'static, V: SerializeRevisioned> SerializeRe
 	}
 }
 
-impl<K: DeserializeRevisioned + Ord + 'static, V: DeserializeRevisioned> DeserializeRevisioned
+impl<K: DeserializeRevisioned + Ord, V: DeserializeRevisioned> DeserializeRevisioned
 	for BTreeMap<K, V>
 {
 	#[inline]
@@ -90,7 +85,7 @@ impl<K: Revisioned + Ord, V: Revisioned> Revisioned for BTreeMap<K, V> {
 	}
 }
 
-impl<T: SerializeRevisioned + Eq + Hash + 'static, S: BuildHasher + Default> SerializeRevisioned
+impl<T: SerializeRevisioned + Eq + Hash, S: BuildHasher + Default> SerializeRevisioned
 	for HashSet<T, S>
 {
 	#[inline]
@@ -103,7 +98,7 @@ impl<T: SerializeRevisioned + Eq + Hash + 'static, S: BuildHasher + Default> Ser
 	}
 }
 
-impl<T: DeserializeRevisioned + Eq + Hash + 'static, S: BuildHasher + Default> DeserializeRevisioned
+impl<T: DeserializeRevisioned + Eq + Hash, S: BuildHasher + Default> DeserializeRevisioned
 	for HashSet<T, S>
 {
 	#[inline]
@@ -125,7 +120,7 @@ impl<T: Revisioned + Eq + Hash, S: BuildHasher + Default> Revisioned for HashSet
 	}
 }
 
-impl<T: SerializeRevisioned + Ord + 'static> SerializeRevisioned for BTreeSet<T> {
+impl<T: SerializeRevisioned + Ord> SerializeRevisioned for BTreeSet<T> {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.len().serialize_revisioned(writer)?;
@@ -136,7 +131,7 @@ impl<T: SerializeRevisioned + Ord + 'static> SerializeRevisioned for BTreeSet<T>
 	}
 }
 
-impl<T: DeserializeRevisioned + Ord + 'static> DeserializeRevisioned for BTreeSet<T> {
+impl<T: DeserializeRevisioned + Ord> DeserializeRevisioned for BTreeSet<T> {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
