@@ -262,14 +262,18 @@ impl DeserializeRevisioned for RevisionSpecialisedVecF64 {
 		if cfg!(target_endian = "little") {
 			// Fast path for little-endian platforms: direct byte read
 			let byte_len = len * std::mem::size_of::<f64>();
-			// Safety: We read directly into uninitialized memory and only set the length
-			// after the read is successful. If read_exact fails, the vector length remains 0.
+			// Get safe access to uninitialized memory using spare_capacity_mut()
+			let spare = vec.spare_capacity_mut();
+			// Safety: Convert MaybeUninit<f64> slice to bytes. This is safe because:
+			// 1. spare_capacity_mut() provides access to allocated but uninitialized memory
+			// 2. MaybeUninit<T> has the same layout as T
+			// 3. We only set the length after successful read
+			let byte_slice =
+				unsafe { std::slice::from_raw_parts_mut(spare.as_mut_ptr() as *mut u8, byte_len) };
+			// Read the data - this is now safe because spare_capacity_mut() prevents UB
+			reader.read_exact(byte_slice).map_err(Error::Io)?;
+			// Only set the length after successful read
 			unsafe {
-				let byte_slice =
-					std::slice::from_raw_parts_mut(vec.as_mut_ptr() as *mut u8, byte_len);
-				// Read the data directly into uninitialized memory
-				reader.read_exact(byte_slice).map_err(Error::Io)?;
-				// Only set the length after successful read
 				vec.set_len(len);
 			}
 		} else {

@@ -242,19 +242,18 @@ impl DeserializeRevisioned for RevisionSpecialisedVecI8 {
 		}
 		// Create a vector with the necessary capacity
 		let mut vec = Vec::with_capacity(len);
-		// Safety: We read directly into uninitialized memory and only set the length
-		// after the read is successful. If read_exact fails, the vector length remains 0.
-		// i8 and u8 have the same representation, so this is safe.
+		// Get safe access to uninitialized memory using spare_capacity_mut()
+		let spare = vec.spare_capacity_mut();
+		// Safety: Convert MaybeUninit<i8> slice to u8 slice. This is safe because:
+		// 1. spare_capacity_mut() provides access to allocated but uninitialized memory
+		// 2. MaybeUninit<i8> has the same layout as i8, and i8 has same representation as u8
+		// 3. We only set the length after successful read
+		let uninit_slice =
+			unsafe { std::slice::from_raw_parts_mut(spare.as_mut_ptr() as *mut u8, len) };
+		// Read the data - this is now safe because spare_capacity_mut() prevents UB
+		reader.read_exact(uninit_slice).map_err(Error::Io)?;
+		// Only set the length after successful read
 		unsafe {
-			// Get a mutable slice of the uninitialized memory as u8
-			let uninit_slice = std::slice::from_raw_parts_mut(vec.as_mut_ptr() as *mut u8, len);
-			// Read the data directly into uninitialized memory
-			// This is safe because:
-			// 1. We have allocated capacity for `len` bytes
-			// 2. read_exact either fills the entire buffer or fails
-			// 3. i8 doesn't require initialization (it's Copy and has no Drop)
-			reader.read_exact(uninit_slice).map_err(Error::Io)?;
-			// Only set the length after successful read
 			vec.set_len(len);
 		}
 		// Return the specialized vector
