@@ -18,6 +18,7 @@ members = ["derive"]
 
 [features]
 default = []
+optimised = []
 
 [dependencies]
 chrono = { version = "0.4.39", features = ["serde"], optional = true }
@@ -58,4 +59,8 @@ harness = false
 
 [[bench]]
 name = "vec_i8_comparison"
+harness = false
+
+[[bench]]
+name = "vec_string_comparison"
 harness = false
