@@ -239,7 +239,7 @@ mod tests {
 
 	#[test]
 	fn test_vec_f32() {
-		let val = vec![f32::MIN, -3.14159, 0.0, 3.14159, f32::MAX];
+		let val = vec![f32::MIN, -std::f32::consts::PI, 0.0, std::f32::consts::PI, f32::MAX];
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		let out = <Vec<f32> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
@@ -249,7 +249,7 @@ mod tests {
 
 	#[test]
 	fn test_vec_f64() {
-		let val = vec![f64::MIN, -3.141592653589793, 0.0, 3.141592653589793, f64::MAX];
+		let val = vec![f64::MIN, -std::f64::consts::PI, 0.0, std::f64::consts::PI, f64::MAX];
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		let out = <Vec<f64> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())

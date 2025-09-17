@@ -8,8 +8,8 @@ fn generate_test_data(size: usize) -> Vec<f64> {
 		.map(|i| {
 			// Create diverse f64 values including special cases
 			match i % 7 {
-				0 => (i as f64) * 3.14159,
-				1 => -(i as f64) / 2.718,
+				0 => (i as f64) * std::f64::consts::PI,
+				1 => -(i as f64) / std::f64::consts::E,
 				2 => (i as f64).sqrt(),
 				3 => (i as f64).ln(),
 				4 => (i as f64).sin(),

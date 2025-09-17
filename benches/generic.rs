@@ -56,7 +56,7 @@ struct ComplexData {
 	maybe_number: Option<u64>,
 
 	// Boxed values
-	boxed_data: Box<String>,
+	boxed_data: String,
 
 	// Tuples
 	pair: (String, i32),
@@ -78,7 +78,8 @@ struct ComplexData {
 	// Duration
 	time_duration: Duration,
 
-	// Cow (clone-on-write) - using String since str doesn't implement SerializeRevisioned
+	// Cow (clone-on-write)
+	#[allow(clippy::owned_cow)]
 	borrowed_or_owned: Cow<'static, String>,
 }
 
@@ -118,8 +119,8 @@ impl ComplexData {
 			huge_signed: -170141183460469231731687303715884105728,
 			size_signed: -500000,
 
-			float32: 3.14159,
-			float64: 2.718281828459045,
+			float32: std::f32::consts::PI,
+			float64: std::f64::consts::E,
 
 			character: '🦀',
 			flag: true,
@@ -140,7 +141,7 @@ impl ComplexData {
 				.collect(),
 			float_values_vec: (0..size_factor).map(|i| (i as f32) * 0.01 + 1.414).collect(),
 			double_precision_vec: (0..size_factor)
-				.map(|i| (i as f64) * 0.001 + 2.718281828)
+				.map(|i| (i as f64) * 0.001 + std::f64::consts::E)
 				.collect(),
 			string_list: (0..size_factor)
 				.map(|i| match i % 5 {
@@ -159,7 +160,7 @@ impl ComplexData {
 			maybe_text: Some("Optional string content".to_string()),
 			maybe_number: Some(42),
 
-			boxed_data: Box::new("Boxed string data".to_string()),
+			boxed_data: "Boxed string data".to_string(),
 
 			pair: ("pair_key".to_string(), 123),
 			triple: (1, 2, 3),
@@ -312,7 +313,7 @@ fn bench_vec_i32(c: &mut Criterion) {
 	let mut group = c.benchmark_group("vec_i32_comparison");
 
 	for size in [100, 1000, 10000, 100000].iter() {
-		let data: Vec<i32> = (0..*size).map(|i| i as i32 * 2 - (*size as i32)).collect();
+		let data: Vec<i32> = (0..*size).map(|i| i * 2 - *size).collect();
 
 		group.bench_with_input(BenchmarkId::new("serialize", size), &data, |b, data| {
 			b.iter(|| {
@@ -343,7 +344,7 @@ fn bench_vec_f32(c: &mut Criterion) {
 	let mut group = c.benchmark_group("vec_f32_comparison");
 
 	for size in [100, 1000, 10000, 100000].iter() {
-		let data: Vec<f32> = (0..*size).map(|i| (i as f32) * 0.1 + 3.14159).collect();
+		let data: Vec<f32> = (0..*size).map(|i| (i as f32) * 0.1 + std::f32::consts::PI).collect();
 
 		group.bench_with_input(BenchmarkId::new("serialize", size), &data, |b, data| {
 			b.iter(|| {
@@ -374,7 +375,7 @@ fn bench_vec_f64(c: &mut Criterion) {
 	let mut group = c.benchmark_group("vec_f64_comparison");
 
 	for size in [100, 1000, 10000, 100000].iter() {
-		let data: Vec<f64> = (0..*size).map(|i| (i as f64) * 0.001 + 2.718281828).collect();
+		let data: Vec<f64> = (0..*size).map(|i| (i as f64) * 0.001 + std::f64::consts::E).collect();
 
 		group.bench_with_input(BenchmarkId::new("serialize", size), &data, |b, data| {
 			b.iter(|| {

@@ -126,7 +126,7 @@ fn benchmark_string_patterns(c: &mut Criterion) {
 
 	let test_cases = [
 		("short_strings", (0..1000).map(|i| format!("{}", i % 100)).collect::<Vec<_>>()),
-		("long_strings", (0..100).map(|i| format!("{}", "x".repeat(100 + i))).collect::<Vec<_>>()),
+		("long_strings", (0..100).map(|i| "x".repeat(100 + i).to_string()).collect::<Vec<_>>()),
 		("mixed_lengths", {
 			let mut vec = Vec::new();
 			for i in 0..1000 {
