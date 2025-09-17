@@ -68,7 +68,7 @@ impl<K: DeserializeRevisioned + Ord, V: DeserializeRevisioned> DeserializeRevisi
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
-		let mut map = BTreeMap::new();
+		let mut map = Self::new();
 		for _ in 0..len {
 			let k = K::deserialize_revisioned(reader)?;
 			let v = V::deserialize_revisioned(reader)?;
@@ -135,7 +135,7 @@ impl<T: DeserializeRevisioned + Ord> DeserializeRevisioned for BTreeSet<T> {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
-		let mut set = BTreeSet::new();
+		let mut set = Self::new();
 		for _ in 0..len {
 			let v = T::deserialize_revisioned(reader)?;
 			set.insert(v);
