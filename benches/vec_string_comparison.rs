@@ -33,7 +33,6 @@ fn benchmark_serialization(c: &mut Criterion) {
 		group.throughput(Throughput::Bytes(total_bytes as u64));
 
 		// Benchmark Vec<String> serialization
-		// Note: The optimised feature affects deserialization, not serialization
 		group.bench_with_input(BenchmarkId::new("Vec<String>", size), &size, |b, _| {
 			b.iter(|| {
 				let serialized = revision::to_vec(black_box(&data)).unwrap();
@@ -60,18 +59,6 @@ fn benchmark_deserialization(c: &mut Criterion) {
 		// Pre-serialize data for deserialization benchmarks
 		let serialized = revision::to_vec(&data).unwrap();
 
-		// Benchmark Vec<String> deserialization
-		// This is where the optimised feature makes a difference
-		#[cfg(feature = "optimised")]
-		group.bench_with_input(BenchmarkId::new("Optimised", size), &size, |b, _| {
-			b.iter(|| {
-				let deserialized: Vec<String> =
-					revision::from_slice(black_box(&serialized)).unwrap();
-				black_box(deserialized)
-			})
-		});
-
-		#[cfg(not(feature = "optimised"))]
 		group.bench_with_input(BenchmarkId::new("Regular", size), &size, |b, _| {
 			b.iter(|| {
 				let deserialized: Vec<String> =
@@ -96,18 +83,6 @@ fn benchmark_roundtrip(c: &mut Criterion) {
 			data.iter().map(|s| s.len()).sum::<usize>() + data.len() * std::mem::size_of::<usize>();
 		group.throughput(Throughput::Bytes(total_bytes as u64));
 
-		// Benchmark full roundtrip (serialize + deserialize)
-		#[cfg(feature = "optimised")]
-		group.bench_with_input(BenchmarkId::new("Optimised", size), &size, |b, _| {
-			b.iter(|| {
-				let serialized = revision::to_vec(black_box(&data)).unwrap();
-				let deserialized: Vec<String> =
-					revision::from_slice(black_box(&serialized)).unwrap();
-				black_box(deserialized)
-			})
-		});
-
-		#[cfg(not(feature = "optimised"))]
 		group.bench_with_input(BenchmarkId::new("Regular", size), &size, |b, _| {
 			b.iter(|| {
 				let serialized = revision::to_vec(black_box(&data)).unwrap();
@@ -155,21 +130,6 @@ fn benchmark_string_patterns(c: &mut Criterion) {
 		// Pre-serialize for deserialization benchmark
 		let serialized = revision::to_vec(data).unwrap();
 
-		// Benchmark deserialization with different patterns
-		#[cfg(feature = "optimised")]
-		group.bench_with_input(
-			BenchmarkId::new(format!("{}_optimised", pattern_name), "deserialize"),
-			pattern_name,
-			|b, _| {
-				b.iter(|| {
-					let deserialized: Vec<String> =
-						revision::from_slice(black_box(&serialized)).unwrap();
-					black_box(deserialized)
-				})
-			},
-		);
-
-		#[cfg(not(feature = "optimised"))]
 		group.bench_with_input(
 			BenchmarkId::new(format!("{}_regular", pattern_name), "deserialize"),
 			pattern_name,

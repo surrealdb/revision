@@ -32,70 +32,16 @@ where
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
-		// Perform basic deserialization
-		#[cfg(not(feature = "optimised"))]
-		{
-			let mut vec = Vec::with_capacity(len);
-			for _ in 0..len {
-				let v: T = T::deserialize_revisioned(reader)?;
-				vec.push(v);
+		let mut vec = Vec::with_capacity(len);
+		for _ in 0..len {
+			let v: T = T::deserialize_revisioned(reader)?;
+			// Hint telling the compiler that the push is within capacity.
+			if vec.len() >= vec.capacity() {
+				unsafe { std::hint::unreachable_unchecked() }
 			}
-			Ok(vec)
+			vec.push(v);
 		}
-		// Perform optimised deserialization
-		#[cfg(feature = "optimised")]
-		{
-			// For zero-length vectors, return early
-			if len == 0 {
-				return Ok(Vec::new());
-			}
-			// Create a vector with the necessary capacity
-			let mut vec = Vec::with_capacity(len);
-			// Safety: We use a guard to ensure the vector length is only set after all elements
-			// are successfully deserialized. If deserialization panics or fails, the guard
-			// ensures we don't leave the vector in an invalid state.
-			struct VecGuard<T> {
-				vec: *mut Vec<T>,
-				initialized: usize,
-			}
-			// If we panic or return early, set the vector length
-			impl<T> Drop for VecGuard<T> {
-				fn drop(&mut self) {
-					// Safety: we are tracking the number of initialised elements
-					unsafe {
-						(*self.vec).set_len(self.initialized);
-					}
-				}
-			}
-			// Get a mutable pointer to the vector
-			let vec_ptr: *mut T = vec.as_mut_ptr();
-			// Create a guard to track the initialised elements
-			let mut guard = VecGuard {
-				vec: &mut vec,
-				initialized: 0,
-			};
-			// Loop for the number of known vector elements
-			for i in 0..len {
-				// Deserialize elements directly into pre-allocated memory
-				let element = T::deserialize_revisioned(reader)?;
-				// Safety: We know i < len and vec has capacity for len elements
-				unsafe {
-					vec_ptr.add(i).write(element);
-				}
-				// Increment the number of initialised elements
-				guard.initialized = i + 1;
-			}
-			// Set the final vector length
-			unsafe {
-				vec.set_len(len);
-			}
-			// Prevent the guard from adjusting the length
-			guard.initialized = 0;
-			// Prevent the guard from dropping
-			std::mem::forget(guard);
-			// Return the vector
-			Ok(vec)
-		}
+		Ok(vec)
 	}
 }
 
