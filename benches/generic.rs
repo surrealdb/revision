@@ -131,7 +131,7 @@ impl ComplexData {
 			// Initialize additional vector types with varying patterns
 			boolean_flags: (0..size_factor).map(|i| i % 3 == 0).collect(),
 			tiny_signed_vec: (0..size_factor)
-				.map(|i| ((i as i8).wrapping_mul(3).wrapping_sub(100)))
+				.map(|i| (i as i8).wrapping_mul(3).wrapping_sub(100))
 				.collect(),
 			small_unsigned_vec: (0..size_factor).map(|i| ((i * 7 + 13) % 65536) as u16).collect(),
 			large_numbers_vec: (0..size_factor).map(|i| (i as i64) * 1_000_000_007).collect(),
