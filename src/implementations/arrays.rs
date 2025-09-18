@@ -1,7 +1,7 @@
-use super::super::DeserializeRevisioned;
-use super::super::Error;
-use super::super::Revisioned;
-use super::super::SerializeRevisioned;
+use crate::DeserializeRevisioned;
+use crate::Error;
+use crate::Revisioned;
+use crate::SerializeRevisioned;
 
 macro_rules! impl_revisioned_array_with_size {
 	($ty:literal) => {

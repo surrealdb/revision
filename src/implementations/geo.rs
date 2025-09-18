@@ -2,7 +2,6 @@
 
 use super::super::Error;
 use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
-use super::vecs::serialize_slice;
 use geo::{Coord, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon};
 
 impl SerializeRevisioned for Coord {
@@ -78,7 +77,11 @@ impl SerializeRevisioned for Polygon {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		self.exterior().serialize_revisioned(writer)?;
-		serialize_slice(self.interiors(), writer)
+		self.interiors().len().serialize_revisioned(writer)?;
+		for interior in self.interiors() {
+			interior.serialize_revisioned(writer)?;
+		}
+		Ok(())
 	}
 }
 

@@ -2,12 +2,12 @@ use core::str;
 
 use crate::{DeserializeRevisioned, Error, Revisioned, SerializeRevisioned};
 
-use super::vecs::serialize_slice;
+use super::vecs::serialize_bytes;
 
 impl SerializeRevisioned for String {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		serialize_slice(self.as_bytes(), writer)
+		serialize_bytes(self.as_bytes(), writer)
 	}
 }
 
@@ -20,6 +20,20 @@ impl DeserializeRevisioned for String {
 }
 
 impl Revisioned for String {
+	#[inline]
+	fn revision() -> u16 {
+		1
+	}
+}
+
+impl SerializeRevisioned for str {
+	#[inline]
+	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+		serialize_bytes(self.as_bytes(), writer)
+	}
+}
+
+impl Revisioned for str {
 	#[inline]
 	fn revision() -> u16 {
 		1

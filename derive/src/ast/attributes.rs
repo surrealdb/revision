@@ -103,7 +103,7 @@ where
 {
 	fn parse(input: ParseStream) -> syn::Result<Self> {
 		let span = input.span();
-		let options = input.parse_terminated(|input| O::Option::parse(input), Token![,])?;
+		let options = input.parse_terminated(O::Option::parse, Token![,])?;
 		let options = options.into_iter().collect::<Vec<O::Option>>();
 		O::finish(span, options).map(Direct)
 	}

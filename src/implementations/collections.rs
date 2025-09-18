@@ -1,5 +1,8 @@
-use super::super::Error;
-use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
+use crate::DeserializeRevisioned;
+use crate::Error;
+use crate::Revisioned;
+use crate::SerializeRevisioned;
+
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::BinaryHeap;
@@ -281,5 +284,144 @@ mod tests {
 		)
 		.unwrap();
 		assert_eq!(val.into_sorted_vec(), out.into_sorted_vec());
+	}
+
+	#[test]
+	fn test_hashset_string_empty() {
+		let set: HashSet<String> = HashSet::new();
+		let mut mem: Vec<u8> = vec![];
+		set.serialize_revisioned(&mut mem).unwrap();
+
+		let out: HashSet<String> = HashSet::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		assert_eq!(set, out);
+	}
+
+	#[test]
+	fn test_btreeset_string_empty() {
+		let set: BTreeSet<String> = BTreeSet::new();
+		let mut mem: Vec<u8> = vec![];
+		set.serialize_revisioned(&mut mem).unwrap();
+
+		let out: BTreeSet<String> = BTreeSet::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		assert_eq!(set, out);
+	}
+
+	#[test]
+	fn test_hashmap_string_empty() {
+		let map: HashMap<String, i32> = HashMap::new();
+		let mut mem: Vec<u8> = vec![];
+		map.serialize_revisioned(&mut mem).unwrap();
+
+		let out: HashMap<String, i32> =
+			HashMap::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		assert_eq!(map, out);
+	}
+
+	#[test]
+	fn test_btreemap_string_empty() {
+		let map: BTreeMap<String, i32> = BTreeMap::new();
+		let mut mem: Vec<u8> = vec![];
+		map.serialize_revisioned(&mut mem).unwrap();
+
+		let out: BTreeMap<String, i32> =
+			BTreeMap::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		assert_eq!(map, out);
+	}
+
+	#[test]
+	fn test_hashset_string_specialization() {
+		let mut set = HashSet::new();
+		set.insert("item1".to_string());
+		set.insert("item2".to_string());
+		set.insert("".to_string());
+		set.insert("longer_item_with_underscores".to_string());
+		set.insert("unicode_🚀🔥✨".to_string());
+
+		let mut mem: Vec<u8> = vec![];
+		set.serialize_revisioned(&mut mem).unwrap();
+
+		let out: HashSet<String> = HashSet::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		assert_eq!(set, out);
+	}
+
+	#[test]
+	fn test_btreeset_string_specialization() {
+		let mut set = BTreeSet::new();
+		set.insert("item1".to_string());
+		set.insert("item2".to_string());
+		set.insert("".to_string());
+		set.insert("longer_item_with_underscores".to_string());
+		set.insert("unicode_🚀🔥✨".to_string());
+
+		let mut mem: Vec<u8> = vec![];
+		set.serialize_revisioned(&mut mem).unwrap();
+
+		let out: BTreeSet<String> = BTreeSet::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		assert_eq!(set, out);
+	}
+
+	#[test]
+	fn test_hashset_string_large() {
+		// Test larger HashSet to verify bulk operations and deterministic serialization
+		let mut set = HashSet::new();
+		for i in 0..50 {
+			set.insert(format!("item_{}", i));
+		}
+
+		let mut mem: Vec<u8> = vec![];
+		set.serialize_revisioned(&mut mem).unwrap();
+
+		let out: HashSet<String> = HashSet::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		assert_eq!(set, out);
+	}
+
+	#[test]
+	fn test_btreeset_string_large() {
+		// Test larger BTreeSet to verify bulk operations and ordering
+		let mut set = BTreeSet::new();
+		for i in 0..50 {
+			set.insert(format!("item_{:03}", i)); // Zero-padded for consistent ordering
+		}
+
+		let mut mem: Vec<u8> = vec![];
+		set.serialize_revisioned(&mut mem).unwrap();
+
+		let out: BTreeSet<String> = BTreeSet::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		assert_eq!(set, out);
+	}
+
+	// Tests specifically for the String-keyed specializations
+	#[test]
+	fn test_hashmap_string_specialization() {
+		let mut map = HashMap::new();
+		map.insert("key1".to_string(), 42i32);
+		map.insert("key2".to_string(), -100i32);
+		map.insert("".to_string(), 0i32);
+		map.insert("longer_key_with_underscores".to_string(), 999i32);
+		map.insert("unicode_🚀🔥✨".to_string(), -42i32);
+
+		let mut mem: Vec<u8> = vec![];
+		map.serialize_revisioned(&mut mem).unwrap();
+
+		let out: HashMap<String, i32> =
+			HashMap::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		assert_eq!(map, out);
+	}
+
+	#[test]
+	fn test_btreemap_string_specialization() {
+		let mut map = BTreeMap::new();
+		map.insert("key1".to_string(), 42i32);
+		map.insert("key2".to_string(), -100i32);
+		map.insert("".to_string(), 0i32);
+		map.insert("longer_key_with_underscores".to_string(), 999i32);
+		map.insert("unicode_🚀🔥✨".to_string(), -42i32);
+
+		let mut mem: Vec<u8> = vec![];
+		map.serialize_revisioned(&mut mem).unwrap();
+
+		let out: BTreeMap<String, i32> =
+			BTreeMap::deserialize_revisioned(&mut mem.as_slice()).unwrap();
+		assert_eq!(map, out);
 	}
 }
