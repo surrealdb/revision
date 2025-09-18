@@ -1,6 +1,7 @@
 //! Specialized implementations for vector data structures.
 
 use crate::{DeserializeRevisioned, Error, Revisioned, SerializeRevisioned};
+use std::io::ErrorKind::UnexpectedEof;
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 
@@ -240,22 +241,20 @@ impl DeserializeRevisioned for RevisionSpecialisedVecI8 {
 		if len == 0 {
 			return Ok(Self::new());
 		}
-		// Create a vector with the necessary capacity
-		let mut vec = Vec::with_capacity(len);
-		// Get safe access to uninitialized memory using spare_capacity_mut()
-		let spare = vec.spare_capacity_mut();
-		// Safety: Convert MaybeUninit<i8> slice to u8 slice. This is safe because:
-		// 1. spare_capacity_mut() provides access to allocated but uninitialized memory
-		// 2. MaybeUninit<i8> has the same layout as i8, and i8 has same representation as u8
-		// 3. We only set the length after successful read
-		let uninit_slice =
-			unsafe { std::slice::from_raw_parts_mut(spare.as_mut_ptr().cast::<u8>(), len) };
-		// Read the data - this is now safe because spare_capacity_mut() prevents UB
-		reader.read_exact(uninit_slice).map_err(Error::Io)?;
-		// Only set the length after successful read
-		unsafe {
-			vec.set_len(len);
+		// Create the vector
+		let mut vec: Vec<u8> = Vec::with_capacity(len);
+		// Take the required bytes from the reader
+		let mut bytes = reader.take(len as u64);
+		// Read the bytes into the vector
+		if len != bytes.read_to_end(&mut vec).map_err(Error::Io)? {
+			return Err(Error::Io(UnexpectedEof.into()));
 		}
+		// Get the Vec<u8> raw parts
+		let (ptr, len, cap) = (vec.as_mut_ptr(), vec.len(), vec.capacity());
+		// Prevent drop of the Vec<u8>
+		std::mem::forget(vec);
+		// Convert the Vec<u8> to Vec<i8>
+		let vec = unsafe { Vec::from_raw_parts(ptr.cast::<i8>(), len, cap) };
 		// Return the specialized vector
 		Ok(Self {
 			inner: vec,

@@ -257,34 +257,16 @@ impl DeserializeRevisioned for RevisionSpecialisedVecF64 {
 		}
 		// Create a vector with the necessary capacity
 		let mut vec = Vec::with_capacity(len);
-		// On little-endian platforms, f64 values are already in the correct
-		// byte order, whilst on big-endian platforms, we need to convert them
-		if cfg!(target_endian = "little") {
-			// Fast path for little-endian platforms: direct byte read
-			let byte_len = len * std::mem::size_of::<f64>();
-			// Get safe access to uninitialized memory using spare_capacity_mut()
-			let spare = vec.spare_capacity_mut();
-			// Safety: Convert MaybeUninit<f64> slice to bytes. This is safe because:
-			// 1. spare_capacity_mut() provides access to allocated but uninitialized memory
-			// 2. MaybeUninit<T> has the same layout as T
-			// 3. We only set the length after successful read
-			let byte_slice = unsafe {
-				std::slice::from_raw_parts_mut(spare.as_mut_ptr().cast::<u8>(), byte_len)
-			};
-			// Read the data - this is now safe because spare_capacity_mut() prevents UB
-			reader.read_exact(byte_slice).map_err(Error::Io)?;
-			// Only set the length after successful read
-			unsafe {
-				vec.set_len(len);
+		// Deserialize each f64 individually
+		for _ in 0..len {
+			let mut bytes = [0u8; 8];
+			reader.read_exact(&mut bytes).map_err(Error::Io)?;
+			let value = f64::from_le_bytes(bytes);
+			// Hint telling the compiler that the push is within capacity.
+			if vec.len() >= vec.capacity() {
+				unsafe { std::hint::unreachable_unchecked() }
 			}
-		} else {
-			// Slower path for big-endian platforms: read and convert each f64
-			for _ in 0..len {
-				let mut bytes = [0u8; 8];
-				reader.read_exact(&mut bytes).map_err(Error::Io)?;
-				let value = f64::from_le_bytes(bytes);
-				vec.push(value);
-			}
+			vec.push(value);
 		}
 		// Return the specialized vector
 		Ok(Self {
