@@ -78,9 +78,8 @@ struct ComplexData {
 	// Duration
 	time_duration: Duration,
 
-	// Cow (clone-on-write)
-	#[allow(clippy::owned_cow)]
-	borrowed_or_owned: Cow<'static, String>,
+	// Cow
+	borrowed_or_owned: Cow<'static, str>,
 }
 
 impl ComplexData {

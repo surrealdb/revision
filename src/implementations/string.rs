@@ -26,6 +26,20 @@ impl Revisioned for String {
 	}
 }
 
+impl SerializeRevisioned for str {
+	#[inline]
+	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+		serialize_bytes(self.as_bytes(), writer)
+	}
+}
+
+impl Revisioned for str {
+	#[inline]
+	fn revision() -> u16 {
+		1
+	}
+}
+
 impl SerializeRevisioned for char {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
