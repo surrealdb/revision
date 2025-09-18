@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, TokenStreamExt};
-use syn::{Ident, Index};
-
+use syn::{Ident, Index, Type};
+use syn::spanned::Spanned;
 use crate::ast::{Enum, Fields, Struct, Variant, Visit};
 
 use super::common::CalcDiscriminant;
@@ -11,13 +11,15 @@ use super::common::CalcDiscriminant;
 /// Visitor which creates structs for fields in a an enum variant.
 pub struct EnumStructsVisitor<'a> {
 	pub revision: usize,
+    pub types: Vec<Ident>,
 	pub stream: &'a mut TokenStream,
 }
 
 impl<'a> EnumStructsVisitor<'a> {
-	pub fn new(revision: usize, stream: &'a mut TokenStream) -> Self {
+	pub fn new(revision: usize, types: Vec<Ident>, stream: &'a mut TokenStream) -> Self {
 		Self {
 			revision,
+            types,
 			stream,
 		}
 	}
@@ -33,30 +35,81 @@ impl<'ast> Visit<'ast> for EnumStructsVisitor<'_> {
 					ref fields,
 					..
 				} => {
-					let fields = fields
-						.iter()
-						.filter(|x| x.attrs.options.exists_at(self.revision))
-						.map(|x| {
-							let name = &x.name;
-							let ty = &x.ty;
-							quote! {
-								#name: #ty
-							}
-						});
+                    let fields = fields.iter()
+                        .filter(|x| x.attrs.options.exists_at(self.revision));
+
+                    let mut generics = vec!();
+                    let mut body = quote::quote!();
+                    for field in fields {
+                        let name = &field.name;
+                        let ty = &field.ty;
+
+                        if let Type::Path(path) = ty {
+                            let uses_generics = self.types
+                                .iter()
+                                .any(|ident| path.path.is_ident(ident));
+
+                            if uses_generics {
+                                generics.push(path);
+                            }
+                        }
+
+                        body.extend(quote::quote! {
+                            #name: #ty,
+                        });
+                    }
+
+                    let generics = if generics.is_empty() {
+                        quote::quote!()
+                    } else {
+                        quote::quote! {
+                            < #(#generics),* >
+                        }
+                    };
+
 					quote! {
-						struct #name{ #(#fields),* }
+						struct #name #generics {
+                            #body
+                        }
 					}
 				}
 				Fields::Unnamed {
 					ref fields,
 					..
 				} => {
-					let fields = fields
-						.iter()
-						.filter(|x| x.attrs.options.exists_at(self.revision))
-						.map(|x| &x.ty);
+                    let fields = fields.iter()
+                        .filter(|x| x.attrs.options.exists_at(self.revision));
+
+                    let mut generics = vec!();
+                    let mut body = quote::quote!();
+                    for field in fields {
+                        let ty = &field.ty;
+
+                        if let Type::Path(path) = ty {
+                            let uses_generics = self.types
+                                .iter()
+                                .any(|ident| path.path.is_ident(ident));
+
+                            if uses_generics {
+                                generics.push(path);
+                            }
+                        }
+
+                        body.extend(quote::quote! {
+                            #ty,
+                        });
+                    }
+
+                    let generics = if generics.is_empty() {
+                        quote::quote!()
+                    } else {
+                        quote::quote! {
+                            < #(#generics),* >
+                        }
+                    };
+
 					quote! {
-						struct #name( #(#fields),* );
+						struct #name #generics ( #body );
 					}
 				}
 				Fields::Unit => {
