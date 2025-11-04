@@ -374,7 +374,7 @@ mod tests {
 
 	#[test]
 	fn test_revision_specialised_vec_i32_serialization_large() {
-		let data: Vec<i32> = (0..20_000).map(|i| (i as i32).wrapping_mul(13)).collect();
+		let data: Vec<i32> = (0..20_000i32).map(|i| i.wrapping_mul(13)).collect();
 		let wrapper = RevisionSpecialisedVecI32::from_vec(data.clone());
 		let bytes = to_vec(&wrapper).unwrap();
 		let out: RevisionSpecialisedVecI32 = from_slice(&bytes).unwrap();
@@ -417,7 +417,7 @@ mod tests {
 	#[test]
 	fn test_consistency_with_regular_vec_i32() {
 		// Ensure that a Vec<i32> serialized via this specialized type round-trips correctly
-		let values: Vec<i32> = (-50_000..50_000).map(|x| x as i32).collect();
+		let values: Vec<i32> = (-50_000..50_000i32).collect();
 		let wrapper = RevisionSpecialisedVecI32::from_vec(values.clone());
 		let bytes = to_vec(&wrapper).unwrap();
 		let out: RevisionSpecialisedVecI32 = from_slice(&bytes).unwrap();
