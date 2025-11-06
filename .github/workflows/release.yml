@@ -64,16 +64,19 @@ jobs:
           
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Create and push tag
+      - name: Validate derive crate version
         run: |
-          git tag -a "v${{ steps.version.outputs.version }}" -m "Release version ${{ steps.version.outputs.version }}"
-          git push origin "v${{ steps.version.outputs.version }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          DERIVE_VERSION=$(taplo get -f derive/Cargo.toml "package.version")
+          if [ "$DERIVE_VERSION" != "$VERSION" ]; then
+            echo "Error: derive/Cargo.toml version ($DERIVE_VERSION) doesn't match branch version ($VERSION)" >&2
+            exit 1
+          fi
 
       - name: Generate changelog
         id: changelog
         uses: orhun/git-cliff-action@v4
         with:
-          config: cliff.toml
           args: --verbose --latest --tag v${{ steps.version.outputs.version }}
         env:
           OUTPUT: CHANGELOG.md
@@ -89,10 +92,37 @@ jobs:
             echo "No changes to commit"
           fi
 
+      - name: Publish derive crate
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p revision-derive
+
+      - name: Wait for revision-derive to be available on crates.io
+        run: |
+          set -euo pipefail
+          VER="${{ steps.version.outputs.version }}"
+          echo "Waiting for revision-derive version $VER to appear on crates.io..."
+          for i in {1..60}; do
+            latest=$(python -c 'import json,urllib.request; print(json.load(urllib.request.urlopen("https://crates.io/api/v1/crates/revision-derive"))["crate"]["max_version"])')
+            if [ "$latest" = "$VER" ]; then
+              echo "Found revision-derive $VER on crates.io."
+              exit 0
+            fi
+            echo "Not yet available (saw $latest). Retry $i/60..."
+            sleep 5
+          done
+          echo "Timed out waiting for crates.io index to update." >&2
+          exit 1
+
       - name: Publish crate
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish
+        run: cargo publish -p revision
+
+      - name: Create and push tag
+        run: |
+          git tag -a "v${{ steps.version.outputs.version }}" -m "Release version ${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
