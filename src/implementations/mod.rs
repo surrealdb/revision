@@ -2,6 +2,7 @@ mod arc;
 pub mod arrays;
 pub mod bound;
 pub mod boxes;
+pub mod bytes;
 pub mod chrono;
 pub mod collections;
 pub mod cow;
