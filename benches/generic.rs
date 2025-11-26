@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use revision::prelude::*;
 use std::borrow::Cow;
@@ -34,7 +35,8 @@ struct ComplexData {
 
 	// Strings and collections
 	text: String,
-	bytes: Vec<u8>,
+	bytes: Bytes,
+	bytes_vec: Vec<u8>,
 	numbers: Vec<i32>,
 
 	// Additional vector types for comprehensive testing
@@ -126,6 +128,7 @@ impl ComplexData {
 
 			text: "The quick brown fox jumps over the lazy dog".repeat(size_factor / 10 + 1),
 			bytes: (0..size_factor).map(|i| (i % 256) as u8).collect(),
+			bytes_vec: (0..size_factor).map(|i| (i % 256) as u8).collect(),
 			numbers: (0..size_factor).map(|i| i as i32).collect(),
 
 			// Initialize additional vector types with varying patterns
