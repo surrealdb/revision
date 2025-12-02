@@ -42,8 +42,8 @@ use revision::Error;
 use revision::revisioned;
 
 // The test structure is at revision 3.
-#[derive(Debug, PartialEq)]
 #[revisioned(revision = 3)]
+#[derive(Debug, PartialEq)]
 pub struct TestStruct {
     a: u32,
     #[revision(start = 2, end = 3, convert_fn = "convert_b")]
@@ -56,8 +56,8 @@ pub struct TestStruct {
 
 impl TestStruct {
     // Used to set the default value for a newly added field.
-    fn default_c(_revision: u16) -> String {
-        "test_string".to_owned()
+    fn default_c(_revision: u16) -> Result<String, Error> {
+        Ok("test_string".to_owned())
     }
     // Used to convert the field from an old revision to the latest revision
     fn convert_b(&mut self, _revision: u16, value: u8) -> Result<(), Error> {
@@ -67,8 +67,8 @@ impl TestStruct {
 }
 
 // The test structure is at revision 3.
-#[derive(Debug, PartialEq)]
 #[revisioned(revision = 3)]
+#[derive(Debug, PartialEq)]
 pub enum TestEnum {
     #[revision(end = 2, convert_fn = "upgrade_zero")]
     Zero,
@@ -79,35 +79,31 @@ pub enum TestEnum {
     #[revision(start = 2)]
     Three {
         a: i64,
-        #[revision(end = 2, convert_fn = "upgrade_three_b")]
+        #[revision(end = 3, convert_fn = "upgrade_three_b")]
         b: f32,
         #[revision(start = 2)]
-        c: rust_decimal::Decimal,
+        c: f64,
         #[revision(start = 3)]
-        d: String
+        d: String,
     },
 }
 
 impl TestEnum {
     // Used to convert an old enum variant into a new variant.
-    fn upgrade_zero((): ()) -> Result<TestEnum, Error> {
+    fn upgrade_zero(_: TestEnumZeroFields, _revision: u16) -> Result<TestEnum, Error> {
         Ok(Self::Two(0))
     }
     // Used to convert an old enum variant into a new variant.
-    fn upgrade_one((v0,): (u32,)) -> Result<TestEnum, Error> {
-        Ok(Self::Two(v0 as u64))
+    fn upgrade_one(f: TestEnumOneFields, _revision: u16) -> Result<TestEnum, Error> {
+        Ok(Self::Two(f.0 as u64))
     }
     // Used to convert the field from an old revision to the latest revision
-    fn upgrade_three_b(&mut self, _revision: u16, value: f32) -> Result<(), Error> {
-        match self {
-            TestEnum::Three {
-                ref mut c,
-                ..
-            } => {
-                *c = value.into();
-            }
-            _ => unreachable!(),
-        }
+    fn upgrade_three_b(
+        res: &mut TestEnumThreeFields,
+        _revision: u16,
+        value: f32,
+    ) -> Result<(), Error> {
+        res.c = value.into();
         Ok(())
     }
 }
