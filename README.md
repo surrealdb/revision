@@ -82,7 +82,7 @@ pub enum TestEnum {
         #[revision(end = 3, convert_fn = "upgrade_three_b")]
         b: f32,
         #[revision(start = 2)]
-        c: f64,
+        c: rust_decimal::Decimal,
         #[revision(start = 3)]
         d: String,
     },
