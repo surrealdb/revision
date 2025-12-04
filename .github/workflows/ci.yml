@@ -47,7 +47,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Run hack check
+      - name: Check code quality
         run: cargo check --all-targets --all-features
 
   clippy:
@@ -64,7 +64,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Run hack clippy
+      - name: Check code clippy
         run: cargo clippy --all-targets --all-features
 
   test:
@@ -81,5 +81,5 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Run hack test
+      - name: Check code tests
         run:  cargo test --all-targets --all-features
