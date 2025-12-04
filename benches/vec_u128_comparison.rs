@@ -79,4 +79,3 @@ fn benchmark_deserialization(c: &mut Criterion) {
 
 criterion_group!(benches, benchmark_serialization, benchmark_deserialization);
 criterion_main!(benches);
-
