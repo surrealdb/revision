@@ -9,6 +9,7 @@ pub mod cow;
 pub mod decimal;
 pub mod duration;
 pub mod geo;
+pub mod imbl;
 pub mod notnan;
 pub mod option;
 pub mod path;

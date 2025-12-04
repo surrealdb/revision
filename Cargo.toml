@@ -29,6 +29,7 @@ regex = { version = "1.12.2", optional = true }
 roaring = { version = "0.11.2", features = ["serde"], optional = true }
 rust_decimal = { version = "1.39.0", optional = true }
 uuid = { version = "1.18.1", optional = true }
+imbl = { version = "6.1.0", optional = true }
 
 [dev-dependencies]
 rand = "0.9.2"
@@ -96,3 +97,8 @@ harness = false
 [[bench]]
 name = "vec_string_comparison"
 harness = false
+
+[[bench]]
+name = "ordmap_comparison"
+harness = false
+required-features = ["imbl"]

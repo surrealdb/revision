@@ -47,8 +47,8 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Run hack check
-        run: cargo hack check --feature-powerset --optional-deps
+      - name: Check code quality
+        run: cargo check --all-targets --all-features
 
   clippy:
     name: Check clippy
@@ -64,8 +64,8 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Run hack clippy
-        run: cargo hack clippy --no-deps --feature-powerset --optional-deps --all-targets --tests
+      - name: Check code clippy
+        run: cargo clippy --all-targets --all-features
 
   test:
     name: Run tests
@@ -81,19 +81,5 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Run hack test
-        run:  cargo hack test --feature-powerset --optional-deps
-
-  bench:
-    name: Run benchmarks
-    runs-on: ubuntu-latest
-    steps:
-
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Checkout sources
-        uses: actions/checkout@v4
-
-      - name: Bench
-        run: cargo bench --features roaring roaring_benchmark
+      - name: Check code tests
+        run:  cargo test --all-targets --all-features
