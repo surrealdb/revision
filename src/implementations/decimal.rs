@@ -62,21 +62,21 @@ impl DeserializeRevisioned for Vec<Decimal> {
 		if len == 0 {
 			return Ok(Vec::new());
 		}
-		// Get the total number of bytes to read (with overflow check)
-		let total = len.checked_mul(DECIMAL_SIZE).ok_or(Error::IntegerOverflow)?;
-		// Create the vector
-		let mut bytes = Vec::with_capacity(total);
-		// SAFETY: We immediately read into the uninitialized buffer, and if read_exact fails,
-		// we never use the vec. All u8 bit patterns are valid.
-		unsafe {
-			bytes.set_len(total);
-		}
-		reader.read_exact(&mut bytes).map_err(Error::Io)?;
-		// Convert to Decimals
+		// Allocate the result vector
 		let mut vec = Vec::with_capacity(len);
-		for chunk in bytes.chunks_exact(DECIMAL_SIZE) {
-			let arr: [u8; DECIMAL_SIZE] = chunk.try_into().unwrap();
-			vec.push(Decimal::deserialize(arr));
+		// Convert to Decimals
+		for _ in 0..len {
+			// Read the bytes into a temporary buffer
+			let mut b = [0u8; DECIMAL_SIZE];
+			reader.read_exact(&mut b).map_err(Error::Io)?;
+			// Convert the bytes to the target type
+			let v = Decimal::deserialize(b);
+			// Check if the vector is at capacity
+			if vec.len() > vec.capacity() {
+				unsafe { std::hint::unreachable_unchecked() }
+			}
+			// Push the value to the vector
+			vec.push(v);
 		}
 		Ok(vec)
 	}
@@ -149,7 +149,7 @@ mod tests {
 
 	#[test]
 	fn test_vec_decimal_large() {
-		let val: Vec<Decimal> = (0..100).map(|i| Decimal::from(i)).collect();
+		let val: Vec<Decimal> = (0..100).map(Decimal::from).collect();
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 		let out =
