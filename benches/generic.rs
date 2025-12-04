@@ -138,9 +138,9 @@ impl ComplexData {
 				.collect(),
 			small_unsigned_vec: (0..size_factor).map(|i| ((i * 7 + 13) % 65536) as u16).collect(),
 			large_numbers_vec: (0..size_factor).map(|i| (i as i64) * 1_000_000_007).collect(),
-		huge_numbers_vec: (0..size_factor)
-			.map(|i| (i as u128).wrapping_mul(340_282_366_920_938_463_463_374_607_431_768_211))
-			.collect(),
+			huge_numbers_vec: (0..size_factor)
+				.map(|i| (i as u128).wrapping_mul(340_282_366_920_938_463_463_374_607_431_768_211))
+				.collect(),
 			float_values_vec: (0..size_factor).map(|i| (i as f32) * 0.01 + 1.414).collect(),
 			double_precision_vec: (0..size_factor)
 				.map(|i| (i as f64) * 0.001 + std::f64::consts::E)
