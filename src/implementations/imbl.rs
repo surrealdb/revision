@@ -24,12 +24,18 @@ impl<T: DeserializeRevisioned + Clone> DeserializeRevisioned for Vector<T> {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
-		let mut vec = Self::new();
+		// Pre-allocate a Vec to collect all items with better cache locality
+		let mut items = Vec::with_capacity(len);
+		// Iterate and deserialize each item
 		for _ in 0..len {
 			let v = T::deserialize_revisioned(reader)?;
-			vec.push_back(v);
+			// Hint to compiler that push is within capacity
+			unsafe { std::hint::assert_unchecked(items.len() < items.capacity()) };
+			// Push the item to the vector
+			items.push(v);
 		}
-		Ok(vec)
+		// Use FromIterator for bulk construction
+		Ok(items.into_iter().collect())
 	}
 }
 
@@ -64,13 +70,20 @@ impl<K: DeserializeRevisioned + Ord + Clone, V: DeserializeRevisioned + Clone> D
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
-		let mut map = Self::new();
+		// Pre-allocate a Vec to collect all key-value pairs with better cache locality
+		let mut pairs = Vec::with_capacity(len);
+		// Iterate and deserialize each item
 		for _ in 0..len {
 			let k = K::deserialize_revisioned(reader)?;
 			let v = V::deserialize_revisioned(reader)?;
-			map.insert(k, v);
+			// Hint to compiler that push is within capacity
+			unsafe { std::hint::assert_unchecked(pairs.len() < pairs.capacity()) };
+			// Push the item to the vector
+			pairs.push((k, v));
 		}
-		Ok(map)
+		// Use FromIterator for bulk construction - more efficient than individual inserts
+		// Since OrdMap serializes in sorted order, imbl can potentially optimize this
+		Ok(pairs.into_iter().collect())
 	}
 }
 
@@ -100,12 +113,18 @@ impl<T: DeserializeRevisioned + Ord + Clone> DeserializeRevisioned for OrdSet<T>
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
-		let mut set = Self::new();
+		// Pre-allocate a Vec to collect all items with better cache locality
+		let mut items = Vec::with_capacity(len);
+		// Iterate and deserialize each item
 		for _ in 0..len {
 			let v = T::deserialize_revisioned(reader)?;
-			set.insert(v);
+			// Hint to compiler that push is within capacity
+			unsafe { std::hint::assert_unchecked(items.len() < items.capacity()) };
+			// Push the item to the vector
+			items.push(v);
 		}
-		Ok(set)
+		// Use FromIterator for bulk construction
+		Ok(items.into_iter().collect())
 	}
 }
 
@@ -120,8 +139,8 @@ impl<T: Revisioned + Ord + Clone> Revisioned for OrdSet<T> {
 // HashMap<K, V>
 // --------------------------------------------------
 
-impl<K: SerializeRevisioned + Hash + Eq + Clone, V: SerializeRevisioned + Clone>
-	SerializeRevisioned for HashMap<K, V>
+impl<K: SerializeRevisioned + Hash + Eq + Clone, V: SerializeRevisioned + Clone> SerializeRevisioned
+	for HashMap<K, V>
 {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
@@ -140,13 +159,19 @@ impl<K: DeserializeRevisioned + Hash + Eq + Clone, V: DeserializeRevisioned + Cl
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
-		let mut map = Self::new();
+		// Pre-allocate a Vec to collect all key-value pairs with better cache locality
+		let mut pairs = Vec::with_capacity(len);
+		// Iterate and deserialize each item
 		for _ in 0..len {
 			let k = K::deserialize_revisioned(reader)?;
 			let v = V::deserialize_revisioned(reader)?;
-			map.insert(k, v);
+			// Hint to compiler that push is within capacity
+			unsafe { std::hint::assert_unchecked(pairs.len() < pairs.capacity()) };
+			// Push the item to the vector
+			pairs.push((k, v));
 		}
-		Ok(map)
+		// Use FromIterator for bulk construction
+		Ok(pairs.into_iter().collect())
 	}
 }
 
@@ -176,12 +201,18 @@ impl<T: DeserializeRevisioned + Hash + Eq + Clone> DeserializeRevisioned for Has
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
-		let mut set = Self::new();
+		// Pre-allocate a Vec to collect all items with better cache locality
+		let mut items = Vec::with_capacity(len);
+		// Iterate and deserialize each item
 		for _ in 0..len {
 			let v = T::deserialize_revisioned(reader)?;
-			set.insert(v);
+			// Hint to compiler that push is within capacity
+			unsafe { std::hint::assert_unchecked(items.len() < items.capacity()) };
+			// Push the item to the vector
+			items.push(v);
 		}
-		Ok(set)
+		// Use FromIterator for bulk construction
+		Ok(items.into_iter().collect())
 	}
 }
 
@@ -256,9 +287,10 @@ mod tests {
 		let val: OrdMap<String, i32> = OrdMap::new();
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
-		let out =
-			<OrdMap<String, i32> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
-				.unwrap();
+		let out = <OrdMap<String, i32> as DeserializeRevisioned>::deserialize_revisioned(
+			&mut mem.as_slice(),
+		)
+		.unwrap();
 		assert_eq!(val, out);
 	}
 
@@ -338,4 +370,3 @@ mod tests {
 		assert_eq!(val, out);
 	}
 }
-
