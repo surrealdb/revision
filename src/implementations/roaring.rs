@@ -46,6 +46,9 @@ impl Revisioned for RoaringBitmap {
 	}
 }
 
+crate::impl_revisioned_vec!(RoaringBitmap);
+crate::impl_revisioned_vec!(RoaringTreemap);
+
 #[cfg(test)]
 mod tests {
 	use super::*;

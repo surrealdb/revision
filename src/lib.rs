@@ -11,7 +11,6 @@
 
 pub mod error;
 pub mod implementations;
-pub mod specialised;
 
 pub use crate::error::Error;
 pub use revision_derive::revisioned;
@@ -20,7 +19,9 @@ use std::any::TypeId;
 use std::io::{Read, Write};
 
 pub mod prelude {
-	pub use crate::{revisioned, DeserializeRevisioned, Revisioned, SerializeRevisioned};
+	pub use crate::{
+		impl_revisioned_vec, revisioned, DeserializeRevisioned, Revisioned, SerializeRevisioned,
+	};
 }
 
 /// Trait that provides an interface for version aware serialization and deserialization.

@@ -1,6 +1,10 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use revision::specialised::RevisionSpecialisedVecF64;
+use serde::{Deserialize, Serialize};
 use std::hint::black_box;
+
+// Wrapper type for bincode comparison
+#[derive(Serialize, Deserialize)]
+struct BincodeVecF64(Vec<f64>);
 
 // Generate test data for benchmarking
 fn generate_test_data(size: usize) -> Vec<f64> {
@@ -43,19 +47,19 @@ fn benchmark_serialization(c: &mut Criterion) {
 		// f64 is 8 bytes per element
 		group.throughput(Throughput::Bytes((size * 8) as u64));
 
-		// Benchmark regular Vec<f64> serialization
-		group.bench_with_input(BenchmarkId::new("Regular", size), &size, |b, _| {
+		// Benchmark revision Vec<f64> serialization
+		group.bench_with_input(BenchmarkId::new("Revision", size), &size, |b, _| {
 			b.iter(|| {
 				let serialized = revision::to_vec(black_box(&data)).unwrap();
 				black_box(serialized)
 			})
 		});
 
-		// Benchmark RevisionSpecialisedVecF64 serialization
-		let specialized_data = RevisionSpecialisedVecF64::from_vec(data.clone());
-		group.bench_with_input(BenchmarkId::new("Specialized", size), &size, |b, _| {
+		// Benchmark bincode serialization for comparison
+		let bincode_data = BincodeVecF64(data.clone());
+		group.bench_with_input(BenchmarkId::new("Bincode", size), &size, |b, _| {
 			b.iter(|| {
-				let serialized = revision::to_vec(black_box(&specialized_data)).unwrap();
+				let serialized = bincode::serialize(black_box(&bincode_data)).unwrap();
 				black_box(serialized)
 			})
 		});
@@ -74,24 +78,24 @@ fn benchmark_deserialization(c: &mut Criterion) {
 		group.throughput(Throughput::Bytes((size * 8) as u64));
 
 		// Pre-serialize data for deserialization benchmarks
-		let regular_serialized = revision::to_vec(&data).unwrap();
-		let specialized_data = RevisionSpecialisedVecF64::from_vec(data.clone());
-		let specialized_serialized = revision::to_vec(&specialized_data).unwrap();
+		let revision_serialized = revision::to_vec(&data).unwrap();
+		let bincode_data = BincodeVecF64(data.clone());
+		let bincode_serialized = bincode::serialize(&bincode_data).unwrap();
 
-		// Benchmark regular Vec<f64> deserialization
-		group.bench_with_input(BenchmarkId::new("Regular", size), &size, |b, _| {
+		// Benchmark revision Vec<f64> deserialization
+		group.bench_with_input(BenchmarkId::new("Revision", size), &size, |b, _| {
 			b.iter(|| {
 				let deserialized: Vec<f64> =
-					revision::from_slice(black_box(&regular_serialized)).unwrap();
+					revision::from_slice(black_box(&revision_serialized)).unwrap();
 				black_box(deserialized)
 			})
 		});
 
-		// Benchmark RevisionSpecialisedVecF64 deserialization
-		group.bench_with_input(BenchmarkId::new("Specialized", size), &size, |b, _| {
+		// Benchmark bincode deserialization for comparison
+		group.bench_with_input(BenchmarkId::new("Bincode", size), &size, |b, _| {
 			b.iter(|| {
-				let deserialized: RevisionSpecialisedVecF64 =
-					revision::from_slice(black_box(&specialized_serialized)).unwrap();
+				let deserialized: BincodeVecF64 =
+					bincode::deserialize(black_box(&bincode_serialized)).unwrap();
 				black_box(deserialized)
 			})
 		});
@@ -99,5 +103,5 @@ fn benchmark_deserialization(c: &mut Criterion) {
 	group.finish();
 }
 
-criterion_group!(benches, benchmark_serialization, benchmark_deserialization,);
+criterion_group!(benches, benchmark_serialization, benchmark_deserialization);
 criterion_main!(benches);

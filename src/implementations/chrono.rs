@@ -130,6 +130,11 @@ impl Revisioned for Duration {
 	}
 }
 
+crate::impl_revisioned_vec!(DateTime<Utc>);
+crate::impl_revisioned_vec!(NaiveDate);
+crate::impl_revisioned_vec!(NaiveTime);
+crate::impl_revisioned_vec!(Duration);
+
 #[cfg(test)]
 mod tests {
 	use super::*;

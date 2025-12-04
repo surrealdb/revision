@@ -27,6 +27,8 @@ impl Revisioned for Regex {
 	}
 }
 
+crate::impl_revisioned_vec!(Regex);
+
 #[cfg(test)]
 mod tests {
 	use super::*;
