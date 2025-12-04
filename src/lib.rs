@@ -19,9 +19,7 @@ use std::any::TypeId;
 use std::io::{Read, Write};
 
 pub mod prelude {
-	pub use crate::{
-		impl_revisioned_vec, revisioned, DeserializeRevisioned, Revisioned, SerializeRevisioned,
-	};
+	pub use crate::{revisioned, DeserializeRevisioned, Revisioned, SerializeRevisioned};
 }
 
 /// Trait that provides an interface for version aware serialization and deserialization.
@@ -76,12 +74,12 @@ pub trait Revisioned {
 }
 
 pub trait SerializeRevisioned: Revisioned {
-	/// Serializes the struct using the specficifed `writer`.
+	/// Serializes the struct using the specified `writer`.
 	fn serialize_revisioned<W: Write>(&self, w: &mut W) -> Result<(), Error>;
 }
 
 pub trait DeserializeRevisioned: Revisioned {
-	/// Deserializes a new instance of the struct from the specficifed `reader`.
+	/// Deserializes a new instance of the struct from the specified `reader`.
 	fn deserialize_revisioned<R: Read>(r: &mut R) -> Result<Self, Error>
 	where
 		Self: Sized;

@@ -18,6 +18,7 @@ pub mod regex;
 pub mod result;
 pub mod reverse;
 pub mod roaring;
+pub mod specialised;
 pub mod string;
 pub mod tuple;
 pub mod uuid;

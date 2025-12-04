@@ -33,9 +33,13 @@ impl Revisioned for Decimal {
 // Optimized implementation for Vec<Decimal>
 // --------------------------------------------------
 
-impl SerializeRevisioned for Vec<Decimal> {
+#[cfg(feature = "specialised")]
+impl super::specialised::SerializeRevisionedSpecialised for Vec<Decimal> {
 	#[inline]
-	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+	fn serialize_revisioned_specialised<W: std::io::Write>(
+		&self,
+		writer: &mut W,
+	) -> Result<(), Error> {
 		// Write the length first (number of Decimal elements)
 		self.len().serialize_revisioned(writer)?;
 		// For zero-length vectors, return early
@@ -53,9 +57,10 @@ impl SerializeRevisioned for Vec<Decimal> {
 	}
 }
 
-impl DeserializeRevisioned for Vec<Decimal> {
+#[cfg(feature = "specialised")]
+impl super::specialised::DeserializeRevisionedSpecialised for Vec<Decimal> {
 	#[inline]
-	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+	fn deserialize_revisioned_specialised<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		// Read the length first (number of Decimal elements)
 		let len = usize::deserialize_revisioned(reader)?;
 		// For zero-length vectors, return early
@@ -77,13 +82,6 @@ impl DeserializeRevisioned for Vec<Decimal> {
 			vec.push(v);
 		}
 		Ok(vec)
-	}
-}
-
-impl Revisioned for Vec<Decimal> {
-	#[inline]
-	fn revision() -> u16 {
-		1
 	}
 }
 

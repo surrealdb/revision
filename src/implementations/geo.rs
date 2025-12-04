@@ -165,14 +165,6 @@ impl Revisioned for MultiPolygon {
 	}
 }
 
-crate::impl_revisioned_vec!(Coord);
-crate::impl_revisioned_vec!(Point);
-crate::impl_revisioned_vec!(LineString);
-crate::impl_revisioned_vec!(Polygon);
-crate::impl_revisioned_vec!(MultiPoint);
-crate::impl_revisioned_vec!(MultiLineString);
-crate::impl_revisioned_vec!(MultiPolygon);
-
 #[cfg(test)]
 mod test {
 	use std::cell::Cell;

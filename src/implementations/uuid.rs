@@ -33,9 +33,13 @@ impl Revisioned for Uuid {
 // Optimized implementation for Vec<Uuid>
 // --------------------------------------------------
 
-impl SerializeRevisioned for Vec<Uuid> {
+#[cfg(feature = "specialised")]
+impl super::specialised::SerializeRevisionedSpecialised for Vec<Uuid> {
 	#[inline]
-	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+	fn serialize_revisioned_specialised<W: std::io::Write>(
+		&self,
+		writer: &mut W,
+	) -> Result<(), Error> {
 		// Write the length first (number of UUID elements)
 		self.len().serialize_revisioned(writer)?;
 		// For zero-length vectors, return early
@@ -58,9 +62,10 @@ impl SerializeRevisioned for Vec<Uuid> {
 	}
 }
 
-impl DeserializeRevisioned for Vec<Uuid> {
+#[cfg(feature = "specialised")]
+impl super::specialised::DeserializeRevisionedSpecialised for Vec<Uuid> {
 	#[inline]
-	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+	fn deserialize_revisioned_specialised<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		// Read the length first (number of UUID elements)
 		let len = usize::deserialize_revisioned(reader)?;
 		// For zero-length vectors, return early
@@ -83,13 +88,6 @@ impl DeserializeRevisioned for Vec<Uuid> {
 			reader.read_exact(byte_slice).map_err(Error::Io)?;
 		}
 		Ok(vec)
-	}
-}
-
-impl Revisioned for Vec<Uuid> {
-	#[inline]
-	fn revision() -> u16 {
-		1
 	}
 }
 

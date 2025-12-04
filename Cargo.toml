@@ -17,7 +17,8 @@ categories = ["encoding"]
 members = ["derive"]
 
 [features]
-default = []
+default = ["specialised"]
+specialised = []
 
 [dependencies]
 bytes = { version = "1.11.0" }
