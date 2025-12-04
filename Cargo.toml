@@ -65,3 +65,8 @@ harness = false
 [[bench]]
 name = "vec_string_comparison"
 harness = false
+
+[[bench]]
+name = "ordmap_comparison"
+harness = false
+required-features = ["imbl"]
