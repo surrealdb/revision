@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 fn bench_roaring_serialization_benchmark() {
 	let mut val = RoaringTreemap::new();
-	for i in 0..50_000_000 {
+	for i in 0..1_000_000 {
 		if random() {
 			val.insert(i);
 		}

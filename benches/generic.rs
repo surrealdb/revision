@@ -478,7 +478,7 @@ fn bench_vec_u64(c: &mut Criterion) {
 	let mut group = c.benchmark_group("vec_u64_comparison");
 
 	for size in [100, 1000, 10000, 100000].iter() {
-		let data: Vec<u64> = (0..*size).map(|i| (i as u64) * 12345678901234567).collect();
+		let data: Vec<u64> = (0..*size).map(|i| (i as u64).wrapping_mul(12345678901234567)).collect();
 
 		group.bench_with_input(BenchmarkId::new("serialize", size), &data, |b, data| {
 			b.iter(|| {
@@ -510,7 +510,7 @@ fn bench_vec_i16(c: &mut Criterion) {
 
 	for size in [100, 1000, 10000, 100000].iter() {
 		let data: Vec<i16> =
-			(0..*size).map(|i| ((i as i16) * 3 - (*size as i16 / 2)).wrapping_mul(7)).collect();
+			(0..*size).map(|i| (i as i16).wrapping_mul(3).wrapping_sub(*size as i16 / 2).wrapping_mul(7)).collect();
 
 		group.bench_with_input(BenchmarkId::new("serialize", size), &data, |b, data| {
 			b.iter(|| {
