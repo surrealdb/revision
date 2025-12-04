@@ -151,10 +151,8 @@ macro_rules! impl_revisioned_specialised_vec {
 						reader.read_exact(&mut b).map_err(Error::Io)?;
 						// Convert the bytes to the target type
 						let v = <$ty>::from_le_bytes(b);
-						// Check if the vector is at capacity
-						if vec.len() > vec.capacity() {
-							unsafe { std::hint::unreachable_unchecked() }
-						}
+						// Allow the compiler to optimize away bounds checks
+						unsafe { std::hint::assert_unchecked(vec.len() < vec.capacity()) };
 						// Push the value to the vector
 						vec.push(v);
 					}
