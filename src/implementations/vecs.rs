@@ -180,7 +180,7 @@ impl SerializeRevisioned for Vec<u8> {
 	#[inline]
 	fn serialize_revisioned<W: Write>(&self, writer: &mut W) -> Result<(), Error> {
 		// Use the optimized serialize_bytes function for Vec<u8>
-		serialize_bytes(&self, writer)
+		serialize_bytes(self, writer)
 	}
 }
 
