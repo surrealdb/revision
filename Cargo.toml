@@ -46,7 +46,43 @@ name = "generic"
 harness = false
 
 [[bench]]
+name = "vec_i8_comparison"
+harness = false
+
+[[bench]]
+name = "vec_i16_comparison"
+harness = false
+
+[[bench]]
+name = "vec_i32_comparison"
+harness = false
+
+[[bench]]
+name = "vec_i64_comparison"
+harness = false
+
+[[bench]]
+name = "vec_i128_comparison"
+harness = false
+
+[[bench]]
 name = "vec_u8_comparison"
+harness = false
+
+[[bench]]
+name = "vec_u16_comparison"
+harness = false
+
+[[bench]]
+name = "vec_u32_comparison"
+harness = false
+
+[[bench]]
+name = "vec_u64_comparison"
+harness = false
+
+[[bench]]
+name = "vec_u128_comparison"
 harness = false
 
 [[bench]]
@@ -55,10 +91,6 @@ harness = false
 
 [[bench]]
 name = "vec_f64_comparison"
-harness = false
-
-[[bench]]
-name = "vec_i8_comparison"
 harness = false
 
 [[bench]]
