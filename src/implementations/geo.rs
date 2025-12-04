@@ -3,7 +3,6 @@
 use super::super::Error;
 use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
 use geo::{Coord, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon};
-use std::io::{Read, Write};
 
 impl SerializeRevisioned for Coord {
 	#[inline]
