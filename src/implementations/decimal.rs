@@ -33,17 +33,24 @@ impl Revisioned for Decimal {
 // Optimized implementation for Vec<Decimal>
 // --------------------------------------------------
 
-impl SerializeRevisioned for Vec<Decimal> {
+#[cfg(feature = "specialised")]
+impl super::specialised::SerializeRevisionedSpecialised for Vec<Decimal> {
 	#[inline]
-	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		// Write the length first (number of Decimal elements)
-		self.len().serialize_revisioned(writer)?;
+	fn serialize_revisioned_specialised<W: std::io::Write>(
+		&self,
+		writer: &mut W,
+	) -> Result<(), Error> {
+		// Get the length once
+		let len = self.len();
+		// Write the length first
+		len.serialize_revisioned(writer)?;
 		// For zero-length vectors, return early
-		if self.is_empty() {
+		if len == 0 {
 			return Ok(());
 		}
 		// Pre-allocate buffer for all decimals to reduce syscalls
-		let total = self.len().checked_mul(DECIMAL_SIZE).ok_or(Error::IntegerOverflow)?;
+		let total = len.checked_mul(DECIMAL_SIZE).ok_or(Error::IntegerOverflow)?;
+		// Pre-allocate buffer for all decimals to reduce syscalls
 		let mut buffer = Vec::with_capacity(total);
 		// Write all decimals to the buffer
 		for v in self {
@@ -53,10 +60,11 @@ impl SerializeRevisioned for Vec<Decimal> {
 	}
 }
 
-impl DeserializeRevisioned for Vec<Decimal> {
+#[cfg(feature = "specialised")]
+impl super::specialised::DeserializeRevisionedSpecialised for Vec<Decimal> {
 	#[inline]
-	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		// Read the length first (number of Decimal elements)
+	fn deserialize_revisioned_specialised<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+		// Read the length first
 		let len = usize::deserialize_revisioned(reader)?;
 		// For zero-length vectors, return early
 		if len == 0 {
@@ -77,13 +85,6 @@ impl DeserializeRevisioned for Vec<Decimal> {
 			vec.push(v);
 		}
 		Ok(vec)
-	}
-}
-
-impl Revisioned for Vec<Decimal> {
-	#[inline]
-	fn revision() -> u16 {
-		1
 	}
 }
 

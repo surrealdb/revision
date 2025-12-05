@@ -1,4 +1,4 @@
-mod arc;
+pub mod arc;
 pub mod arrays;
 pub mod bound;
 pub mod boxes;
@@ -18,6 +18,7 @@ pub mod regex;
 pub mod result;
 pub mod reverse;
 pub mod roaring;
+pub mod specialised;
 pub mod string;
 pub mod tuple;
 pub mod uuid;

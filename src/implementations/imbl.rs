@@ -12,7 +12,15 @@ use std::hash::Hash;
 impl<T: SerializeRevisioned + Clone> SerializeRevisioned for Vector<T> {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		self.len().serialize_revisioned(writer)?;
+		// Get the length once
+		let len = self.len();
+		// Write the length first
+		len.serialize_revisioned(writer)?;
+		// For zero-length vectors, return early
+		if len == 0 {
+			return Ok(());
+		}
+		// Iterate and serialize each item
 		for v in self.iter() {
 			v.serialize_revisioned(writer)?;
 		}
@@ -23,11 +31,13 @@ impl<T: SerializeRevisioned + Clone> SerializeRevisioned for Vector<T> {
 impl<T: DeserializeRevisioned + Clone> DeserializeRevisioned for Vector<T> {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+		// Read the length first
 		let len = usize::deserialize_revisioned(reader)?;
 		// Pre-allocate a Vec to collect all items with better cache locality
 		let mut items = Vec::with_capacity(len);
 		// Iterate and deserialize each item
 		for _ in 0..len {
+			// Deserialize the value
 			let v = T::deserialize_revisioned(reader)?;
 			// Hint to compiler that push is within capacity
 			unsafe { std::hint::assert_unchecked(items.len() < items.capacity()) };
@@ -55,7 +65,15 @@ impl<K: SerializeRevisioned + Ord + Clone, V: SerializeRevisioned + Clone> Seria
 {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		self.len().serialize_revisioned(writer)?;
+		// Get the length once
+		let len = self.len();
+		// Write the length first
+		len.serialize_revisioned(writer)?;
+		// For zero-length maps, return early
+		if len == 0 {
+			return Ok(());
+		}
+		// Iterate and serialize each item
 		for (k, v) in self.iter() {
 			k.serialize_revisioned(writer)?;
 			v.serialize_revisioned(writer)?;
@@ -69,11 +87,13 @@ impl<K: DeserializeRevisioned + Ord + Clone, V: DeserializeRevisioned + Clone> D
 {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+		// Read the length first
 		let len = usize::deserialize_revisioned(reader)?;
 		// Pre-allocate a Vec to collect all key-value pairs with better cache locality
 		let mut pairs = Vec::with_capacity(len);
 		// Iterate and deserialize each item
 		for _ in 0..len {
+			// Deserialize the value
 			let k = K::deserialize_revisioned(reader)?;
 			let v = V::deserialize_revisioned(reader)?;
 			// Hint to compiler that push is within capacity
@@ -101,7 +121,15 @@ impl<K: Revisioned + Ord + Clone, V: Revisioned + Clone> Revisioned for OrdMap<K
 impl<T: SerializeRevisioned + Ord + Clone> SerializeRevisioned for OrdSet<T> {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		self.len().serialize_revisioned(writer)?;
+		// Get the length once
+		let len = self.len();
+		// Write the length first
+		len.serialize_revisioned(writer)?;
+		// For zero-length sets, return early
+		if len == 0 {
+			return Ok(());
+		}
+		// Iterate and serialize each item
 		for v in self.iter() {
 			v.serialize_revisioned(writer)?;
 		}
@@ -112,11 +140,13 @@ impl<T: SerializeRevisioned + Ord + Clone> SerializeRevisioned for OrdSet<T> {
 impl<T: DeserializeRevisioned + Ord + Clone> DeserializeRevisioned for OrdSet<T> {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+		// Read the length first
 		let len = usize::deserialize_revisioned(reader)?;
 		// Pre-allocate a Vec to collect all items with better cache locality
 		let mut items = Vec::with_capacity(len);
 		// Iterate and deserialize each item
 		for _ in 0..len {
+			// Deserialize the value
 			let v = T::deserialize_revisioned(reader)?;
 			// Hint to compiler that push is within capacity
 			unsafe { std::hint::assert_unchecked(items.len() < items.capacity()) };
@@ -144,7 +174,15 @@ impl<K: SerializeRevisioned + Hash + Eq + Clone, V: SerializeRevisioned + Clone>
 {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		self.len().serialize_revisioned(writer)?;
+		// Get the length once
+		let len = self.len();
+		// Write the length first
+		len.serialize_revisioned(writer)?;
+		// For zero-length maps, return early
+		if len == 0 {
+			return Ok(());
+		}
+		// Iterate and serialize each item
 		for (k, v) in self.iter() {
 			k.serialize_revisioned(writer)?;
 			v.serialize_revisioned(writer)?;
@@ -158,11 +196,13 @@ impl<K: DeserializeRevisioned + Hash + Eq + Clone, V: DeserializeRevisioned + Cl
 {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+		// Read the length first
 		let len = usize::deserialize_revisioned(reader)?;
 		// Pre-allocate a Vec to collect all key-value pairs with better cache locality
 		let mut pairs = Vec::with_capacity(len);
 		// Iterate and deserialize each item
 		for _ in 0..len {
+			// Deserialize the value
 			let k = K::deserialize_revisioned(reader)?;
 			let v = V::deserialize_revisioned(reader)?;
 			// Hint to compiler that push is within capacity
@@ -189,7 +229,15 @@ impl<K: Revisioned + Hash + Eq + Clone, V: Revisioned + Clone> Revisioned for Ha
 impl<T: SerializeRevisioned + Hash + Eq + Clone> SerializeRevisioned for HashSet<T> {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		self.len().serialize_revisioned(writer)?;
+		// Get the length once
+		let len = self.len();
+		// Write the length first
+		len.serialize_revisioned(writer)?;
+		// For zero-length sets, return early
+		if len == 0 {
+			return Ok(());
+		}
+		// Iterate and serialize each item
 		for v in self.iter() {
 			v.serialize_revisioned(writer)?;
 		}
@@ -200,11 +248,13 @@ impl<T: SerializeRevisioned + Hash + Eq + Clone> SerializeRevisioned for HashSet
 impl<T: DeserializeRevisioned + Hash + Eq + Clone> DeserializeRevisioned for HashSet<T> {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+		// Read the length first
 		let len = usize::deserialize_revisioned(reader)?;
 		// Pre-allocate a Vec to collect all items with better cache locality
 		let mut items = Vec::with_capacity(len);
 		// Iterate and deserialize each item
 		for _ in 0..len {
+			// Deserialize the value
 			let v = T::deserialize_revisioned(reader)?;
 			// Hint to compiler that push is within capacity
 			unsafe { std::hint::assert_unchecked(items.len() < items.capacity()) };
