@@ -16,7 +16,15 @@ impl<K: SerializeRevisioned + Eq + Hash, V: SerializeRevisioned, S: BuildHasher 
 {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		self.len().serialize_revisioned(writer)?;
+		// Get the length once
+		let len = self.len();
+		// Write the length first
+		len.serialize_revisioned(writer)?;
+		// For zero-length maps, return early
+		if len == 0 {
+			return Ok(());
+		}
+		// Iterate and serialize each item
 		for (k, v) in self.iter() {
 			k.serialize_revisioned(writer)?;
 			v.serialize_revisioned(writer)?;
@@ -30,8 +38,11 @@ impl<K: DeserializeRevisioned + Eq + Hash, V: DeserializeRevisioned, S: BuildHas
 {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+		// Read the length first
 		let len = usize::deserialize_revisioned(reader)?;
+		// Create a hash map with the necessary capacity
 		let mut map = Self::with_capacity_and_hasher(len, S::default());
+		// Iterate and deserialize each item
 		for _ in 0..len {
 			let k = K::deserialize_revisioned(reader)?;
 			let v = V::deserialize_revisioned(reader)?;
@@ -53,7 +64,15 @@ impl<K: Revisioned + Eq + Hash, V: Revisioned, S: BuildHasher + Default> Revisio
 impl<K: SerializeRevisioned + Ord, V: SerializeRevisioned> SerializeRevisioned for BTreeMap<K, V> {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		self.len().serialize_revisioned(writer)?;
+		// Get the length once
+		let len = self.len();
+		// Write the length first
+		len.serialize_revisioned(writer)?;
+		// For zero-length maps, return early
+		if len == 0 {
+			return Ok(());
+		}
+		// Iterate and serialize each item
 		for (k, v) in self.iter() {
 			k.serialize_revisioned(writer)?;
 			v.serialize_revisioned(writer)?;
@@ -67,14 +86,22 @@ impl<K: DeserializeRevisioned + Ord, V: DeserializeRevisioned> DeserializeRevisi
 {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+		// Read the length first
 		let len = usize::deserialize_revisioned(reader)?;
-		let mut map = Self::new();
+		// Pre-allocate a Vec to collect all items with better cache locality
+		let mut items = Vec::with_capacity(len);
+		// Iterate and deserialize each item
 		for _ in 0..len {
+			// Deserialize the value
 			let k = K::deserialize_revisioned(reader)?;
 			let v = V::deserialize_revisioned(reader)?;
-			map.insert(k, v);
+			// Hint to compiler that push is within capacity
+			unsafe { std::hint::assert_unchecked(items.len() < items.capacity()) };
+			// Push the item to the vector
+			items.push((k, v));
 		}
-		Ok(map)
+		// Use FromIterator for bulk construction
+		Ok(items.into_iter().collect())
 	}
 }
 
@@ -90,7 +117,15 @@ impl<T: SerializeRevisioned + Eq + Hash, S: BuildHasher + Default> SerializeRevi
 {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		self.len().serialize_revisioned(writer)?;
+		// Get the length once
+		let len = self.len();
+		// Write the length first
+		len.serialize_revisioned(writer)?;
+		// For zero-length sets, return early
+		if len == 0 {
+			return Ok(());
+		}
+		// Iterate and serialize each item
 		for v in self.iter() {
 			v.serialize_revisioned(writer)?;
 		}
@@ -103,8 +138,11 @@ impl<T: DeserializeRevisioned + Eq + Hash, S: BuildHasher + Default> Deserialize
 {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+		// Read the length first
 		let len = usize::deserialize_revisioned(reader)?;
+		// Create a hash set with the necessary capacity
 		let mut set = Self::with_capacity_and_hasher(len, S::default());
+		// Iterate and deserialize each item
 		for _ in 0..len {
 			let v = T::deserialize_revisioned(reader)?;
 			set.insert(v);
@@ -123,7 +161,15 @@ impl<T: Revisioned + Eq + Hash, S: BuildHasher + Default> Revisioned for HashSet
 impl<T: SerializeRevisioned + Ord> SerializeRevisioned for BTreeSet<T> {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		self.len().serialize_revisioned(writer)?;
+		// Get the length once
+		let len = self.len();
+		// Write the length first
+		len.serialize_revisioned(writer)?;
+		// For zero-length sets, return early
+		if len == 0 {
+			return Ok(());
+		}
+		// Iterate and serialize each item
 		for v in self.iter() {
 			v.serialize_revisioned(writer)?;
 		}
@@ -134,13 +180,21 @@ impl<T: SerializeRevisioned + Ord> SerializeRevisioned for BTreeSet<T> {
 impl<T: DeserializeRevisioned + Ord> DeserializeRevisioned for BTreeSet<T> {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+		// Read the length first
 		let len = usize::deserialize_revisioned(reader)?;
-		let mut set = Self::new();
+		// Pre-allocate a Vec to collect all items with better cache locality
+		let mut items = Vec::with_capacity(len);
+		// Iterate and deserialize each item
 		for _ in 0..len {
+			// Deserialize the value
 			let v = T::deserialize_revisioned(reader)?;
-			set.insert(v);
+			// Hint to compiler that push is within capacity
+			unsafe { std::hint::assert_unchecked(items.len() < items.capacity()) };
+			// Push the item to the vector
+			items.push(v);
 		}
-		Ok(set)
+		// Use FromIterator for bulk construction
+		Ok(items.into_iter().collect())
 	}
 }
 
@@ -154,7 +208,15 @@ impl<T: Revisioned + Eq + Ord> Revisioned for BTreeSet<T> {
 impl<T: SerializeRevisioned + Ord> SerializeRevisioned for BinaryHeap<T> {
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		self.len().serialize_revisioned(writer)?;
+		// Get the length once
+		let len = self.len();
+		// Write the length first
+		len.serialize_revisioned(writer)?;
+		// For zero-length heaps, return early
+		if len == 0 {
+			return Ok(());
+		}
+		// Iterate and serialize each item
 		for v in self.iter() {
 			v.serialize_revisioned(writer)?;
 		}
@@ -165,8 +227,11 @@ impl<T: SerializeRevisioned + Ord> SerializeRevisioned for BinaryHeap<T> {
 impl<T: DeserializeRevisioned + Ord> DeserializeRevisioned for BinaryHeap<T> {
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+		// Read the length first
 		let len = usize::deserialize_revisioned(reader)?;
+		// Create a binary heap with the necessary capacity
 		let mut heap = Self::with_capacity(len);
+		// Iterate and deserialize each item
 		for _ in 0..len {
 			let v = T::deserialize_revisioned(reader)?;
 			heap.push(v);

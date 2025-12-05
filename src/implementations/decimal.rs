@@ -40,14 +40,17 @@ impl super::specialised::SerializeRevisionedSpecialised for Vec<Decimal> {
 		&self,
 		writer: &mut W,
 	) -> Result<(), Error> {
-		// Write the length first (number of Decimal elements)
-		self.len().serialize_revisioned(writer)?;
+		// Get the length once
+		let len = self.len();
+		// Write the length first
+		len.serialize_revisioned(writer)?;
 		// For zero-length vectors, return early
-		if self.is_empty() {
+		if len == 0 {
 			return Ok(());
 		}
 		// Pre-allocate buffer for all decimals to reduce syscalls
-		let total = self.len().checked_mul(DECIMAL_SIZE).ok_or(Error::IntegerOverflow)?;
+		let total = len.checked_mul(DECIMAL_SIZE).ok_or(Error::IntegerOverflow)?;
+		// Pre-allocate buffer for all decimals to reduce syscalls
 		let mut buffer = Vec::with_capacity(total);
 		// Write all decimals to the buffer
 		for v in self {
@@ -61,7 +64,7 @@ impl super::specialised::SerializeRevisionedSpecialised for Vec<Decimal> {
 impl super::specialised::DeserializeRevisionedSpecialised for Vec<Decimal> {
 	#[inline]
 	fn deserialize_revisioned_specialised<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		// Read the length first (number of Decimal elements)
+		// Read the length first
 		let len = usize::deserialize_revisioned(reader)?;
 		// For zero-length vectors, return early
 		if len == 0 {

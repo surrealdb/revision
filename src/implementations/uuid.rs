@@ -40,14 +40,16 @@ impl super::specialised::SerializeRevisionedSpecialised for Vec<Uuid> {
 		&self,
 		writer: &mut W,
 	) -> Result<(), Error> {
-		// Write the length first (number of UUID elements)
-		self.len().serialize_revisioned(writer)?;
+		// Get the length once
+		let len = self.len();
+		// Write the length first
+		len.serialize_revisioned(writer)?;
 		// For zero-length vectors, return early
-		if self.is_empty() {
+		if len == 0 {
 			return Ok(());
 		}
 		// Calculate byte length with overflow check
-		let byte_len = self.len().checked_mul(UUID_SIZE).ok_or(Error::IntegerOverflow)?;
+		let byte_len = len.checked_mul(UUID_SIZE).ok_or(Error::IntegerOverflow)?;
 		// Direct byte copy - Uuid is #[repr(transparent)] over [u8; 16],
 		// so Vec<Uuid> is contiguous 16-byte blocks we can write directly.
 		// SAFETY:
@@ -66,7 +68,7 @@ impl super::specialised::SerializeRevisionedSpecialised for Vec<Uuid> {
 impl super::specialised::DeserializeRevisionedSpecialised for Vec<Uuid> {
 	#[inline]
 	fn deserialize_revisioned_specialised<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		// Read the length first (number of UUID elements)
+		// Read the length first
 		let len = usize::deserialize_revisioned(reader)?;
 		// For zero-length vectors, return early
 		if len == 0 {
