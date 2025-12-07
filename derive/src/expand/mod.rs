@@ -7,6 +7,9 @@ mod validate_version;
 use de::{DeserializeVisitor, EnumStructsVisitor};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
+use syn::spanned::Spanned;
+use syn::{Token, WhereClause};
+use syn::punctuated::Punctuated;
 use reexport::Reexport;
 use ser::SerializeVisitor;
 use validate_version::ValidateRevision;
@@ -51,12 +54,50 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 	.visit_item(&ast)
 	.unwrap();
 
+    let (name, generics) = match &ast.kind {
+        ast::ItemKind::Enum(x) => (&x.name, &x.generics),
+        ast::ItemKind::Struct(x) => (&x.name, &x.generics),
+    };
+
+    let mut serialise_where_clause = if let Some(where_clause) = generics.where_clause.as_ref() {
+        where_clause.clone()
+    } else {
+        WhereClause {
+            where_token: <Token![where]>::default(),
+            predicates: Punctuated::new(),
+        }
+    };
+
+    let mut deserialise_where_clause = if let Some(where_clause) = generics.where_clause.as_ref() {
+        where_clause.clone()
+    } else {
+        WhereClause {
+            where_token: <Token![where]>::default(),
+            predicates: Punctuated::new(),
+        }
+    };
+
+    let mut types = vec![];
+
+    for ty in generics.type_params() {
+        let span = ty.span();
+
+        serialise_where_clause.predicates.push(syn::parse_quote_spanned!{span=>
+            #ty: ::revision::SerializeRevisioned
+        });
+        deserialise_where_clause.predicates.push(syn::parse_quote_spanned!{span=>
+            #ty: ::revision::DeserializeRevisioned
+        });
+
+        types.push(ty.ident.clone());
+    }
+
 	// serialize implementation
 	let mut serialize = TokenStream::new();
 	SerializeVisitor::new(revision, &mut serialize).visit_item(&ast).unwrap();
 
 	let mut deserialize_structs = TokenStream::new();
-	EnumStructsVisitor::new(revision, &mut deserialize_structs).visit_item(&ast).unwrap();
+	EnumStructsVisitor::new(revision, types, &mut deserialize_structs).visit_item(&ast).unwrap();
 
 	// deserialize implementation
 	let deserialize = (1..=revision)
@@ -81,16 +122,14 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 		})
 		.collect::<Vec<_>>();
 
-	let name = match ast.kind {
-		ast::ItemKind::Enum(x) => x.name,
-		ast::ItemKind::Struct(x) => x.name,
-	};
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
 	let revision = revision as u16;
 	let revision_error = format!("Invalid revision `{{}}` for type `{}`", name);
 
 	let serialize_impl = if attrs.0.serialize {
 		quote! {
-			impl ::revision::SerializeRevisioned for #name {
+			impl #impl_generics ::revision::SerializeRevisioned for #name #ty_generics #serialise_where_clause {
 				fn serialize_revisioned<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::result::Result<(), ::revision::Error> {
 					::revision::SerializeRevisioned::serialize_revisioned(&<Self as ::revision::Revisioned>::revision(),writer)?;
 					#serialize
@@ -103,7 +142,7 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 
 	let deserialize_impl = if attrs.0.deserialize {
 		quote! {
-			impl ::revision::DeserializeRevisioned for #name {
+			impl #impl_generics ::revision::DeserializeRevisioned for #name #ty_generics #deserialise_where_clause {
 				fn deserialize_revisioned<R: ::std::io::Read>(reader: &mut R) -> ::std::result::Result<Self, ::revision::Error> {
 					let __revision = <u16 as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
 					match __revision {
@@ -123,16 +162,20 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 
 	Ok(quote! {
 		#reexport
-		#deserialize_structs
 
-		#serialize_impl
-		#deserialize_impl
+        const _: () = {
+    		#deserialize_structs
 
-		impl ::revision::Revisioned for #name {
-			#[inline]
-			fn revision() -> u16{
-				#revision
-			}
-		}
+            #serialize_impl
+            #deserialize_impl
+
+            impl #impl_generics ::revision::Revisioned for #name #ty_generics #where_clause {
+                #[inline]
+                fn revision() -> u16{
+                    #revision
+                }
+            }
+        };
+
 	})
 }
