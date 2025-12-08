@@ -1,10 +1,12 @@
-name: Prepare Release
+name: Prepare release
+
+run-name: "Prepare release v${{ inputs.version }}"
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 0.15.1)'
+        description: 'Version to release (e.g., 0.10.0)'
         required: true
         type: string
 
@@ -14,7 +16,7 @@ permissions:
 
 jobs:
   prepare:
-    name: Prepare Release PR
+    name: Prepare release PR
     runs-on: ubuntu-latest
 
     steps:
@@ -31,37 +33,32 @@ jobs:
             exit 1
           fi
 
-      - name: Check semver compatibility
-        uses: obi1kenobi/cargo-semver-checks-action@v2
-
       - name: Update versions in Cargo.toml files
         run: |
           VERSION="${{ inputs.version }}"
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" derive/Cargo.toml
-          sed -i "s/^revision-derive = { version = \".*\"/revision-derive = { version = \"$VERSION\"/" Cargo.toml
 
-      - name: Update Cargo.lock
-        run: cargo update -p revision -p revision-derive
+      - name: Check compatibility
+        uses: obi1kenobi/cargo-semver-checks-action@v2
 
       - name: Run tests
         run: cargo test --all-features
 
-      - name: Create Pull Request
+      - name: Create pull request
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "chore(release): bump version to ${{ inputs.version }}"
           branch: release/v${{ inputs.version }}
           delete-branch: true
+          labels: release
           title: "Release v${{ inputs.version }}"
           body: |
             Automated release preparation for version ${{ inputs.version }}
-            
+
             This PR updates:
             - Version in Cargo.toml files
             - Cargo.lock
-            
+
             After merging, a tag will be automatically created and the crates will be published to crates.io.
-          labels: release
 

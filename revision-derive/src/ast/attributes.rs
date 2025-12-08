@@ -2,11 +2,11 @@ use std::{collections::HashMap, fmt::Display, str::FromStr};
 
 use proc_macro2::Span;
 use syn::{
-	parenthesized,
+	Attribute, Error, LitBool, LitInt, LitStr, Token, parenthesized,
 	parse::{Parse, ParseStream},
 	punctuated::Punctuated,
 	spanned::Spanned,
-	token, Attribute, Error, LitBool, LitInt, LitStr, Token,
+	token,
 };
 
 mod kw {
@@ -219,13 +219,13 @@ impl AttributeOptions for FieldOptions {
 			}
 		}
 
-		if let Some(kw) = end_kw {
-			if res.convert.is_none() {
-				return Err(Error::new(
-					kw.span(),
-					"setting a ending revision for a field also requires a convert_fn",
-				));
-			}
+		if let Some(kw) = end_kw
+			&& res.convert.is_none()
+		{
+			return Err(Error::new(
+				kw.span(),
+				"setting a ending revision for a field also requires a convert_fn",
+			));
 		}
 
 		Ok(res)
@@ -445,13 +445,13 @@ impl AttributeOptions for VariantOptions {
 			}
 		}
 
-		if let Some(kw) = end_kw {
-			if res.convert.is_none() {
-				return Err(Error::new(
-					kw.span(),
-					"setting a ending revision for a variant also requires a convert_fn",
-				));
-			}
+		if let Some(kw) = end_kw
+			&& res.convert.is_none()
+		{
+			return Err(Error::new(
+				kw.span(),
+				"setting a ending revision for a variant also requires a convert_fn",
+			));
 		}
 
 		Ok(res)

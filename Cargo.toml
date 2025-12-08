@@ -1,10 +1,9 @@
-[package]
-name = "revision"
-publish = true
-edition = "2021"
+[workspace]
+members = [".", "revision-derive"]
+
+[workspace.package]
+edition = "2024"
 version = "0.15.0"
-license = "Apache-2.0"
-readme = "README.md"
 authors = ["Tobie Morgan Hitchcock <tobie@surrealdb.com>"]
 description = "A serialization and deserialization implementation which allows for schema-evolution."
 repository = "https://github.com/surrealdb/revision"
@@ -12,25 +11,38 @@ homepage = "https://github.com/surrealdb/revision"
 documentation = "https://docs.rs/revision/"
 keywords = ["serialization", "encoding", "revision", "version", "bincode"]
 categories = ["encoding"]
+license = "Apache-2.0"
 
-[workspace]
-members = ["derive"]
+[package]
+name = "revision"
+publish = true
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+license.workspace = true
+
+[workspace.lints]
 
 [features]
 default = ["specialised"]
 specialised = []
 
 [dependencies]
+revision-derive = { path = "revision-derive" }
 bytes = { version = "1.11.0", optional = true }
 chrono = { version = "0.4.42", features = ["serde"], optional = true }
-revision-derive = { version = "0.15.0", path = "derive" }
 geo = { version = "0.31.0", features = ["use-serde"], optional = true }
 imbl = { version = "6.1.0", optional = true }
 ordered-float = { version = "5.1.0", optional = true }
 regex = { version = "1.12.2", optional = true }
 roaring = { version = "0.11.2", features = ["serde"], optional = true }
 rust_decimal = { version = "1.39.0", optional = true }
-uuid = { version = "1.18.1", optional = true }
+uuid = { version = "1.19.0", optional = true }
 
 [dev-dependencies]
 rand = "0.9.2"

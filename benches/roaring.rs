@@ -1,5 +1,5 @@
 use bincode::Options;
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use rand::random;
 use roaring::RoaringTreemap;
 use std::time::SystemTime;

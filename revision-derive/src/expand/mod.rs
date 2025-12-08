@@ -18,14 +18,15 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 	let ast: ast::Item = syn::parse2(input)?;
 
 	let revision = match (ast.attrs.options.revision, attrs.0.revision) {
-		(Some(x), None) | (None, Some(x)) => {
-			x
+		(Some(x), None) | (None, Some(x)) => x,
+		(None, None) => {
+			return Err(syn::Error::new(
+				Span::call_site(),
+				"Current revision not specified, please specify the current revision with `#[revisioned(revision = ..)]` ",
+			));
 		}
-		(None,None) => {
-			return Err(syn::Error::new(Span::call_site(),"Current revision not specified, please specify the current revision with `#[revisioned(revision = ..)]` "))
-		}
-		(Some(_),Some(_)) => {
-			return Err(syn::Error::new(Span::call_site(),"Current revision specified twice"))
+		(Some(_), Some(_)) => {
+			return Err(syn::Error::new(Span::call_site(), "Current revision specified twice"));
 		}
 	};
 

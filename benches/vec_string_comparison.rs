@@ -1,20 +1,20 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
 // Generate test data for benchmarking
 fn generate_test_strings(size: usize) -> Vec<String> {
 	let patterns = [
-        "hello",
-        "world",
-        "this is a longer string with more content",
-        "short",
-        "medium length string with some data",
-        "very very very very very very very very long string with lots and lots of content that should help test the performance characteristics",
-        "unicode: 🚀🔥✨🌟💫⭐",
-        "",
-        "special chars: !@#$%^&*()_+-=[]{}|;':\",./<>?",
-        "numbers and text: 123456789 mixed content 987654321",
-    ];
+		"hello",
+		"world",
+		"this is a longer string with more content",
+		"short",
+		"medium length string with some data",
+		"very very very very very very very very long string with lots and lots of content that should help test the performance characteristics",
+		"unicode: 🚀🔥✨🌟💫⭐",
+		"",
+		"special chars: !@#$%^&*()_+-=[]{}|;':\",./<>?",
+		"numbers and text: 123456789 mixed content 987654321",
+	];
 
 	(0..size).map(|i| patterns[i % patterns.len()].to_string()).collect()
 }

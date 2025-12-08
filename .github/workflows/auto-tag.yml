@@ -1,4 +1,4 @@
-name: Auto Tag Release
+name: Tag release
 
 on:
   push:
@@ -10,9 +10,9 @@ permissions:
 
 jobs:
   tag:
-    name: Create Release Tag
+    name: Create release tag
     runs-on: ubuntu-latest
-    if: startsWith(github.event.head_commit.message, 'chore(release):')
+    if: startsWith(github.event.head_commit.message, 'Release v')
 
     steps:
       - uses: actions/checkout@v4
@@ -21,7 +21,7 @@ jobs:
         id: version
         run: |
           COMMIT_MSG="${{ github.event.head_commit.message }}"
-          VERSION=$(echo "$COMMIT_MSG" | grep -oP 'bump version to \K[0-9]+\.[0-9]+\.[0-9]+')
+          VERSION=$(echo "$COMMIT_MSG" | grep -oP 'Release v\K[0-9]+\.[0-9]+\.[0-9]+')
           if [ -z "$VERSION" ]; then
             echo "Error: Could not extract version from commit message"
             exit 1

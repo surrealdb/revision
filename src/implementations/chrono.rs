@@ -2,7 +2,7 @@
 
 use super::super::Error;
 use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
-use chrono::{offset::TimeZone, DateTime, Datelike, Duration, NaiveDate, NaiveTime, Timelike, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveTime, Timelike, Utc, offset::TimeZone};
 
 impl SerializeRevisioned for DateTime<Utc> {
 	#[inline]

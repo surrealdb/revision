@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, TokenStreamExt};
+use quote::{TokenStreamExt, quote};
 use syn::{Ident, Index};
 
 use crate::ast::{Enum, Fields, Struct, Variant, Visit};

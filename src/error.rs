@@ -29,8 +29,8 @@ impl std::error::Error for Error {
 	#[inline]
 	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
 		match self {
-			Error::Io(ref x) => Some(x),
-			Error::Utf8Error(ref x) => Some(x),
+			Error::Io(x) => Some(x),
+			Error::Utf8Error(x) => Some(x),
 			_ => None,
 		}
 	}
@@ -48,7 +48,10 @@ impl std::fmt::Display for Error {
 				write!(f, "Encountered invalid integer encoding.")
 			}
 			Self::IntegerOverflow => {
-				write!(f, "Encountered integer which doesn't fit the target integer type during deserialization.")
+				write!(
+					f,
+					"Encountered integer which doesn't fit the target integer type during deserialization."
+				)
 			}
 			Self::InvalidPath => {
 				write!(f, "Path contained invalid UTF-8 characters.")

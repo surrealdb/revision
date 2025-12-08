@@ -1,10 +1,9 @@
-use quote::{format_ident, ToTokens};
+use quote::{ToTokens, format_ident};
 use syn::{
-	braced, parenthesized,
+	Expr, Generics, Ident, Index, Result, Token, Type, Visibility, braced, parenthesized,
 	parse::{Parse, ParseStream},
 	punctuated::Punctuated,
 	token::{self, Brace, Paren},
-	Expr, Generics, Ident, Index, Result, Token, Type, Visibility,
 };
 
 mod attributes;

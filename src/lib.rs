@@ -19,7 +19,7 @@ use std::any::TypeId;
 use std::io::{Read, Write};
 
 pub mod prelude {
-	pub use crate::{revisioned, DeserializeRevisioned, Revisioned, SerializeRevisioned};
+	pub use crate::{DeserializeRevisioned, Revisioned, SerializeRevisioned, revisioned};
 }
 
 /// Trait that provides an interface for version aware serialization and deserialization.

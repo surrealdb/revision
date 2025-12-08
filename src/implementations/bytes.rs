@@ -1,7 +1,7 @@
 #![cfg(feature = "bytes")]
 
-use crate::implementations::vecs::serialize_bytes;
 use crate::Error;
+use crate::implementations::vecs::serialize_bytes;
 use crate::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
 use ::bytes::Bytes;
 use std::io::ErrorKind::UnexpectedEof;
