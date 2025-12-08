@@ -21,16 +21,16 @@ default = ["specialised"]
 specialised = []
 
 [dependencies]
-bytes = { version = "1.11.0" }
+bytes = { version = "1.11.0", optional = true }
 chrono = { version = "0.4.42", features = ["serde"], optional = true }
 revision-derive = { version = "0.15.0", path = "derive" }
 geo = { version = "0.31.0", features = ["use-serde"], optional = true }
+imbl = { version = "6.1.0", optional = true }
 ordered-float = { version = "5.1.0", optional = true }
 regex = { version = "1.12.2", optional = true }
 roaring = { version = "0.11.2", features = ["serde"], optional = true }
 rust_decimal = { version = "1.39.0", optional = true }
 uuid = { version = "1.18.1", optional = true }
-imbl = { version = "6.1.0", optional = true }
 
 [dev-dependencies]
 rand = "0.9.2"
