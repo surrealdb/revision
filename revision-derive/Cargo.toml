@@ -1,0 +1,22 @@
+[package]
+name = "revision-derive"
+publish = true
+edition.workspace = true
+version.workspace = true
+description = "Private implementation of procedural macros for storekey"
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+license.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full", "extra-traits", "parsing"] }
+
+[lints]
+workspace = true
