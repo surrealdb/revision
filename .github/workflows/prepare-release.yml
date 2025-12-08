@@ -63,5 +63,8 @@ jobs:
             - Version in Cargo.toml files
             - Cargo.lock
 
-            After merging, a tag will be automatically created and the crates will be published to crates.io.
+            After merging, the release workflow will automatically:
+            - Create and push git tag v${{ inputs.version }}
+            - Publish to crates.io
+            - Create GitHub release
 
