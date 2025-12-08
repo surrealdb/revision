@@ -1,34 +1,27 @@
 name: Release
 
-run-name: "Release run '${{ github.head_ref || github.ref_name }}'"
+run-name: "Release v${{ inputs.version }}"
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.15.1)'
+        required: true
+        type: string
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  semver:
-    name: semver
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check semver
-        uses: obi1kenobi/cargo-semver-checks-action@v2
-
   release:
-    name: Process Release
+    name: Release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      packages: write
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -36,101 +29,75 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Install a TOML parser
+      - name: Validate version format
         run: |
-          curl -L https://github.com/tamasfe/taplo/releases/download/0.8.1/taplo-full-linux-x86_64.gz | gunzip - > taplo
-          chmod +x taplo
-          sudo mv taplo /usr/bin/taplo
+          VERSION="${{ inputs.version }}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Version must be in format X.Y.Z"
+            exit 1
+          fi
+
+      - name: Check semver compatibility
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+
+      - name: Update versions in Cargo.toml files
+        run: |
+          VERSION="${{ inputs.version }}"
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" derive/Cargo.toml
+          sed -i "s/^revision-derive = { version = \".*\"/revision-derive = { version = \"$VERSION\"/" Cargo.toml
+
+      - name: Update Cargo.lock
+        run: cargo update -p revision -p revision-derive
+
+      - name: Run tests
+        run: cargo test --all-features
 
       - name: Configure git
         run: |
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git config --add --bool push.autoSetupRemote true
 
-      - name: Extract version from branch name
-        id: version
+      - name: Commit version changes
         run: |
-          BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
-          VERSION="${BRANCH_NAME#release/}"
-          echo "Version from branch: $VERSION"
-          
-          # Validate version matches Cargo.toml
-          CARGO_VERSION=$(taplo get -f Cargo.toml "package.version")
-          if [ "$VERSION" != "$CARGO_VERSION" ]; then
-            echo "Error: Branch version ($VERSION) doesn't match Cargo.toml version ($CARGO_VERSION)"
-            exit 1
-          fi
-          
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          git add Cargo.toml derive/Cargo.toml Cargo.lock
+          git commit -m "chore(release): bump version to ${{ inputs.version }}"
+          git push origin main
 
-      - name: Validate derive crate version
+      - name: Create and push tag
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          DERIVE_VERSION=$(taplo get -f derive/Cargo.toml "package.version")
-          if [ "$DERIVE_VERSION" != "$VERSION" ]; then
-            echo "Error: derive/Cargo.toml version ($DERIVE_VERSION) doesn't match branch version ($VERSION)" >&2
-            exit 1
-          fi
-
-      - name: Generate changelog
-        id: changelog
-        uses: orhun/git-cliff-action@v4
-        with:
-          args: --verbose --latest --tag v${{ steps.version.outputs.version }}
-        env:
-          OUTPUT: CHANGELOG.md
-
-      - name: Commit changelog
-        run: |
-          if [[ -n $(git status --porcelain) ]]; then
-            git add CHANGELOG.md
-            git commit -m "chore(release): update changelog for ${{ steps.version.outputs.version }}"
-            git push origin HEAD
-            echo "Changes committed and pushed to branche"
-          else
-            echo "No changes to commit"
-          fi
+          git tag -a "v${{ inputs.version }}" -m "Release version ${{ inputs.version }}"
+          git push origin "v${{ inputs.version }}"
 
       - name: Publish derive crate
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish -p revision-derive
 
-      - name: Wait for revision-derive to be available on crates.io
+      - name: Wait for revision-derive to be available
         run: |
-          set -euo pipefail
-          VER="${{ steps.version.outputs.version }}"
-          echo "Waiting for revision-derive version $VER to appear on crates.io..."
+          VERSION="${{ inputs.version }}"
+          echo "Waiting for revision-derive $VERSION on crates.io..."
           for i in {1..60}; do
-            latest=$(python -c 'import json,urllib.request; print(json.load(urllib.request.urlopen("https://crates.io/api/v1/crates/revision-derive"))["crate"]["max_version"])')
-            if [ "$latest" = "$VER" ]; then
-              echo "Found revision-derive $VER on crates.io."
+            if cargo search revision-derive --limit 1 | grep -q "revision-derive = \"$VERSION\""; then
+              echo "Found revision-derive $VERSION"
               exit 0
             fi
-            echo "Not yet available (saw $latest). Retry $i/60..."
+            echo "Retry $i/60..."
             sleep 5
           done
-          echo "Timed out waiting for crates.io index to update." >&2
+          echo "Timed out waiting for crates.io"
           exit 1
 
-      - name: Publish crate
+      - name: Publish main crate
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish -p revision
 
-      - name: Create and push tag
-        run: |
-          git tag -a "v${{ steps.version.outputs.version }}" -m "Release version ${{ steps.version.outputs.version }}"
-          git push origin "v${{ steps.version.outputs.version }}"
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: Release ${{ steps.version.outputs.version }}
-          body_path: CHANGELOG.md
+          tag_name: v${{ inputs.version }}
+          name: Release v${{ inputs.version }}
           draft: false
           prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
