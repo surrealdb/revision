@@ -1,3 +1,5 @@
+#![cfg(feature = "bytes")]
+
 use crate::implementations::vecs::serialize_bytes;
 use crate::Error;
 use crate::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
