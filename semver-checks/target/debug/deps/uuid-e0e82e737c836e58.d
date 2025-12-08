@@ -1,0 +1,13 @@
+/home/runner/work/revision/revision/semver-checks/target/debug/deps/uuid-e0e82e737c836e58.d: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/lib.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/macros.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/builder.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/error.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/non_nil.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/parser.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/fmt.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/timestamp.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/external.rs
+
+/home/runner/work/revision/revision/semver-checks/target/debug/deps/libuuid-e0e82e737c836e58.rmeta: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/lib.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/macros.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/builder.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/error.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/non_nil.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/parser.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/fmt.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/timestamp.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/external.rs
+
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/lib.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/macros.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/builder.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/error.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/non_nil.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/parser.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/fmt.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/timestamp.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.19.0/src/external.rs:

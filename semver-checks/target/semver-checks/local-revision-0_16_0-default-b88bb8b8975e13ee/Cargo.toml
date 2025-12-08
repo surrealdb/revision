@@ -1,0 +1,16 @@
+[package]
+name = "placeholder"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+members = []
+
+[dependencies.revision]
+path = "/home/runner/work/revision/revision"
+features = ["bytes", "chrono", "default", "geo", "imbl", "ordered-float", "regex", "roaring", "rust_decimal", "specialised", "uuid"]
+
+[lib]
+path = "lib.rs"
+required-features = []

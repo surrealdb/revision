@@ -1,0 +1,10 @@
+/home/runner/work/revision/revision/semver-checks/target/debug/deps/geographiclib_rs-bc349cc20838317b.d: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/lib.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/geodesic.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/geodesic_capability.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/geodesic_line.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/geomath.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/polygon_area.rs
+
+/home/runner/work/revision/revision/semver-checks/target/debug/deps/libgeographiclib_rs-bc349cc20838317b.rmeta: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/lib.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/geodesic.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/geodesic_capability.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/geodesic_line.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/geomath.rs /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/polygon_area.rs
+
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/lib.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/geodesic.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/geodesic_capability.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/geodesic_line.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/geomath.rs:
+/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/geographiclib-rs-0.2.5/src/polygon_area.rs:

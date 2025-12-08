@@ -1,0 +1,1 @@
+{"rustc":4826714390000139368,"features":"[]","declared_features":"[\"no_std\"]","target":2043174442748616611,"profile":2241668132362809309,"path":1264198157668812710,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"debug/.fingerprint/robust-99c782e569f373ca/dep-lib-robust","checksum":false}}],"rustflags":["--cap-lints=allow"],"config":2069994364910194474,"compile_kind":0}
