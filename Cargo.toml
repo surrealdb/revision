@@ -3,7 +3,7 @@ members = [".", "revision-derive"]
 
 [workspace.package]
 edition = "2024"
-version = "0.15.0"
+version = "0.16.0"
 authors = ["Tobie Morgan Hitchcock <tobie@surrealdb.com>"]
 description = "A serialization and deserialization implementation which allows for schema-evolution."
 repository = "https://github.com/surrealdb/revision"
