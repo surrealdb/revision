@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g. 0.16.0)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -25,34 +31,22 @@ jobs:
       - name: Extract version from tag
         id: version
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Publishing version: $VERSION"
 
-      - name: Publish derive crate
+      - name: Install cargo-release
+        run: cargo install cargo-release
+
+      - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p revision-derive
-
-      - name: Wait for revision-derive to be available
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          echo "Waiting for revision-derive $VERSION on crates.io..."
-          for i in {1..60}; do
-            if cargo search revision-derive --limit 1 | grep -q "revision-derive = \"$VERSION\""; then
-              echo "Found revision-derive $VERSION"
-              exit 0
-            fi
-            echo "Retry $i/60..."
-            sleep 5
-          done
-          echo "Timed out waiting for crates.io"
-          exit 1
-
-      - name: Publish main crate
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p revision
+          cargo release publish --workspace --execute --no-confirm --no-tag --no-push --allow-branch HEAD
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1

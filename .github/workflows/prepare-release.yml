@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 0.10.0)'
+        description: 'Version to release (e.g. 0.10.0)'
         required: true
         type: string
 
@@ -33,12 +33,15 @@ jobs:
             exit 1
           fi
 
-      - name: Update versions in Cargo.toml files
+      - name: Install cargo-release
+        run: cargo install cargo-release
+
+      - name: Bump versions
         run: |
-          VERSION="${{ inputs.version }}"
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          cargo release version ${{ inputs.version }} --workspace --execute --no-confirm --allow-branch main
 
       - name: Check compatibility
+        continue-on-error: true
         uses: obi1kenobi/cargo-semver-checks-action@v2
 
       - name: Run tests

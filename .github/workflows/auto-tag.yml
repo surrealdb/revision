@@ -36,3 +36,8 @@ jobs:
           git tag -a "v${{ steps.version.outputs.version }}" -m "Release version ${{ steps.version.outputs.version }}"
           git push origin "v${{ steps.version.outputs.version }}"
 
+      - name: Trigger publish workflow
+        run: gh workflow run publish.yml -f version=${{ steps.version.outputs.version }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+
