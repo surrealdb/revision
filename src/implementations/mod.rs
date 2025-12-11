@@ -33,6 +33,16 @@ where
 {
 	use bincode::Options;
 
+	#[cfg(feature = "fixed-width-encoding")]
+	let bincode = bincode::options()
+		.with_no_limit()
+		.with_little_endian()
+		.with_fixint_encoding()
+		.reject_trailing_bytes()
+		.serialize(&v)
+		.unwrap();
+
+	#[cfg(not(feature = "fixed-width-encoding"))]
 	let bincode = bincode::options()
 		.with_no_limit()
 		.with_little_endian()
