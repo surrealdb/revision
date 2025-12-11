@@ -34,6 +34,7 @@ where
 				};
 			}
 
+			try_specialized!(bool);
 			try_specialized!(u8);
 			try_specialized!(i8);
 			try_specialized!(u16);
@@ -90,6 +91,7 @@ where
 				};
 			}
 
+			try_specialized!(bool);
 			try_specialized!(u8);
 			try_specialized!(i8);
 			try_specialized!(u16);
