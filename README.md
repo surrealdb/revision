@@ -31,6 +31,41 @@ compatibility, but where the design of the data format evolves over time.</p>
 
 The `Revisioned` trait is automatically implemented for the following primitives: `u8`, `u16`, `u32`, `u64`, `u128`, `usize`, `i8`, `i16`, `i32`, `i64`, `i128`, `isize`, `f32`, `f64`, `char`, `String`, `Vec<T>`, Arrays up to 32 elements, `Option<T>`, `Box<T>`, `Bound<T>`, `Wrapping<T>`, `Reverse<T>`, `(A, B)`, `(A, B, C)`, `(A, B, C, D)`, `(A, B, C, D, E)`, `Duration`, `HashMap<K, V>`, `BTreeMap<K, V>`, `HashSet<T>`, `BTreeSet<T>`, `BinaryHeap<T>`, `Result<T, E>`, `Cow<'_, T>`, `Decimal`, `regex::Regex`, `uuid::Uuid`, `chrono::Duration`, `chrono::DateTime<Utc>`, `geo::Point`, `geo::LineString` `geo::Polygon`, `geo::MultiPoint`, `geo::MultiLineString`, `geo::MultiPolygon`, and `ordered_float::NotNan`.
 
+## Feature Flags
+
+Revision supports the following feature flags:
+
+- **`specialised-vectors`** (default): Enables specialised implementations for certain vector types that provide serialisation and deserialisation performance improvements.
+- **`fixed-width-encoding`**: Uses fixed-width encoding for integers instead of variable-length encoding. By default, Revision uses variable-length encoding which is more space-efficient for small values but has overhead for large values. With this feature enabled, all integers use their full size (2 bytes for `u16`/`i16`, 4 bytes for `u32`/`i32`, 8 bytes for `u64`/`i64`, 16 bytes for `u128`/`i128`), providing predictable serialization sizes, and improved serialisation and deserialisation performance.
+
+### Integer Encoding Trade-offs
+
+**Variable-length encoding (default)**:
+- Small values (0-250) use only 1 byte
+- More compact for typical workloads with mostly small values
+- Variable serialization size based on value magnitude
+- Slight overhead for very large values
+
+**Fixed-width encoding (`fixed-width-encoding` feature)**:
+- Predictable, constant serialization size per type
+- No branching or size checks during encoding/decoding
+- Less compact for small values
+- More efficient for workloads with large values
+
+### Benchmarking
+
+To compare variable-length vs fixed-width encoding performance:
+
+```bash
+# Benchmark with default variable-length encoding
+cargo bench --bench varint_comparison
+
+# Benchmark with fixed-width encoding
+cargo bench --bench varint_comparison --features fixed-width-encoding
+```
+
+The `varint_comparison` benchmark tests serialization and deserialization performance across different data distributions (small values, large values, and mixed distributions) for all integer types.
+
 ## Inspiration
 
 This code takes inspiration from the [Versionize](https://github.com/firecracker-microvm/versionize) library developed for [Amazon Firecracker](https://github.com/firecracker-microvm/firecracker) snapshot-restore development previews.

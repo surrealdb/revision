@@ -100,7 +100,10 @@ mod tests {
 		assert_bincode_compat(&val);
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 6);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 13);
 		let out =
 			<(String, bool) as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 				.unwrap();
@@ -113,7 +116,10 @@ mod tests {
 		assert_bincode_compat(&val);
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 14);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 21);
 		let out = <(String, bool, f64) as DeserializeRevisioned>::deserialize_revisioned(
 			&mut mem.as_slice(),
 		)
@@ -127,7 +133,10 @@ mod tests {
 		assert_bincode_compat(&val);
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 16);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 23);
 		let out =
 			<(String, bool, f64, Option<char>) as DeserializeRevisioned>::deserialize_revisioned(
 				&mut mem.as_slice(),
@@ -148,7 +157,10 @@ mod tests {
 		assert_bincode_compat(&val);
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 20);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 34);
 		let out =
 			<(String, bool, f64, Option<char>, Vec<u8>) as DeserializeRevisioned>::deserialize_revisioned(
 				&mut mem.as_slice(),

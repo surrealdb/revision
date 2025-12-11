@@ -67,7 +67,10 @@ mod tests {
 		let val = Arc::new(u32::MAX);
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 5);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 4);
 		let out = DeserializeRevisioned::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
 	}
@@ -77,7 +80,10 @@ mod tests {
 		let val: Arc<str> = Arc::from("hello world");
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 12); // 11 chars + 1 byte for length encoding
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 19); // 11 chars + 8 bytes for length encoding
 		let out: Arc<str> =
 			<Arc<str> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 				.unwrap();

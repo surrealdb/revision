@@ -100,7 +100,10 @@ mod test {
 
 		let mut mem = Vec::new();
 		cow.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 12); // 11 chars + 1 byte for length encoding
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 19); // 11 chars + 8 bytes for length encoding
 
 		let out = Cow::<'static, str>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert!(matches!(out, Cow::Owned(_)));
@@ -114,7 +117,10 @@ mod test {
 
 		let mut mem = Vec::new();
 		cow.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 12); // 11 chars + 1 byte for length encoding
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 19); // 11 chars + 8 bytes for length encoding
 
 		let out = Cow::<'static, str>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert!(matches!(out, Cow::Owned(_)));

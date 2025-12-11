@@ -1,4 +1,4 @@
-#![cfg(feature = "specialised")]
+#![cfg(feature = "specialised-vectors")]
 
 use crate::DeserializeRevisioned;
 use crate::Error;
@@ -55,7 +55,7 @@ macro_rules! impl_revisioned_specialised_vec {
 					unsafe {
 						let byte_slice = std::slice::from_raw_parts(
 							self.as_ptr().cast::<u8>(),
-							self.len() * std::mem::size_of::<$ty>(),
+							len * std::mem::size_of::<$ty>(),
 						);
 						writer.write_all(byte_slice).map_err(Error::Io)
 					}
@@ -202,6 +202,67 @@ impl DeserializeRevisionedSpecialised for Vec<i8> {
 		Ok(vec)
 	}
 }
+
+// --------------------------------------------------
+// Bit-packed implementation for Vec<bool>
+// --------------------------------------------------
+
+impl SerializeRevisionedSpecialised for Vec<bool> {
+	#[inline]
+	fn serialize_revisioned_specialised<W: Write>(&self, writer: &mut W) -> Result<(), Error> {
+		// Get the length once
+		let len = self.len();
+		// Write the length first
+		len.serialize_revisioned(writer)?;
+		// For zero-length vectors, return early
+		if len == 0 {
+			return Ok(());
+		}
+		// Pack 8 bools per byte
+		let num_bytes = len.div_ceil(8);
+		let mut buffer = Vec::with_capacity(num_bytes);
+		// Pack the bools into bytes
+		for chunk in self.chunks(8) {
+			let mut byte = 0u8;
+			for (i, &b) in chunk.iter().enumerate() {
+				if b {
+					byte |= 1 << i;
+				}
+			}
+			buffer.push(byte);
+		}
+		// Write the buffer to the writer
+		writer.write_all(&buffer).map_err(Error::Io)
+	}
+}
+
+impl DeserializeRevisionedSpecialised for Vec<bool> {
+	#[inline]
+	fn deserialize_revisioned_specialised<R: Read>(reader: &mut R) -> Result<Self, Error> {
+		// Read the length first
+		let len = usize::deserialize_revisioned(reader)?;
+		// For zero-length vectors, return early
+		if len == 0 {
+			return Ok(Self::new());
+		}
+		// Calculate number of bytes
+		let num_bytes = len.div_ceil(8);
+		// Read all packed bytes
+		let mut buffer = vec![0u8; num_bytes];
+		reader.read_exact(&mut buffer).map_err(Error::Io)?;
+		// Unpack bits into bools
+		let mut vec = Vec::with_capacity(len);
+		for (i, &byte) in buffer.iter().enumerate() {
+			let bits_in_this_byte = std::cmp::min(8, len - i * 8);
+			for bit in 0..bits_in_this_byte {
+				vec.push((byte >> bit) & 1 == 1);
+			}
+		}
+		// Return the vector
+		Ok(vec)
+	}
+}
+
 // --------------------------------------------------
 // Optimized implementations for Vec<u16>, Vec<u32>, Vec<u64>, Vec<u128>
 // --------------------------------------------------
@@ -475,10 +536,127 @@ mod tests {
 		let val: Vec<i8> = (-128..=127).collect();
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
-		// Length encoding (3 bytes for 256) + 256 bytes of data
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 3 + 256);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 8 + 256);
 		let out = <Vec<i8> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 			.unwrap();
 		assert_eq!(val, out);
+	}
+
+	#[test]
+	fn test_vec_bool_bitpacked() {
+		// Test basic bit-packing
+		let val = vec![true, false, true, true, false, false, true, false];
+		let mut mem: Vec<u8> = vec![];
+		val.serialize_revisioned(&mut mem).unwrap();
+
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		assert_eq!(mem.len(), 2, "Bit-packing should use 2 bytes for 8 bools");
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 9, "Bit-packing with fixed-width length: 8 + 1 bytes");
+
+		let out = <Vec<bool> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
+		assert_eq!(val, out);
+	}
+
+	#[test]
+	fn test_vec_bool_bitpacked_patterns() {
+		// Test all false
+		let all_false = vec![false; 100];
+		let mut mem: Vec<u8> = vec![];
+		all_false.serialize_revisioned(&mut mem).unwrap();
+		let out = <Vec<bool> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
+		assert_eq!(all_false, out);
+
+		// Test all true
+		let all_true = vec![true; 100];
+		mem.clear();
+		all_true.serialize_revisioned(&mut mem).unwrap();
+		let out = <Vec<bool> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
+		assert_eq!(all_true, out);
+
+		// Test alternating pattern
+		let alternating: Vec<bool> = (0..100).map(|i| i % 2 == 0).collect();
+		mem.clear();
+		alternating.serialize_revisioned(&mut mem).unwrap();
+		let out = <Vec<bool> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
+		assert_eq!(alternating, out);
+	}
+
+	#[test]
+	fn test_vec_bool_bitpacked_sizes() {
+		// Test various sizes to ensure partial byte handling works
+		for size in [0usize, 1, 7, 8, 9, 15, 16, 17, 63, 64, 65, 100, 255, 256, 1000] {
+			let val: Vec<bool> = (0..size).map(|i| (i * 7) % 3 == 0).collect();
+			let mut mem: Vec<u8> = vec![];
+			val.serialize_revisioned(&mut mem).unwrap();
+
+			// Verify space savings
+			if size > 0 {
+				let expected_data_bytes = size.div_ceil(8);
+				#[cfg(not(feature = "fixed-width-encoding"))]
+				let len_bytes = if size < 251 {
+					1
+				} else if size < 65536 {
+					3
+				} else {
+					5
+				};
+				#[cfg(feature = "fixed-width-encoding")]
+				let len_bytes = 8;
+				assert_eq!(
+					mem.len(),
+					len_bytes + expected_data_bytes,
+					"Size mismatch for {} bools",
+					size
+				);
+			}
+
+			let out =
+				<Vec<bool> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+					.unwrap();
+			assert_eq!(val, out, "Mismatch for size {}", size);
+		}
+	}
+
+	#[test]
+	fn test_vec_bool_bitpacked_empty() {
+		let empty: Vec<bool> = vec![];
+		let mut mem: Vec<u8> = vec![];
+		empty.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		assert_eq!(mem.len(), 1, "Empty vec should only have length byte");
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 8, "Empty vec with fixed-width length encoding");
+		let out = <Vec<bool> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
+		assert_eq!(empty, out);
+	}
+
+	#[test]
+	fn test_vec_bool_bitpacked_space_efficiency() {
+		// Demonstrate space savings
+		let large_bool_vec = vec![true; 10000];
+		let mut mem: Vec<u8> = vec![];
+		large_bool_vec.serialize_revisioned(&mut mem).unwrap();
+
+		// With bit-packing: ~1250 bytes (10000/8)
+		// Without: 10000 bytes
+		// Savings: ~87.5%
+		assert!(
+			mem.len() < 1300,
+			"Bit-packed 10000 bools should be under 1300 bytes, got {}",
+			mem.len()
+		);
+
+		let out = <Vec<bool> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
+		assert_eq!(large_bool_vec, out);
 	}
 }

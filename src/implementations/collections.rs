@@ -259,7 +259,10 @@ mod tests {
 		val.insert("test".into(), vec![-3917.195, 19461.3849, -365.195759]);
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 61);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 96);
 		let out = <HashMap<String, Vec<f64>> as DeserializeRevisioned>::deserialize_revisioned(
 			&mut mem.as_slice(),
 		)
@@ -284,7 +287,10 @@ mod tests {
 		val.insert("test".into(), vec![-3917.195, 19461.3849, -365.195759]);
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 61);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 96);
 		let out = <HashMap<String, Vec<f64>, TestHasher> as DeserializeRevisioned>::deserialize_revisioned(
 			&mut mem.as_slice(),
 		)
@@ -299,7 +305,10 @@ mod tests {
 		val.insert("test".into(), vec![-3917.195, 19461.3849, -365.195759]);
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 61);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 96);
 		let out = <BTreeMap<String, Vec<f64>> as DeserializeRevisioned>::deserialize_revisioned(
 			&mut mem.as_slice(),
 		)
@@ -314,7 +323,10 @@ mod tests {
 		val.insert("test".into());
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 11);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 32);
 		let out =
 			<HashSet<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 				.unwrap();
@@ -328,7 +340,10 @@ mod tests {
 		val.insert("test".into());
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 11);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 32);
 		let out = <BTreeSet<String> as DeserializeRevisioned>::deserialize_revisioned(
 			&mut mem.as_slice(),
 		)
@@ -343,7 +358,10 @@ mod tests {
 		val.push("test".into());
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 11);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 32);
 		let out = <BinaryHeap<String> as DeserializeRevisioned>::deserialize_revisioned(
 			&mut mem.as_slice(),
 		)

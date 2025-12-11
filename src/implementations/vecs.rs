@@ -2,7 +2,6 @@ use crate::DeserializeRevisioned;
 use crate::Error;
 use crate::Revisioned;
 use crate::SerializeRevisioned;
-use std::any::TypeId;
 use std::io::Write;
 
 pub(crate) fn serialize_bytes<W>(v: &[u8], writer: &mut W) -> Result<(), Error>
@@ -20,11 +19,11 @@ where
 	#[inline]
 	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
 		// Try specialized implementations based on TypeId (when feature enabled)
-		#[cfg(feature = "specialised")]
+		#[cfg(feature = "specialised-vectors")]
 		{
 			macro_rules! try_specialized {
 				($ty:ty) => {
-					if TypeId::of::<T>() == TypeId::of::<$ty>() {
+					if std::any::TypeId::of::<T>() == std::any::TypeId::of::<$ty>() {
 						use crate::implementations::specialised::SerializeRevisionedSpecialised;
 						let specialized = unsafe { &*(self as *const Vec<T> as *const Vec<$ty>) };
 						return SerializeRevisionedSpecialised::serialize_revisioned_specialised(
@@ -35,6 +34,7 @@ where
 				};
 			}
 
+			try_specialized!(bool);
 			try_specialized!(u8);
 			try_specialized!(i8);
 			try_specialized!(u16);
@@ -79,11 +79,11 @@ where
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		// Try specialized implementations based on TypeId (when feature enabled)
-		#[cfg(feature = "specialised")]
+		#[cfg(feature = "specialised-vectors")]
 		{
 			macro_rules! try_specialized {
 				($ty:ty) => {
-					if TypeId::of::<T>() == TypeId::of::<$ty>() {
+					if std::any::TypeId::of::<T>() == std::any::TypeId::of::<$ty>() {
 						use crate::implementations::specialised::DeserializeRevisionedSpecialised;
 						return Vec::<$ty>::deserialize_revisioned_specialised(reader)
 							.map(|v| unsafe { std::mem::transmute(v) });
@@ -91,6 +91,7 @@ where
 				};
 			}
 
+			try_specialized!(bool);
 			try_specialized!(u8);
 			try_specialized!(i8);
 			try_specialized!(u16);
@@ -150,7 +151,10 @@ mod tests {
 			vec![String::from("this"), String::from("is"), String::from("a"), String::from("test")];
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 16);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 51);
 		let out =
 			<Vec<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 				.unwrap();

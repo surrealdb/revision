@@ -33,7 +33,7 @@ impl Revisioned for Uuid {
 // Optimized implementation for Vec<Uuid>
 // --------------------------------------------------
 
-#[cfg(feature = "specialised")]
+#[cfg(feature = "specialised-vectors")]
 impl super::specialised::SerializeRevisionedSpecialised for Vec<Uuid> {
 	#[inline]
 	fn serialize_revisioned_specialised<W: std::io::Write>(
@@ -64,7 +64,7 @@ impl super::specialised::SerializeRevisionedSpecialised for Vec<Uuid> {
 	}
 }
 
-#[cfg(feature = "specialised")]
+#[cfg(feature = "specialised-vectors")]
 impl super::specialised::DeserializeRevisionedSpecialised for Vec<Uuid> {
 	#[inline]
 	fn deserialize_revisioned_specialised<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
@@ -131,8 +131,10 @@ mod tests {
 		];
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
-		// 1 byte length + 3 * 16 bytes
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 1 + 3 * 16);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 8 + 3 * 16);
 		let out = <Vec<Uuid> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 			.unwrap();
 		assert_eq!(val, out);

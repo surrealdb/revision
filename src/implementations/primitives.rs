@@ -30,6 +30,8 @@ fn gazgiz_128(v: u128) -> i128 {
 	(v >> 1) as i128 ^ -((v & 1) as i128)
 }
 
+// Variable-length encoding (default)
+#[cfg(not(feature = "fixed-width-encoding"))]
 fn encode_u64<W>(writer: &mut W, i: u64) -> Result<(), Error>
 where
 	W: io::Write,
@@ -52,6 +54,7 @@ where
 	}
 }
 
+#[cfg(not(feature = "fixed-width-encoding"))]
 fn encode_u128<W>(writer: &mut W, i: u128) -> Result<(), Error>
 where
 	W: io::Write,
@@ -80,6 +83,8 @@ where
 		writer.write_all(&bytes).map_err(Error::Io)
 	}
 }
+
+#[cfg(not(feature = "fixed-width-encoding"))]
 fn decode_u64<R>(reader: &mut R) -> Result<u64, Error>
 where
 	R: io::Read,
@@ -105,6 +110,7 @@ where
 	Ok(v)
 }
 
+#[cfg(not(feature = "fixed-width-encoding"))]
 fn decode_u128<R>(reader: &mut R) -> Result<u128, Error>
 where
 	R: io::Read,
@@ -257,75 +263,267 @@ impl Revisioned for i8 {
 	}
 }
 
-macro_rules! impl_revisioned_int {
-	($ty:ident) => {
-		impl SerializeRevisioned for $ty {
-			#[inline]
-			fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-				encode_u64(writer, (*self) as u64)
-			}
+// u16 implementations
+impl SerializeRevisioned for u16 {
+	#[inline]
+	fn serialize_revisioned<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		{
+			encode_u64(writer, (*self) as u64)
 		}
-
-		impl DeserializeRevisioned for $ty {
-			#[inline]
-			fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error>
-			where
-				Self: Sized,
-			{
-				decode_u64(reader).and_then(|x| x.try_into().map_err(|_| Error::IntegerOverflow))
-			}
+		#[cfg(feature = "fixed-width-encoding")]
+		{
+			let bytes = self.to_le_bytes();
+			writer.write_all(&bytes).map_err(Error::Io)
 		}
-
-		impl Revisioned for $ty {
-			#[inline]
-			fn revision() -> u16 {
-				1
-			}
-		}
-	};
+	}
 }
 
-macro_rules! impl_revisioned_signed_int {
-	($ty:ident) => {
-		impl SerializeRevisioned for $ty {
-			#[inline]
-			fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-				encode_u64(writer, zigzag_64((*self) as i64))
-			}
+impl DeserializeRevisioned for u16 {
+	#[inline]
+	fn deserialize_revisioned<R: io::Read>(reader: &mut R) -> Result<Self, Error>
+	where
+		Self: Sized,
+	{
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		{
+			decode_u64(reader).and_then(|x| x.try_into().map_err(|_| Error::IntegerOverflow))
 		}
-
-		impl DeserializeRevisioned for $ty {
-			#[inline]
-			fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error>
-			where
-				Self: Sized,
-			{
-				decode_u64(reader)
-					.and_then(|x| gazgiz_64(x).try_into().map_err(|_| Error::IntegerOverflow))
-			}
+		#[cfg(feature = "fixed-width-encoding")]
+		{
+			let b = read_buffer::<2, _>(reader)?;
+			Ok(u16::from_le_bytes(b))
 		}
-
-		impl Revisioned for $ty {
-			#[inline]
-			fn revision() -> u16 {
-				1
-			}
-		}
-	};
+	}
 }
 
-impl_revisioned_int!(u16);
-impl_revisioned_int!(u32);
-impl_revisioned_int!(u64);
+impl Revisioned for u16 {
+	#[inline]
+	fn revision() -> u16 {
+		1
+	}
+}
 
-impl_revisioned_signed_int!(i16);
-impl_revisioned_signed_int!(i32);
-impl_revisioned_signed_int!(i64);
+// u32 implementations
+impl SerializeRevisioned for u32 {
+	#[inline]
+	fn serialize_revisioned<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		{
+			encode_u64(writer, (*self) as u64)
+		}
+		#[cfg(feature = "fixed-width-encoding")]
+		{
+			let bytes = self.to_le_bytes();
+			writer.write_all(&bytes).map_err(Error::Io)
+		}
+	}
+}
 
+impl DeserializeRevisioned for u32 {
+	#[inline]
+	fn deserialize_revisioned<R: io::Read>(reader: &mut R) -> Result<Self, Error>
+	where
+		Self: Sized,
+	{
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		{
+			decode_u64(reader).and_then(|x| x.try_into().map_err(|_| Error::IntegerOverflow))
+		}
+		#[cfg(feature = "fixed-width-encoding")]
+		{
+			let b = read_buffer::<4, _>(reader)?;
+			Ok(u32::from_le_bytes(b))
+		}
+	}
+}
+
+impl Revisioned for u32 {
+	#[inline]
+	fn revision() -> u16 {
+		1
+	}
+}
+
+// u64 implementations
+impl SerializeRevisioned for u64 {
+	#[inline]
+	fn serialize_revisioned<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		{
+			encode_u64(writer, *self)
+		}
+		#[cfg(feature = "fixed-width-encoding")]
+		{
+			let bytes = self.to_le_bytes();
+			writer.write_all(&bytes).map_err(Error::Io)
+		}
+	}
+}
+
+impl DeserializeRevisioned for u64 {
+	#[inline]
+	fn deserialize_revisioned<R: io::Read>(reader: &mut R) -> Result<Self, Error>
+	where
+		Self: Sized,
+	{
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		{
+			decode_u64(reader)
+		}
+		#[cfg(feature = "fixed-width-encoding")]
+		{
+			let b = read_buffer::<8, _>(reader)?;
+			Ok(u64::from_le_bytes(b))
+		}
+	}
+}
+
+impl Revisioned for u64 {
+	#[inline]
+	fn revision() -> u16 {
+		1
+	}
+}
+
+// i16 implementations
+impl SerializeRevisioned for i16 {
+	#[inline]
+	fn serialize_revisioned<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		{
+			encode_u64(writer, zigzag_64((*self) as i64))
+		}
+		#[cfg(feature = "fixed-width-encoding")]
+		{
+			let bytes = (zigzag_64(*self as i64) as u16).to_le_bytes();
+			writer.write_all(&bytes).map_err(Error::Io)
+		}
+	}
+}
+
+impl DeserializeRevisioned for i16 {
+	#[inline]
+	fn deserialize_revisioned<R: io::Read>(reader: &mut R) -> Result<Self, Error>
+	where
+		Self: Sized,
+	{
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		{
+			decode_u64(reader)
+				.and_then(|x| gazgiz_64(x).try_into().map_err(|_| Error::IntegerOverflow))
+		}
+		#[cfg(feature = "fixed-width-encoding")]
+		{
+			let b = read_buffer::<2, _>(reader)?;
+			Ok(gazgiz_64(u16::from_le_bytes(b) as u64) as i16)
+		}
+	}
+}
+
+impl Revisioned for i16 {
+	#[inline]
+	fn revision() -> u16 {
+		1
+	}
+}
+
+// i32 implementations
+impl SerializeRevisioned for i32 {
+	#[inline]
+	fn serialize_revisioned<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		{
+			encode_u64(writer, zigzag_64((*self) as i64))
+		}
+		#[cfg(feature = "fixed-width-encoding")]
+		{
+			let bytes = (zigzag_64(*self as i64) as u32).to_le_bytes();
+			writer.write_all(&bytes).map_err(Error::Io)
+		}
+	}
+}
+
+impl DeserializeRevisioned for i32 {
+	#[inline]
+	fn deserialize_revisioned<R: io::Read>(reader: &mut R) -> Result<Self, Error>
+	where
+		Self: Sized,
+	{
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		{
+			decode_u64(reader)
+				.and_then(|x| gazgiz_64(x).try_into().map_err(|_| Error::IntegerOverflow))
+		}
+		#[cfg(feature = "fixed-width-encoding")]
+		{
+			let b = read_buffer::<4, _>(reader)?;
+			Ok(gazgiz_64(u32::from_le_bytes(b) as u64) as i32)
+		}
+	}
+}
+
+impl Revisioned for i32 {
+	#[inline]
+	fn revision() -> u16 {
+		1
+	}
+}
+
+// i64 implementations
+impl SerializeRevisioned for i64 {
+	#[inline]
+	fn serialize_revisioned<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		{
+			encode_u64(writer, zigzag_64(*self))
+		}
+		#[cfg(feature = "fixed-width-encoding")]
+		{
+			let bytes = zigzag_64(*self).to_le_bytes();
+			writer.write_all(&bytes).map_err(Error::Io)
+		}
+	}
+}
+
+impl DeserializeRevisioned for i64 {
+	#[inline]
+	fn deserialize_revisioned<R: io::Read>(reader: &mut R) -> Result<Self, Error>
+	where
+		Self: Sized,
+	{
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		{
+			decode_u64(reader).map(gazgiz_64)
+		}
+		#[cfg(feature = "fixed-width-encoding")]
+		{
+			let b = read_buffer::<8, _>(reader)?;
+			Ok(gazgiz_64(u64::from_le_bytes(b)))
+		}
+	}
+}
+
+impl Revisioned for i64 {
+	#[inline]
+	fn revision() -> u16 {
+		1
+	}
+}
+
+// i128 implementations
 impl SerializeRevisioned for i128 {
 	#[inline]
 	fn serialize_revisioned<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		encode_u128(writer, zigzag_128(*self))
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		{
+			encode_u128(writer, zigzag_128(*self))
+		}
+		#[cfg(feature = "fixed-width-encoding")]
+		{
+			let bytes = zigzag_128(*self).to_le_bytes();
+			writer.write_all(&bytes).map_err(Error::Io)
+		}
 	}
 }
 
@@ -335,7 +533,15 @@ impl DeserializeRevisioned for i128 {
 	where
 		Self: Sized,
 	{
-		decode_u128(reader).map(gazgiz_128)
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		{
+			decode_u128(reader).map(gazgiz_128)
+		}
+		#[cfg(feature = "fixed-width-encoding")]
+		{
+			let b = read_buffer::<16, _>(reader)?;
+			Ok(gazgiz_128(u128::from_le_bytes(b)))
+		}
 	}
 }
 
@@ -346,10 +552,19 @@ impl Revisioned for i128 {
 	}
 }
 
+// u128 implementations
 impl SerializeRevisioned for u128 {
 	#[inline]
 	fn serialize_revisioned<W: io::Write>(&self, writer: &mut W) -> Result<(), Error> {
-		encode_u128(writer, *self)
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		{
+			encode_u128(writer, *self)
+		}
+		#[cfg(feature = "fixed-width-encoding")]
+		{
+			let bytes = self.to_le_bytes();
+			writer.write_all(&bytes).map_err(Error::Io)
+		}
 	}
 }
 
@@ -359,7 +574,15 @@ impl DeserializeRevisioned for u128 {
 	where
 		Self: Sized,
 	{
-		decode_u128(reader)
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		{
+			decode_u128(reader)
+		}
+		#[cfg(feature = "fixed-width-encoding")]
+		{
+			let b = read_buffer::<16, _>(reader)?;
+			Ok(u128::from_le_bytes(b))
+		}
 	}
 }
 
@@ -467,7 +690,10 @@ mod tests {
 		let val = isize::MIN;
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 9);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 8);
 		let out =
 			<isize as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
@@ -489,7 +715,10 @@ mod tests {
 		let val = i16::MIN;
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 3);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 2);
 		let out =
 			<i16 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
@@ -500,7 +729,10 @@ mod tests {
 		let val = i32::MIN;
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 5);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 4);
 		let out =
 			<i32 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
@@ -511,7 +743,10 @@ mod tests {
 		let val = i64::MIN;
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 9);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 8);
 		let out =
 			<i64 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
@@ -522,7 +757,10 @@ mod tests {
 		let val = i128::MIN;
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 17);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 16);
 		let out =
 			<i128 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
@@ -533,7 +771,10 @@ mod tests {
 		let val = usize::MAX;
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 9);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 8);
 		let out =
 			<usize as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
@@ -555,7 +796,10 @@ mod tests {
 		let val = u16::MAX;
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 3);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 2);
 		let out =
 			<u16 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
@@ -566,7 +810,10 @@ mod tests {
 		let val = u32::MAX;
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 5);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 4);
 		let out =
 			<u32 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
@@ -577,7 +824,10 @@ mod tests {
 		let val = u64::MAX;
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 9);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 8);
 		let out =
 			<u64 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
@@ -588,7 +838,10 @@ mod tests {
 		let val = u128::MAX;
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 17);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 16);
 		let out =
 			<u128 as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val, out);
@@ -630,6 +883,7 @@ mod tests {
 	macro_rules! test_integer_compat {
 		($n:ident,$ty:ident) => {
 			#[test]
+			#[cfg(not(feature = "fixed-width-encoding"))]
 			fn $n() {
 				let zero: $ty = 0;
 				assert_bincode_compat(&zero);

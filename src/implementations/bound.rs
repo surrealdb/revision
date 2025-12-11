@@ -57,7 +57,10 @@ mod tests {
 		let val: Bound<String> = Bound::Unbounded;
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 1);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 4);
 		let out =
 			<Bound<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 				.unwrap();
@@ -69,7 +72,10 @@ mod tests {
 		let val: Bound<String> = Bound::Excluded(String::from("this is a test"));
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 16);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 26);
 		let out =
 			<Bound<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 				.unwrap();
@@ -81,7 +87,10 @@ mod tests {
 		let val: Bound<String> = Bound::Included(String::from("this is a test"));
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 16);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 26);
 		let out =
 			<Bound<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 				.unwrap();
