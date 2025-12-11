@@ -219,7 +219,7 @@ impl SerializeRevisionedSpecialised for Vec<bool> {
 			return Ok(());
 		}
 		// Pack 8 bools per byte
-		let num_bytes = (len + 7) / 8;
+		let num_bytes = len.div_ceil(8);
 		let mut buffer = Vec::with_capacity(num_bytes);
 		// Pack the bools into bytes
 		for chunk in self.chunks(8) {
@@ -246,7 +246,7 @@ impl DeserializeRevisionedSpecialised for Vec<bool> {
 			return Ok(Self::new());
 		}
 		// Calculate number of bytes
-		let num_bytes = (len + 7) / 8;
+		let num_bytes = len.div_ceil(8);
 		// Read all packed bytes
 		let mut buffer = vec![0u8; num_bytes];
 		reader.read_exact(&mut buffer).map_err(Error::Io)?;
