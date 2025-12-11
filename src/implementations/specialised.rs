@@ -1,4 +1,4 @@
-#![cfg(feature = "specialised")]
+#![cfg(feature = "specialised-vectors")]
 
 use crate::DeserializeRevisioned;
 use crate::Error;
@@ -55,7 +55,7 @@ macro_rules! impl_revisioned_specialised_vec {
 					unsafe {
 						let byte_slice = std::slice::from_raw_parts(
 							self.as_ptr().cast::<u8>(),
-							self.len() * std::mem::size_of::<$ty>(),
+							len * std::mem::size_of::<$ty>(),
 						);
 						writer.write_all(byte_slice).map_err(Error::Io)
 					}

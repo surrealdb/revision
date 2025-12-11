@@ -33,7 +33,7 @@ impl Revisioned for Decimal {
 // Optimized implementation for Vec<Decimal>
 // --------------------------------------------------
 
-#[cfg(feature = "specialised")]
+#[cfg(feature = "specialised-vectors")]
 impl super::specialised::SerializeRevisionedSpecialised for Vec<Decimal> {
 	#[inline]
 	fn serialize_revisioned_specialised<W: std::io::Write>(
@@ -60,7 +60,7 @@ impl super::specialised::SerializeRevisionedSpecialised for Vec<Decimal> {
 	}
 }
 
-#[cfg(feature = "specialised")]
+#[cfg(feature = "specialised-vectors")]
 impl super::specialised::DeserializeRevisionedSpecialised for Vec<Decimal> {
 	#[inline]
 	fn deserialize_revisioned_specialised<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {

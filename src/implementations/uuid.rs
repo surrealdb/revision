@@ -33,7 +33,7 @@ impl Revisioned for Uuid {
 // Optimized implementation for Vec<Uuid>
 // --------------------------------------------------
 
-#[cfg(feature = "specialised")]
+#[cfg(feature = "specialised-vectors")]
 impl super::specialised::SerializeRevisionedSpecialised for Vec<Uuid> {
 	#[inline]
 	fn serialize_revisioned_specialised<W: std::io::Write>(
@@ -64,7 +64,7 @@ impl super::specialised::SerializeRevisionedSpecialised for Vec<Uuid> {
 	}
 }
 
-#[cfg(feature = "specialised")]
+#[cfg(feature = "specialised-vectors")]
 impl super::specialised::DeserializeRevisionedSpecialised for Vec<Uuid> {
 	#[inline]
 	fn deserialize_revisioned_specialised<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
