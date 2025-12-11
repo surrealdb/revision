@@ -589,14 +589,14 @@ mod tests {
 	#[test]
 	fn test_vec_bool_bitpacked_sizes() {
 		// Test various sizes to ensure partial byte handling works
-		for size in [0, 1, 7, 8, 9, 15, 16, 17, 63, 64, 65, 100, 255, 256, 1000] {
+		for size in [0usize, 1, 7, 8, 9, 15, 16, 17, 63, 64, 65, 100, 255, 256, 1000] {
 			let val: Vec<bool> = (0..size).map(|i| (i * 7) % 3 == 0).collect();
 			let mut mem: Vec<u8> = vec![];
 			val.serialize_revisioned(&mut mem).unwrap();
 
 			// Verify space savings
 			if size > 0 {
-				let expected_data_bytes = (size + 7) / 8;
+				let expected_data_bytes = size.div_ceil(8);
 				let len_bytes = if size < 251 {
 					1
 				} else if size < 65536 {

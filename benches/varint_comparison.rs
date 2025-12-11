@@ -124,7 +124,7 @@ where
 	T: From<u8> + Copy,
 {
 	let mut rng = rand::rng();
-	(0..size).map(|_| T::from(rng.random_range(0u8..=250u8.min(255)))).collect()
+	(0..size).map(|_| T::from(rng.random_range(0u8..=250u8))).collect()
 }
 
 /// Generate large values near type MAX where varint has overhead
