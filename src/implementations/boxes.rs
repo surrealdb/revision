@@ -43,7 +43,10 @@ mod tests {
 		let val: Box<String> = Box::new(String::from("this is a test"));
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 15);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 22);
 		let out =
 			<Box<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 				.unwrap();

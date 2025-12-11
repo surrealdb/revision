@@ -151,7 +151,10 @@ mod tests {
 			vec![String::from("this"), String::from("is"), String::from("a"), String::from("test")];
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 16);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 51);
 		let out =
 			<Vec<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 				.unwrap();

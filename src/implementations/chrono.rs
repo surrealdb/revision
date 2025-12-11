@@ -139,7 +139,10 @@ mod tests {
 		let val = DateTime::<Utc>::MIN_UTC;
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 10);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 12);
 		let out =
 			<DateTime<Utc> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 				.unwrap();
@@ -151,7 +154,10 @@ mod tests {
 		let val = DateTime::<Utc>::MAX_UTC;
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 14);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 12);
 		let out =
 			<DateTime<Utc> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 				.unwrap();
@@ -163,7 +169,10 @@ mod tests {
 		let val = NaiveDate::from_ymd_opt(1, 1, 1).unwrap();
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 3);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 12);
 		let out = <NaiveDate as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 			.unwrap();
 		assert_eq!(val, out);
@@ -174,7 +183,10 @@ mod tests {
 		let val = NaiveDate::from_ymd_opt(9999, 12, 31).unwrap();
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 5);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 12);
 		let out = <NaiveDate as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 			.unwrap();
 		assert_eq!(val, out);
@@ -185,7 +197,10 @@ mod tests {
 		let val = NaiveTime::from_hms_nano_opt(0, 0, 0, 0).unwrap();
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 4);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 16);
 		let out = <NaiveTime as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 			.unwrap();
 		assert_eq!(val, out);
@@ -196,7 +211,10 @@ mod tests {
 		let val = NaiveTime::from_hms_nano_opt(23, 59, 59, 999_999_999).unwrap();
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 8);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 16);
 		let out = <NaiveTime as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 			.unwrap();
 		assert_eq!(val, out);
@@ -207,7 +225,10 @@ mod tests {
 		let val = Duration::MIN;
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 14);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 12);
 		let out = <Duration as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 			.unwrap();
 		assert_eq!(val, out);
@@ -218,7 +239,10 @@ mod tests {
 		let val = Duration::zero();
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 2);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 12);
 		let out = <Duration as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 			.unwrap();
 		assert_eq!(val, out);
@@ -229,7 +253,10 @@ mod tests {
 		let val = Duration::MAX;
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 14);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 12);
 		let out = <Duration as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 			.unwrap();
 		assert_eq!(val, out);

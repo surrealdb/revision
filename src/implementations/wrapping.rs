@@ -45,7 +45,10 @@ mod tests {
 		let val: Wrapping<u32> = Wrapping(u32::MAX);
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 5);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 4);
 		let out =
 			<Wrapping<u32> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 				.unwrap();

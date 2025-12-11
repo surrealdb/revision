@@ -403,7 +403,10 @@ fn test_serialize_disabled() {
 	};
 	let mut mem: Vec<u8> = vec![];
 	val.serialize_revisioned(&mut mem).unwrap();
+	#[cfg(not(feature = "fixed-width-encoding"))]
 	assert_eq!(mem.len(), 6);
+	#[cfg(feature = "fixed-width-encoding")]
+	assert_eq!(mem.len(), 10);
 
 	let out = TestDeserializeOnly::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 	assert_eq!(val, out);
@@ -416,7 +419,10 @@ fn test_deserialize_disabled() {
 	};
 	let mut mem: Vec<u8> = vec![];
 	val.serialize_revisioned(&mut mem).unwrap();
+	#[cfg(not(feature = "fixed-width-encoding"))]
 	assert_eq!(mem.len(), 6);
+	#[cfg(feature = "fixed-width-encoding")]
+	assert_eq!(mem.len(), 10);
 
 	let out = TestSerializeAndDeserialize::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 	assert_eq!(val, out);

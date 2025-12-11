@@ -536,8 +536,10 @@ mod tests {
 		let val: Vec<i8> = (-128..=127).collect();
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
-		// Length encoding (3 bytes for 256) + 256 bytes of data
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 3 + 256);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 8 + 256);
 		let out = <Vec<i8> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 			.unwrap();
 		assert_eq!(val, out);
@@ -550,9 +552,10 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 
-		// Length (1 byte for len=8) + 1 byte of packed data = 2 bytes total
-		// Without bit-packing would be 1 + 8 = 9 bytes
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 2, "Bit-packing should use 2 bytes for 8 bools");
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 9, "Bit-packing with fixed-width length: 8 + 1 bytes");
 
 		let out = <Vec<bool> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 			.unwrap();
@@ -597,6 +600,7 @@ mod tests {
 			// Verify space savings
 			if size > 0 {
 				let expected_data_bytes = size.div_ceil(8);
+				#[cfg(not(feature = "fixed-width-encoding"))]
 				let len_bytes = if size < 251 {
 					1
 				} else if size < 65536 {
@@ -604,6 +608,8 @@ mod tests {
 				} else {
 					5
 				};
+				#[cfg(feature = "fixed-width-encoding")]
+				let len_bytes = 8;
 				assert_eq!(
 					mem.len(),
 					len_bytes + expected_data_bytes,
@@ -624,7 +630,10 @@ mod tests {
 		let empty: Vec<bool> = vec![];
 		let mut mem: Vec<u8> = vec![];
 		empty.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 1, "Empty vec should only have length byte");
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 8, "Empty vec with fixed-width length encoding");
 		let out = <Vec<bool> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 			.unwrap();
 		assert_eq!(empty, out);

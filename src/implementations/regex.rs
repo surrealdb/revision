@@ -36,7 +36,10 @@ mod tests {
 		let val = Regex::new("/this ([a-z]+) a tes?/").unwrap();
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
 		assert_eq!(mem.len(), 23);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 30);
 		let out =
 			<Regex as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice()).unwrap();
 		assert_eq!(val.as_str(), out.as_str());
