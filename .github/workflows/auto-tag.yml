@@ -48,7 +48,7 @@ jobs:
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo release publish --workspace --execute --no-confirm --no-tag --no-push --allow-branch HEAD
+        run: cargo release publish --workspace --execute --no-confirm --allow-branch main
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
