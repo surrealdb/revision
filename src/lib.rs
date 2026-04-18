@@ -3,8 +3,8 @@
 //!
 //! The `Revisioned` trait is automatically implemented for the following primitives:
 //! u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, char,
-//! str, String, Vec<T>, Arrays up to 32 elements, Option<T>, Box<T>, Bound<T>, Wrapping<T>,
-//! (A, B), (A, B, C), (A, B, C, D), (A, B, C, D, E), Duration, HashMap<K, V>,
+//! str, String, Vec<T>, Arrays up to 32 elements, Option<T>, Box<T>, Bound<T>, Range<T>, Wrapping<T>,
+//! (A, B), (A, B, C), (A, B, C, D), (A, B, C, D, E), Duration, SystemTime, HashMap<K, V>,
 //! BTreeMap<K, V>, Result<T, E>, Cow<'_, T>, Decimal, regex::Regex, uuid::Uuid, chrono::Duration,
 //! chrono::DateTime<Utc>, geo::Point, geo::LineString geo::Polygon, geo::MultiPoint,
 //! geo::MultiLineString, and geo::MultiPolygon.
