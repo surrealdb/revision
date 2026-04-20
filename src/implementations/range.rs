@@ -71,6 +71,7 @@ mod tests {
 	}
 
 	#[test]
+	#[allow(clippy::reversed_empty_ranges)]
 	fn test_range_inverted() {
 		let val = 100u32..10u32;
 		let mut mem: Vec<u8> = vec![];
@@ -186,17 +187,15 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 
-		let truncated = &mem[..1];
-		let result =
-			<Range<u32> as DeserializeRevisioned>::deserialize_revisioned(&mut truncated.as_ref());
+		let mut truncated = &mem[..1];
+		let result = <Range<u32> as DeserializeRevisioned>::deserialize_revisioned(&mut truncated);
 		assert!(result.is_err());
 	}
 
 	#[test]
 	fn test_range_empty_reader() {
-		let empty: &[u8] = &[];
-		let result =
-			<Range<u32> as DeserializeRevisioned>::deserialize_revisioned(&mut empty.as_ref());
+		let mut empty: &[u8] = &[];
+		let result = <Range<u32> as DeserializeRevisioned>::deserialize_revisioned(&mut empty);
 		assert!(result.is_err());
 	}
 

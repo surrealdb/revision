@@ -137,17 +137,15 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 
-		let truncated = &mem[..2];
-		let result =
-			<SystemTime as DeserializeRevisioned>::deserialize_revisioned(&mut truncated.as_ref());
+		let mut truncated = &mem[..2];
+		let result = <SystemTime as DeserializeRevisioned>::deserialize_revisioned(&mut truncated);
 		assert!(result.is_err());
 	}
 
 	#[test]
 	fn test_system_time_empty_reader() {
-		let empty: &[u8] = &[];
-		let result =
-			<SystemTime as DeserializeRevisioned>::deserialize_revisioned(&mut empty.as_ref());
+		let mut empty: &[u8] = &[];
+		let result = <SystemTime as DeserializeRevisioned>::deserialize_revisioned(&mut empty);
 		assert!(result.is_err());
 	}
 
@@ -212,9 +210,8 @@ mod tests {
 		let mut mem: Vec<u8> = vec![];
 		val.serialize_revisioned(&mut mem).unwrap();
 
-		let secs_only = &mem[..mem.len() - 1];
-		let result =
-			<SystemTime as DeserializeRevisioned>::deserialize_revisioned(&mut secs_only.as_ref());
+		let mut secs_only = &mem[..mem.len() - 1];
+		let result = <SystemTime as DeserializeRevisioned>::deserialize_revisioned(&mut secs_only);
 		assert!(result.is_err());
 	}
 }
