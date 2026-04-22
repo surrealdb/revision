@@ -12,10 +12,31 @@ impl SerializeRevisioned for String {
 }
 
 impl DeserializeRevisioned for String {
+	/// Reads the length-prefixed byte payload in a single bulk `read_exact`
+	/// and validates it as UTF-8 in place, avoiding both the per-byte fallback
+	/// when `specialised-vectors` is disabled and the `Take::read_to_end`
+	/// overhead of the `Vec<u8>` specialised path.
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		let bytes = Vec::<u8>::deserialize_revisioned(reader)?;
-		String::from_utf8(bytes).map_err(|x| Error::Utf8Error(x.utf8_error()))
+		let len = usize::deserialize_revisioned(reader)?;
+		if len == 0 {
+			return Ok(String::new());
+		}
+		let mut buf: Vec<u8> = Vec::with_capacity(len);
+		// SAFETY: `Vec::with_capacity(len)` guarantees capacity `>= len`, so
+		// `from_raw_parts_mut(ptr, len)` yields a valid exclusive slice of
+		// `len` (currently uninitialised) bytes. `read_exact` either fully
+		// initialises the slice and returns `Ok`, in which case we commit
+		// the length via `set_len`, or returns `Err`, in which case `?`
+		// returns before `set_len` and `buf` is dropped with `len = 0`,
+		// so no uninitialised memory is ever observed. `String::from_utf8`
+		// then enforces UTF-8 validity before producing a `String`.
+		unsafe {
+			let slice = std::slice::from_raw_parts_mut(buf.as_mut_ptr(), len);
+			reader.read_exact(slice).map_err(Error::Io)?;
+			buf.set_len(len);
+		}
+		String::from_utf8(buf).map_err(|x| Error::Utf8Error(x.utf8_error()))
 	}
 }
 
