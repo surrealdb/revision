@@ -128,7 +128,7 @@ impl<O: AttributeOptions> Parse for FilteredAttributes<O> {
 
 			let parsed_options =
 				attr.parse_args_with(Punctuated::<O::Option, Token![,]>::parse_terminated)?;
-			options.extend(parsed_options.into_iter())
+			options.extend(parsed_options)
 		}
 
 		let options = O::finish(Span::call_site(), options)?;
