@@ -12,10 +12,25 @@ impl SerializeRevisioned for String {
 }
 
 impl DeserializeRevisioned for String {
+	/// Reads the length-prefixed byte payload in a single bulk `read_exact`
+	/// and validates it as UTF-8 in place, avoiding both the per-byte fallback
+	/// when `specialised-vectors` is disabled and the `Take::read_to_end`
+	/// overhead of the `Vec<u8>` specialised path.
 	#[inline]
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
-		let bytes = Vec::<u8>::deserialize_revisioned(reader)?;
-		String::from_utf8(bytes).map_err(|x| Error::Utf8Error(x.utf8_error()))
+		let len = usize::deserialize_revisioned(reader)?;
+		if len == 0 {
+			return Ok(String::new());
+		}
+		// Zero-initialise before handing the buffer to `read_exact`. Passing an
+		// uninitialised slice to `Read::read` is explicitly documented as UB,
+		// and constructing a `&mut [u8]` over uninitialised memory would itself
+		// be UB per `slice::from_raw_parts_mut`'s initialisation requirement.
+		// The memset is negligible compared to the pending I/O and matches the
+		// pattern used in `uuid.rs` and the numeric specialised Vec impls.
+		let mut buf = vec![0u8; len];
+		reader.read_exact(&mut buf).map_err(Error::Io)?;
+		String::from_utf8(buf).map_err(|x| Error::Utf8Error(x.utf8_error()))
 	}
 }
 
@@ -137,6 +152,42 @@ mod tests {
 		assert_bincode_compat(&'ꚸ');
 		// in the 0xFFFF - 0x10FFFF range
 		assert_bincode_compat(&'𐃌');
+	}
+
+	#[test]
+	fn str_and_string_serialize_identically() {
+		// `str` and `String` must produce byte-for-byte identical output
+		// so that a `String` can round-trip values originally serialised
+		// from a `&str` (and vice versa). Cover empty, ASCII, multi-byte
+		// UTF-8, embedded NULs, and a longer payload that exercises the
+		// length-prefix encoding beyond a single byte.
+		let cases: &[&str] = &[
+			"",
+			"a",
+			"this is a test",
+			"unicode: 🚀🔥✨",
+			"with\0embedded\0nuls",
+			&"x".repeat(300),
+		];
+		for &s in cases {
+			let mut from_str: Vec<u8> = Vec::new();
+			<str as SerializeRevisioned>::serialize_revisioned(s, &mut from_str).unwrap();
+
+			let owned = s.to_owned();
+			let mut from_string: Vec<u8> = Vec::new();
+			owned.serialize_revisioned(&mut from_string).unwrap();
+
+			assert_eq!(
+				from_str, from_string,
+				"str and String serialisation diverged for input {:?}",
+				s
+			);
+
+			let out =
+				<String as DeserializeRevisioned>::deserialize_revisioned(&mut from_str.as_slice())
+					.unwrap();
+			assert_eq!(out, owned);
+		}
 	}
 
 	#[test]
