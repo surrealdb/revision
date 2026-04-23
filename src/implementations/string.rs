@@ -22,20 +22,14 @@ impl DeserializeRevisioned for String {
 		if len == 0 {
 			return Ok(String::new());
 		}
-		let mut buf: Vec<u8> = Vec::with_capacity(len);
-		// SAFETY: `Vec::with_capacity(len)` guarantees capacity `>= len`, so
-		// `from_raw_parts_mut(ptr, len)` yields a valid exclusive slice of
-		// `len` (currently uninitialised) bytes. `read_exact` either fully
-		// initialises the slice and returns `Ok`, in which case we commit
-		// the length via `set_len`, or returns `Err`, in which case `?`
-		// returns before `set_len` and `buf` is dropped with `len = 0`,
-		// so no uninitialised memory is ever observed. `String::from_utf8`
-		// then enforces UTF-8 validity before producing a `String`.
-		unsafe {
-			let slice = std::slice::from_raw_parts_mut(buf.as_mut_ptr(), len);
-			reader.read_exact(slice).map_err(Error::Io)?;
-			buf.set_len(len);
-		}
+		// Zero-initialise before handing the buffer to `read_exact`. Passing an
+		// uninitialised slice to `Read::read` is explicitly documented as UB,
+		// and constructing a `&mut [u8]` over uninitialised memory would itself
+		// be UB per `slice::from_raw_parts_mut`'s initialisation requirement.
+		// The memset is negligible compared to the pending I/O and matches the
+		// pattern used in `uuid.rs` and the numeric specialised Vec impls.
+		let mut buf = vec![0u8; len];
+		reader.read_exact(&mut buf).map_err(Error::Io)?;
 		String::from_utf8(buf).map_err(|x| Error::Utf8Error(x.utf8_error()))
 	}
 }
@@ -158,6 +152,42 @@ mod tests {
 		assert_bincode_compat(&'ꚸ');
 		// in the 0xFFFF - 0x10FFFF range
 		assert_bincode_compat(&'𐃌');
+	}
+
+	#[test]
+	fn str_and_string_serialize_identically() {
+		// `str` and `String` must produce byte-for-byte identical output
+		// so that a `String` can round-trip values originally serialised
+		// from a `&str` (and vice versa). Cover empty, ASCII, multi-byte
+		// UTF-8, embedded NULs, and a longer payload that exercises the
+		// length-prefix encoding beyond a single byte.
+		let cases: &[&str] = &[
+			"",
+			"a",
+			"this is a test",
+			"unicode: 🚀🔥✨",
+			"with\0embedded\0nuls",
+			&"x".repeat(300),
+		];
+		for &s in cases {
+			let mut from_str: Vec<u8> = Vec::new();
+			<str as SerializeRevisioned>::serialize_revisioned(s, &mut from_str).unwrap();
+
+			let owned = s.to_owned();
+			let mut from_string: Vec<u8> = Vec::new();
+			owned.serialize_revisioned(&mut from_string).unwrap();
+
+			assert_eq!(
+				from_str, from_string,
+				"str and String serialisation diverged for input {:?}",
+				s
+			);
+
+			let out =
+				<String as DeserializeRevisioned>::deserialize_revisioned(&mut from_str.as_slice())
+					.unwrap();
+			assert_eq!(out, owned);
+		}
 	}
 
 	#[test]
