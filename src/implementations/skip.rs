@@ -6,9 +6,10 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::hash::{BuildHasher, Hash};
 use std::io::Read;
 use std::num::Wrapping;
-use std::ops::Bound;
+use std::ops::{Bound, Range};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use crate::slice_reader::{SliceReader, advance_read};
 use crate::{DeserializeRevisioned, Error, Revisioned};
@@ -73,6 +74,57 @@ impl SkipCheckRevisioned for String {
 	#[inline]
 	fn skip_check_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
 		let _ = <Self as DeserializeRevisioned>::deserialize_revisioned(reader)?;
+		Ok(())
+	}
+}
+
+impl<T> SkipRevisioned for Range<T>
+where
+	T: SkipRevisioned + Revisioned,
+{
+	fn skip_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
+		T::skip_revisioned(reader)?;
+		T::skip_revisioned(reader)?;
+		Ok(())
+	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		T::skip_revisioned_slice(reader)?;
+		T::skip_revisioned_slice(reader)?;
+		Ok(())
+	}
+}
+
+impl<T> SkipCheckRevisioned for Range<T>
+where
+	T: SkipCheckRevisioned + Revisioned,
+{
+	fn skip_check_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
+		T::skip_check_revisioned(reader)?;
+		T::skip_check_revisioned(reader)?;
+		Ok(())
+	}
+}
+
+impl SkipRevisioned for SystemTime {
+	#[inline]
+	fn skip_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
+		<u64 as SkipRevisioned>::skip_revisioned(reader)?;
+		<u32 as SkipRevisioned>::skip_revisioned(reader)?;
+		Ok(())
+	}
+	#[inline]
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		<u64 as SkipRevisioned>::skip_revisioned_slice(reader)?;
+		<u32 as SkipRevisioned>::skip_revisioned_slice(reader)?;
+		Ok(())
+	}
+}
+
+impl SkipCheckRevisioned for SystemTime {
+	#[inline]
+	fn skip_check_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
+		<u64 as SkipCheckRevisioned>::skip_check_revisioned(reader)?;
+		<u32 as SkipCheckRevisioned>::skip_check_revisioned(reader)?;
 		Ok(())
 	}
 }

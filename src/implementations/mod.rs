@@ -28,7 +28,7 @@ pub mod vecs;
 pub mod wrapping;
 
 #[cfg(feature = "skip")]
-mod skip_support;
+mod skip;
 
 #[cfg(test)]
 #[track_caller]

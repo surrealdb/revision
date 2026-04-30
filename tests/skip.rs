@@ -4,7 +4,10 @@
 use revision::{
 	DeserializeRevisioned, Error, SerializeRevisioned, SliceReader, revisioned, to_vec,
 };
-use revision::{SkipCheckRevisioned, SkipRevisioned, skip_slice};
+use revision::{SkipCheckRevisioned, SkipRevisioned, skip_check_slice, skip_slice};
+use std::ops::Range;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 #[revisioned(revision = 1)]
 #[derive(Debug, Clone, PartialEq)]
 struct EvolvingV1 {
@@ -134,6 +137,23 @@ fn skip_slice_length_matches_serialise_across_primitive_samples() {
 	let t = (-7i64, vec![42u64, u64::MAX], Some("nest".to_string()));
 	let bytes = to_vec(&t).unwrap();
 	assert_eq!(skip_slice::<(i64, Vec<u64>, Option<String>)>(&bytes).unwrap(), bytes.len());
+}
+
+#[test]
+fn skip_slice_range_and_system_time_align_with_serialisation() {
+	let r = 42u64..99u64;
+	let bytes_r = to_vec(&r).unwrap();
+	assert_eq!(skip_slice::<Range<u64>>(&bytes_r).unwrap(), bytes_r.len());
+	assert_eq!(skip_check_slice::<Range<u64>>(&bytes_r).unwrap(), bytes_r.len());
+
+	let t = UNIX_EPOCH + Duration::from_secs(12_345) + Duration::from_nanos(987_654_321);
+	let bytes_t = to_vec(&t).unwrap();
+	assert_eq!(skip_slice::<SystemTime>(&bytes_t).unwrap(), bytes_t.len());
+	assert_eq!(skip_check_slice::<SystemTime>(&bytes_t).unwrap(), bytes_t.len());
+
+	let range_str = "hello".to_string().."zebra".to_string();
+	let bytes_rs = to_vec(&range_str).unwrap();
+	assert_eq!(skip_slice::<Range<String>>(&bytes_rs).unwrap(), bytes_rs.len());
 }
 
 #[test]
