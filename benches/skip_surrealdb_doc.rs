@@ -69,6 +69,7 @@ fn read_latency_ms_via_skip(mut reader: &[u8]) -> Result<i64, Error> {
 	for _ in 0..len {
 		let k = String::deserialize_revisioned(&mut reader)?;
 		if k == SURREAL_TARGET_FIELD {
+			let _value_revision = u16::deserialize_revisioned(&mut reader)?;
 			let disc = u32::deserialize_revisioned(&mut reader)?;
 			if disc != SURREAL_DISC_INT {
 				return Err(Error::Deserialize("stored doc bench: bad value variant".into()));

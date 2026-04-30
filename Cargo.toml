@@ -154,5 +154,10 @@ harness = false
 required-features = ["skip"]
 
 [[bench]]
+name = "skip_mixed_btreemap_nested"
+harness = false
+required-features = ["skip", "uuid"]
+
+[[bench]]
 name = "vec_bool_comparison"
 harness = false

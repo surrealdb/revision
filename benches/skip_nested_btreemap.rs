@@ -38,15 +38,6 @@ fn build_mid_node(target: i64) -> MidNode {
 	}
 }
 
-/// After a nested `MidNode`’s revision `u16` on the wire, skip to leaf `target`.
-fn extract_i64_after_mid_revision_prefix(mut reader: &[u8]) -> Result<i64, Error> {
-	let _mid_revision = u16::deserialize_revisioned(&mut reader)?;
-	<Vec<String> as SkipRevisioned>::skip_revisioned(&mut reader)?;
-	let _leaf_revision = u16::deserialize_revisioned(&mut reader)?;
-	<Vec<u8> as SkipRevisioned>::skip_revisioned(&mut reader)?;
-	i64::deserialize_revisioned(&mut reader)
-}
-
 #[revisioned(revision = 1)]
 #[derive(Debug)]
 enum MapValueBench {
@@ -78,17 +69,22 @@ fn build_map_payload(target: i64) -> MapBenchRoot {
 	}
 }
 
-/// Walk map entries in wire order until `MAP_TARGET_KEY`, skip `Small` values, then peel `Big` → mid.
+/// Walk map entries in wire order until `MAP_TARGET_KEY`, skipping each value via [`SkipRevisioned`].
+/// After the target key: read **`u16`** type revision then **`u32`** variant discriminator for `Big`,
+/// then deserialize [`MidNode`] (revisioned enums always prefix payload with type revision).
 fn extract_deep_target_via_btreemap_skip(mut reader: &[u8]) -> Result<i64, Error> {
 	let _root_revision = u16::deserialize_revisioned(&mut reader)?;
 	let len = usize::deserialize_revisioned(&mut reader)?;
 	for _ in 0..len {
 		let k = String::deserialize_revisioned(&mut reader)?;
 		if k == MAP_TARGET_KEY {
-			let _big_disc = u32::deserialize_revisioned(&mut reader)?;
-			return extract_i64_after_mid_revision_prefix(reader);
+			let _map_value_revision = u16::deserialize_revisioned(&mut reader)?;
+			let big_disc = u32::deserialize_revisioned(&mut reader)?;
+			debug_assert_eq!(big_disc, 1, "MapValueBench::Big discriminant");
+			let mid = MidNode::deserialize_revisioned(&mut reader)?;
+			return Ok(mid.child.target);
 		}
-		MapValueBench::skip_revisioned(&mut reader)?;
+		<MapValueBench as SkipRevisioned>::skip_revisioned(&mut reader)?;
 	}
 	Err(Error::Deserialize("benchmark BTreeMap missing target entry".into()))
 }
@@ -98,13 +94,15 @@ fn nested_deep_i64_btreemap_benches(c: &mut Criterion) {
 	let payload = build_map_payload(expected);
 	let bytes = to_vec(&payload).unwrap();
 
-	let full = MapBenchRoot::deserialize_revisioned(&mut black_box(bytes.as_slice())).unwrap();
+	assert_eq!(extract_deep_target_via_btreemap_skip(bytes.as_slice()).unwrap(), expected);
+
+	let mut root_slice = bytes.as_slice();
+	let full = MapBenchRoot::deserialize_revisioned(&mut root_slice).unwrap();
 	let hit = match full.table.get(MAP_TARGET_KEY).expect("missing key") {
 		MapValueBench::Big(mid) => mid.child.target,
 		MapValueBench::Small(_) => panic!("unexpected Small at target key"),
 	};
 	assert_eq!(hit, expected);
-	assert_eq!(extract_deep_target_via_btreemap_skip(bytes.as_slice()).unwrap(), expected);
 
 	let mut grp = c.benchmark_group("nested_deep_i64_btreemap");
 	grp.throughput(Throughput::Bytes(bytes.len() as u64));
