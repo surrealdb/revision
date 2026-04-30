@@ -1,6 +1,9 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use revision::{DeserializeRevisioned, revisioned, skip_slice, to_vec};
+use revision::{
+	DeserializeRevisioned, revisioned, skip_check_slice, skip_reader, skip_slice, to_vec,
+};
 use std::hint::black_box;
+use std::io::Cursor;
 
 #[revisioned(revision = 1)]
 #[derive(Debug)]
@@ -30,6 +33,20 @@ fn skip_benchmarks(c: &mut Criterion) {
 	grp.bench_function(BenchmarkId::from_parameter("skip_slice"), |b| {
 		b.iter(|| {
 			let n = skip_slice::<BenchPayload>(black_box(&bytes)).unwrap();
+			assert_eq!(n, bytes.len());
+		});
+	});
+
+	grp.bench_function(BenchmarkId::from_parameter("skip_reader_cursor"), |b| {
+		b.iter(|| {
+			let mut cur = Cursor::new(black_box(bytes.as_slice()));
+			skip_reader::<BenchPayload, _>(&mut cur).unwrap();
+		});
+	});
+
+	grp.bench_function(BenchmarkId::from_parameter("skip_check_slice"), |b| {
+		b.iter(|| {
+			let n = skip_check_slice::<BenchPayload>(black_box(&bytes)).unwrap();
 			assert_eq!(n, bytes.len());
 		});
 	});

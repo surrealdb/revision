@@ -95,6 +95,7 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 	let skip_derive_enabled = attrs.0.skip.unwrap_or(attrs.0.deserialize);
 
 	let mut skip_revision_arms = Vec::new();
+	let mut skip_revision_slice_arms = Vec::new();
 
 	if skip_derive_enabled {
 		for x in 1..=schema_revision {
@@ -103,12 +104,27 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 				target: schema_revision,
 				current: x,
 				stream: &mut skip_body,
+				slice_mode: false,
 			}
 			.visit_item(&ast)?;
 			let revision_x = x as u16;
 			skip_revision_arms.push(quote! {
 				#revision_x => {
 					#skip_body
+				}
+			});
+
+			let mut skip_slice_body = TokenStream::new();
+			SkipVisitor {
+				target: schema_revision,
+				current: x,
+				stream: &mut skip_slice_body,
+				slice_mode: true,
+			}
+			.visit_item(&ast)?;
+			skip_revision_slice_arms.push(quote! {
+				#revision_x => {
+					#skip_slice_body
 				}
 			});
 		}
@@ -123,6 +139,17 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 					let __revision = <u16 as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
 					match __revision {
 						#(#skip_revision_arms)*
+						x => Err(::revision::Error::Deserialize(
+							format!(#revision_error,x)
+						)),
+					}
+				}
+				fn skip_revisioned_slice(reader: &mut ::revision::SliceReader<'_>)
+					-> ::std::result::Result<(), ::revision::Error> {
+					let __revision =
+						<u16 as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
+					match __revision {
+						#(#skip_revision_slice_arms)*
 						x => Err(::revision::Error::Deserialize(
 							format!(#revision_error,x)
 						)),

@@ -10,7 +10,7 @@ use std::ops::Bound;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::slice_reader::advance_read;
+use crate::slice_reader::{SliceReader, advance_read};
 use crate::{DeserializeRevisioned, Error, Revisioned};
 use crate::{SkipCheckRevisioned, SkipRevisioned};
 
@@ -61,6 +61,12 @@ impl SkipRevisioned for String {
 		advance_read(reader, len)?;
 		Ok(())
 	}
+	#[inline]
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		let len = usize::deserialize_revisioned(reader)?;
+		reader.consume(len)?;
+		Ok(())
+	}
 }
 
 impl SkipCheckRevisioned for String {
@@ -80,6 +86,13 @@ macro_rules! skip_array_sizes {
             fn skip_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
                 for _ in 0..$N {
                     T::skip_revisioned(reader)?;
+                }
+                Ok(())
+            }
+            #[inline]
+            fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+                for _ in 0..$N {
+                    T::skip_revisioned_slice(reader)?;
                 }
                 Ok(())
             }
@@ -113,6 +126,11 @@ macro_rules! tuple_skip_impl {
             #[inline]
             fn skip_revisioned<R: Read>(_reader: &mut R) -> Result<(), Error> {
                 $($n::skip_revisioned(_reader)?;)*
+                Ok(())
+            }
+            #[inline]
+            fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+                $($n::skip_revisioned_slice(reader)?;)*
                 Ok(())
             }
         }
@@ -204,6 +222,71 @@ where
 		}
 		Ok(())
 	}
+
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		#[cfg(feature = "specialised-vectors")]
+		{
+			use std::any::TypeId;
+			macro_rules! specialised_bulk_slice {
+				($ty:ty) => {
+					if TypeId::of::<T>() == TypeId::of::<$ty>() {
+						let len = usize::deserialize_revisioned(reader)?;
+						let byte_len = len
+							.checked_mul(std::mem::size_of::<$ty>())
+							.ok_or(Error::IntegerOverflow)?;
+						reader.consume(byte_len)?;
+						return Ok(());
+					}
+				};
+			}
+
+			if TypeId::of::<T>() == TypeId::of::<bool>() {
+				let len = usize::deserialize_revisioned(reader)?;
+				let packed = len.div_ceil(8);
+				reader.consume(packed)?;
+				return Ok(());
+			}
+			if TypeId::of::<T>() == TypeId::of::<u8>() || TypeId::of::<T>() == TypeId::of::<i8>() {
+				let len = usize::deserialize_revisioned(reader)?;
+				reader.consume(len)?;
+				return Ok(());
+			}
+			specialised_bulk_slice!(u16);
+			specialised_bulk_slice!(i16);
+			specialised_bulk_slice!(u32);
+			specialised_bulk_slice!(i32);
+			specialised_bulk_slice!(u64);
+			specialised_bulk_slice!(i64);
+			specialised_bulk_slice!(u128);
+			specialised_bulk_slice!(i128);
+			specialised_bulk_slice!(f32);
+			specialised_bulk_slice!(f64);
+			#[cfg(feature = "rust_decimal")]
+			{
+				if TypeId::of::<T>() == TypeId::of::<rust_decimal::Decimal>() {
+					let len = usize::deserialize_revisioned(reader)?;
+					let byte_len = len.checked_mul(16).ok_or(Error::IntegerOverflow)?;
+					reader.consume(byte_len)?;
+					return Ok(());
+				}
+			}
+			#[cfg(feature = "uuid")]
+			{
+				if TypeId::of::<T>() == TypeId::of::<uuid::Uuid>() {
+					let len = usize::deserialize_revisioned(reader)?;
+					let byte_len = len.checked_mul(16).ok_or(Error::IntegerOverflow)?;
+					reader.consume(byte_len)?;
+					return Ok(());
+				}
+			}
+		}
+
+		let len = usize::deserialize_revisioned(reader)?;
+		for _ in 0..len {
+			T::skip_revisioned_slice(reader)?;
+		}
+		Ok(())
+	}
 }
 
 impl<T> SkipCheckRevisioned for Vec<T>
@@ -225,6 +308,13 @@ where
 		match u8::deserialize_revisioned(reader)? {
 			0u8 => Ok(()),
 			1u8 => T::skip_revisioned(reader),
+			v => Err(Error::Deserialize(format!("Invalid option value {v}"))),
+		}
+	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		match u8::deserialize_revisioned(reader)? {
+			0u8 => Ok(()),
+			1u8 => T::skip_revisioned_slice(reader),
 			v => Err(Error::Deserialize(format!("Invalid option value {v}"))),
 		}
 	}
@@ -252,6 +342,13 @@ where
 			_ => Err(Error::Deserialize("Unknown variant index".to_string())),
 		}
 	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		match u32::deserialize_revisioned(reader)? {
+			0 => T::skip_revisioned_slice(reader),
+			1 => E::skip_revisioned_slice(reader),
+			_ => Err(Error::Deserialize("Unknown variant index".to_string())),
+		}
+	}
 }
 
 impl<E, T> SkipCheckRevisioned for Result<T, E>
@@ -272,6 +369,9 @@ where
 	fn skip_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
 		T::skip_revisioned(reader)
 	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		T::skip_revisioned_slice(reader)
+	}
 }
 
 impl<T> SkipCheckRevisioned for Box<T>
@@ -291,6 +391,9 @@ where
 	fn skip_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
 		T::skip_revisioned(reader)
 	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		T::skip_revisioned_slice(reader)
+	}
 }
 
 impl<T> SkipCheckRevisioned for Arc<T>
@@ -307,6 +410,9 @@ impl SkipRevisioned for Arc<str> {
 	fn skip_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
 		String::skip_revisioned(reader)
 	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		String::skip_revisioned_slice(reader)
+	}
 }
 
 impl SkipCheckRevisioned for Arc<str> {
@@ -322,6 +428,9 @@ where
 {
 	fn skip_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
 		T::skip_revisioned(reader)
+	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		T::skip_revisioned_slice(reader)
 	}
 }
 
@@ -341,6 +450,9 @@ where
 {
 	fn skip_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
 		T::skip_revisioned(reader)
+	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		T::skip_revisioned_slice(reader)
 	}
 }
 
@@ -366,6 +478,14 @@ where
 			_ => Err(Error::Deserialize("Unknown variant index".to_string())),
 		}
 	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		match u32::deserialize_revisioned(reader)? {
+			0 => Ok(()),
+			1 => T::skip_revisioned_slice(reader),
+			2 => T::skip_revisioned_slice(reader),
+			_ => Err(Error::Deserialize("Unknown variant index".to_string())),
+		}
+	}
 }
 
 impl<T> SkipCheckRevisioned for Bound<T>
@@ -386,6 +506,9 @@ where
 	fn skip_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
 		T::Owned::skip_revisioned(reader)
 	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		T::Owned::skip_revisioned_slice(reader)
+	}
 }
 
 impl<T> SkipCheckRevisioned for Cow<'_, T>
@@ -402,6 +525,9 @@ where
 impl SkipRevisioned for Cow<'_, str> {
 	fn skip_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
 		String::skip_revisioned(reader)
+	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		String::skip_revisioned_slice(reader)
 	}
 }
 
@@ -423,6 +549,14 @@ where
 		for _ in 0..len {
 			K::skip_revisioned(reader)?;
 			V::skip_revisioned(reader)?;
+		}
+		Ok(())
+	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		let len = usize::deserialize_revisioned(reader)?;
+		for _ in 0..len {
+			K::skip_revisioned_slice(reader)?;
+			V::skip_revisioned_slice(reader)?;
 		}
 		Ok(())
 	}
@@ -453,6 +587,14 @@ where
 		}
 		Ok(())
 	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		let len = usize::deserialize_revisioned(reader)?;
+		for _ in 0..len {
+			K::skip_revisioned_slice(reader)?;
+			V::skip_revisioned_slice(reader)?;
+		}
+		Ok(())
+	}
 }
 
 impl<K, V> SkipCheckRevisioned for BTreeMap<K, V>
@@ -475,6 +617,13 @@ where
 		let len = usize::deserialize_revisioned(reader)?;
 		for _ in 0..len {
 			T::skip_revisioned(reader)?;
+		}
+		Ok(())
+	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		let len = usize::deserialize_revisioned(reader)?;
+		for _ in 0..len {
+			T::skip_revisioned_slice(reader)?;
 		}
 		Ok(())
 	}
@@ -502,6 +651,13 @@ where
 		}
 		Ok(())
 	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		let len = usize::deserialize_revisioned(reader)?;
+		for _ in 0..len {
+			T::skip_revisioned_slice(reader)?;
+		}
+		Ok(())
+	}
 }
 
 impl<T> SkipCheckRevisioned for BTreeSet<T>
@@ -522,6 +678,13 @@ where
 		let len = usize::deserialize_revisioned(reader)?;
 		for _ in 0..len {
 			T::skip_revisioned(reader)?;
+		}
+		Ok(())
+	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		let len = usize::deserialize_revisioned(reader)?;
+		for _ in 0..len {
+			T::skip_revisioned_slice(reader)?;
 		}
 		Ok(())
 	}
@@ -548,6 +711,9 @@ where
 	fn skip_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
 		T::skip_revisioned(reader)
 	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		T::skip_revisioned_slice(reader)
+	}
 }
 
 #[cfg(feature = "ordered-float")]
@@ -569,6 +735,9 @@ impl SkipRevisioned for Decimal {
 	fn skip_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
 		advance_read(reader, 16)
 	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		reader.consume(16)
+	}
 }
 
 #[cfg(feature = "rust_decimal")]
@@ -586,6 +755,9 @@ use uuid::Uuid;
 impl SkipRevisioned for Uuid {
 	fn skip_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
 		advance_read(reader, 16)
+	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		reader.consume(16)
 	}
 }
 
@@ -605,6 +777,9 @@ impl SkipRevisioned for Regex {
 	fn skip_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
 		String::skip_revisioned(reader)
 	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		String::skip_revisioned_slice(reader)
+	}
 }
 
 #[cfg(feature = "regex")]
@@ -623,6 +798,11 @@ impl SkipRevisioned for Bytes {
 	fn skip_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
 		let len = usize::deserialize_revisioned(reader)?;
 		advance_read(reader, len)?;
+		Ok(())
+	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		let len = usize::deserialize_revisioned(reader)?;
+		reader.consume(len)?;
 		Ok(())
 	}
 }
@@ -668,6 +848,13 @@ where
 		}
 		Ok(())
 	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		let len = usize::deserialize_revisioned(reader)?;
+		for _ in 0..len {
+			T::skip_revisioned_slice(reader)?;
+		}
+		Ok(())
+	}
 }
 
 #[cfg(feature = "imbl")]
@@ -695,6 +882,14 @@ where
 		}
 		Ok(())
 	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		let len = usize::deserialize_revisioned(reader)?;
+		for _ in 0..len {
+			K::skip_revisioned_slice(reader)?;
+			V::skip_revisioned_slice(reader)?;
+		}
+		Ok(())
+	}
 }
 
 #[cfg(feature = "imbl")]
@@ -718,6 +913,13 @@ where
 		let len = usize::deserialize_revisioned(reader)?;
 		for _ in 0..len {
 			T::skip_revisioned(reader)?;
+		}
+		Ok(())
+	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		let len = usize::deserialize_revisioned(reader)?;
+		for _ in 0..len {
+			T::skip_revisioned_slice(reader)?;
 		}
 		Ok(())
 	}
@@ -748,6 +950,14 @@ where
 		}
 		Ok(())
 	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		let len = usize::deserialize_revisioned(reader)?;
+		for _ in 0..len {
+			K::skip_revisioned_slice(reader)?;
+			V::skip_revisioned_slice(reader)?;
+		}
+		Ok(())
+	}
 }
 
 #[cfg(feature = "imbl")]
@@ -771,6 +981,13 @@ where
 		let len = usize::deserialize_revisioned(reader)?;
 		for _ in 0..len {
 			T::skip_revisioned(reader)?;
+		}
+		Ok(())
+	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		let len = usize::deserialize_revisioned(reader)?;
+		for _ in 0..len {
+			T::skip_revisioned_slice(reader)?;
 		}
 		Ok(())
 	}

@@ -1,9 +1,10 @@
 #![cfg(feature = "skip")]
 #![allow(dead_code)]
 
-use revision::{DeserializeRevisioned, Error, SerializeRevisioned, revisioned, to_vec};
+use revision::{
+	DeserializeRevisioned, Error, SerializeRevisioned, SliceReader, revisioned, to_vec,
+};
 use revision::{SkipCheckRevisioned, SkipRevisioned, skip_slice};
-
 #[revisioned(revision = 1)]
 #[derive(Debug, Clone, PartialEq)]
 struct EvolvingV1 {
@@ -102,6 +103,37 @@ fn option_bad_tag_matches_between_skip_traits() {
 		<Option<u32> as SkipCheckRevisioned>::skip_check_revisioned(&mut bad.as_slice()),
 		Err(Error::Deserialize(_))
 	));
+}
+
+#[test]
+fn skip_revisioned_slice_large_string_matches_skip_slice() {
+	let payload = "z".repeat(70_000);
+	let bytes = to_vec(&payload).unwrap();
+	assert_eq!(skip_slice::<String>(&bytes).unwrap(), bytes.len());
+	let mut sr = SliceReader::new(bytes.as_slice());
+	String::skip_revisioned_slice(&mut sr).unwrap();
+	assert_eq!(sr.remaining().len(), 0);
+	let mut sr2 = SliceReader::new(bytes.as_slice());
+	String::skip_revisioned(&mut sr2).unwrap();
+	assert_eq!(sr2.remaining().len(), 0);
+}
+
+#[test]
+fn skip_slice_length_matches_serialise_across_primitive_samples() {
+	for n in [0u32, 1u32, u32::MAX - 1, u32::MAX] {
+		let bytes = to_vec(&n).unwrap();
+		assert_eq!(skip_slice::<u32>(&bytes).unwrap(), bytes.len());
+	}
+	for n in [-1i128, 0, i128::MAX] {
+		let bytes = to_vec(&n).unwrap();
+		assert_eq!(skip_slice::<i128>(&bytes).unwrap(), bytes.len());
+	}
+	let long = "α".repeat(2000);
+	let bytes = to_vec(&long).unwrap();
+	assert_eq!(skip_slice::<String>(&bytes).unwrap(), bytes.len());
+	let t = (-7i64, vec![42u64, u64::MAX], Some("nest".to_string()));
+	let bytes = to_vec(&t).unwrap();
+	assert_eq!(skip_slice::<(i64, Vec<u64>, Option<String>)>(&bytes).unwrap(), bytes.len());
 }
 
 #[test]

@@ -27,6 +27,15 @@ pub use slice_reader::{SliceReader, advance_read};
 #[cfg(feature = "skip")]
 pub trait SkipRevisioned: Revisioned {
 	fn skip_revisioned<R: Read>(r: &mut R) -> Result<(), Error>;
+
+	/// Consume through bytes backed by [`SliceReader`] without allocating a buffer for bulk segments.
+	///
+	/// Defaults to delegating to [`skip_revisioned`](Self::skip_revisioned). Types that discard
+	/// runs of bytes faster via [`SliceReader::consume`] override this method so [`skip_slice`]
+	/// skips without copying payloads.
+	fn skip_revisioned_slice(r: &mut SliceReader<'_>) -> Result<(), Error> {
+		Self::skip_revisioned(r)
+	}
 }
 
 #[cfg(feature = "skip")]
@@ -40,19 +49,32 @@ pub fn skip_revisioned<T: SkipRevisioned, R: Read>(r: &mut R) -> Result<(), Erro
 	T::skip_revisioned(r)
 }
 
+/// Alias for [`skip_revisioned`].
+#[cfg(feature = "skip")]
+#[inline]
+pub fn skip_reader<T: SkipRevisioned, R: Read>(r: &mut R) -> Result<(), Error> {
+	skip_revisioned::<T, R>(r)
+}
+
 #[cfg(feature = "skip")]
 #[inline]
 pub fn skip_check_revisioned<T: SkipCheckRevisioned, R: Read>(r: &mut R) -> Result<(), Error> {
 	T::skip_check_revisioned(r)
 }
 
+/// Alias for [`skip_check_revisioned`].
+#[cfg(feature = "skip")]
+#[inline]
+pub fn skip_check_reader<T: SkipCheckRevisioned, R: Read>(r: &mut R) -> Result<(), Error> {
+	skip_check_revisioned::<T, R>(r)
+}
+
 #[cfg(feature = "skip")]
 #[inline]
 pub fn skip_slice<T: SkipRevisioned>(bytes: &[u8]) -> Result<usize, Error> {
-	let mut cursor = bytes;
-	let start = cursor.len();
-	<T as SkipRevisioned>::skip_revisioned(&mut cursor)?;
-	Ok(start - cursor.len())
+	let mut sr = SliceReader::new(bytes);
+	T::skip_revisioned_slice(&mut sr)?;
+	Ok(sr.consumed_len())
 }
 
 #[cfg(feature = "skip")]
@@ -68,8 +90,8 @@ pub mod prelude {
 	pub use crate::{DeserializeRevisioned, Revisioned, SerializeRevisioned, revisioned};
 	#[cfg(feature = "skip")]
 	pub use crate::{
-		SkipCheckRevisioned, SkipRevisioned, skip_check_revisioned, skip_check_slice,
-		skip_revisioned, skip_slice,
+		SkipCheckRevisioned, SkipRevisioned, skip_check_reader, skip_check_revisioned,
+		skip_check_slice, skip_reader, skip_revisioned, skip_slice,
 	};
 }
 

@@ -12,6 +12,8 @@ pub struct SkipVisitor<'a> {
 	pub target: usize,
 	pub current: usize,
 	pub stream: &'a mut TokenStream,
+	/// When true, emit `skip_revisioned_slice` calls on fields (for [`skip_slice`] fast path).
+	pub slice_mode: bool,
 }
 
 impl<'ast> Visit<'ast> for SkipVisitor<'_> {
@@ -25,6 +27,7 @@ impl<'ast> Visit<'ast> for SkipVisitor<'_> {
 			current: self.current,
 			stream: &mut variants,
 			discriminants,
+			slice_mode: self.slice_mode,
 		}
 		.visit_enum(i)?;
 
@@ -60,6 +63,7 @@ impl<'ast> Visit<'ast> for SkipVisitor<'_> {
 					target: self.target,
 					current: self.current,
 					stream: &mut skips,
+					slice_mode: self.slice_mode,
 				}
 				.visit_fields(&i.fields)?;
 
@@ -77,6 +81,7 @@ pub struct SkipVariant<'a> {
 	pub current: usize,
 	pub stream: &'a mut TokenStream,
 	pub discriminants: HashMap<Ident, u32>,
+	pub slice_mode: bool,
 }
 
 impl<'ast> Visit<'ast> for SkipVariant<'_> {
@@ -93,6 +98,7 @@ impl<'ast> Visit<'ast> for SkipVariant<'_> {
 			target: self.target,
 			current: self.current,
 			stream: &mut fields,
+			slice_mode: self.slice_mode,
 		}
 		.visit_variant(i)?;
 
@@ -118,6 +124,7 @@ pub struct SkipFields<'a> {
 	pub target: usize,
 	pub current: usize,
 	pub stream: &'a mut TokenStream,
+	pub slice_mode: bool,
 }
 
 impl<'ast> Visit<'ast> for SkipFields<'_> {
@@ -137,16 +144,28 @@ impl<'ast> Visit<'ast> for SkipFields<'_> {
 
 					if exists_target && exists_current {
 						let ty = &f.ty;
-						self.stream.append_all(quote! {
-							<#ty as ::revision::SkipRevisioned>::skip_revisioned(reader)?;
-						})
+						if self.slice_mode {
+							self.stream.append_all(quote! {
+								<#ty as ::revision::SkipRevisioned>::skip_revisioned_slice(reader)?;
+							});
+						} else {
+							self.stream.append_all(quote! {
+								<#ty as ::revision::SkipRevisioned>::skip_revisioned(reader)?;
+							});
+						}
 					} else if exists_target && !exists_current {
 						// Field absent on wire at this revision.
 					} else if !exists_target && exists_current {
 						let ty = &f.ty;
-						self.stream.append_all(quote! {
-							<#ty as ::revision::SkipRevisioned>::skip_revisioned(reader)?;
-						})
+						if self.slice_mode {
+							self.stream.append_all(quote! {
+								<#ty as ::revision::SkipRevisioned>::skip_revisioned_slice(reader)?;
+							});
+						} else {
+							self.stream.append_all(quote! {
+								<#ty as ::revision::SkipRevisioned>::skip_revisioned(reader)?;
+							});
+						}
 					}
 				}
 			}
