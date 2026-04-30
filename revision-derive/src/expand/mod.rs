@@ -2,6 +2,7 @@ mod common;
 mod de;
 mod reexport;
 mod ser;
+mod skip;
 mod validate_version;
 
 use de::{DeserializeVisitor, EnumStructsVisitor};
@@ -9,6 +10,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use reexport::Reexport;
 use ser::SerializeVisitor;
+use skip::SkipVisitor;
 use validate_version::ValidateRevision;
 
 use crate::ast::{self, Direct, ItemOptions, Visit};
@@ -82,12 +84,97 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 		})
 		.collect::<Vec<_>>();
 
-	let name = match ast.kind {
-		ast::ItemKind::Enum(x) => x.name,
-		ast::ItemKind::Struct(x) => x.name,
+	let name = match &ast.kind {
+		ast::ItemKind::Enum(x) => x.name.clone(),
+		ast::ItemKind::Struct(x) => x.name.clone(),
 	};
-	let revision = revision as u16;
+	let schema_revision = revision;
+	let revision_lit = revision as u16;
 	let revision_error = format!("Invalid revision `{{}}` for type `{}`", name);
+
+	let skip_derive_enabled = attrs.0.skip.unwrap_or(attrs.0.deserialize);
+
+	let mut skip_revision_arms = Vec::new();
+	let mut skip_revision_slice_arms = Vec::new();
+
+	if skip_derive_enabled {
+		for x in 1..=schema_revision {
+			let mut skip_body = TokenStream::new();
+			SkipVisitor {
+				target: schema_revision,
+				current: x,
+				stream: &mut skip_body,
+				slice_mode: false,
+			}
+			.visit_item(&ast)?;
+			let revision_x = x as u16;
+			skip_revision_arms.push(quote! {
+				#revision_x => {
+					#skip_body
+				}
+			});
+
+			let mut skip_slice_body = TokenStream::new();
+			SkipVisitor {
+				target: schema_revision,
+				current: x,
+				stream: &mut skip_slice_body,
+				slice_mode: true,
+			}
+			.visit_item(&ast)?;
+			skip_revision_slice_arms.push(quote! {
+				#revision_x => {
+					#skip_slice_body
+				}
+			});
+		}
+	}
+
+	let skip_revisioned_impl = if skip_derive_enabled {
+		quote! {
+			#[cfg(feature = "skip")]
+			impl ::revision::SkipRevisioned for #name {
+				fn skip_revisioned<R: ::std::io::Read>(reader: &mut R)
+					-> ::std::result::Result<(), ::revision::Error> {
+					let __revision = <u16 as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
+					match __revision {
+						#(#skip_revision_arms)*
+						x => Err(::revision::Error::Deserialize(
+							format!(#revision_error,x)
+						)),
+					}
+				}
+				fn skip_revisioned_slice(reader: &mut ::revision::SliceReader<'_>)
+					-> ::std::result::Result<(), ::revision::Error> {
+					let __revision =
+						<u16 as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
+					match __revision {
+						#(#skip_revision_slice_arms)*
+						x => Err(::revision::Error::Deserialize(
+							format!(#revision_error,x)
+						)),
+					}
+				}
+			}
+		}
+	} else {
+		quote! {}
+	};
+
+	let skip_check_impl = if skip_derive_enabled && attrs.0.deserialize {
+		quote! {
+			#[cfg(feature = "skip")]
+			impl ::revision::SkipCheckRevisioned for #name {
+				fn skip_check_revisioned<R: ::std::io::Read>(reader: &mut R)
+					-> ::std::result::Result<(), ::revision::Error> {
+					let _ = <Self as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
+					Ok(())
+				}
+			}
+		}
+	} else {
+		quote! {}
+	};
 
 	let serialize_impl = if attrs.0.serialize {
 		quote! {
@@ -128,11 +215,13 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 
 		#serialize_impl
 		#deserialize_impl
+		#skip_revisioned_impl
+		#skip_check_impl
 
 		impl ::revision::Revisioned for #name {
 			#[inline]
 			fn revision() -> u16{
-				#revision
+				#revision_lit
 			}
 		}
 	})

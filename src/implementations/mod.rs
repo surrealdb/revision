@@ -27,6 +27,9 @@ pub mod uuid;
 pub mod vecs;
 pub mod wrapping;
 
+#[cfg(feature = "skip")]
+mod skip;
+
 #[cfg(test)]
 #[track_caller]
 pub fn assert_bincode_compat<T>(v: &T)
