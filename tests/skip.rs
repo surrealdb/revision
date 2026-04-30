@@ -422,6 +422,13 @@ fn map_value_revisioned_enum_wire_prefix_is_type_rev_then_variant_disc() {
 	}
 	let small = MapValueBench::Small(vec![0x5e_u8; 192]);
 	let w = to_vec(&small).unwrap();
-	// Outer type revision, then variant disc (Small = 0), then Vec<u8>.
-	assert_eq!(&w[..3], &[0x01, 0x00, 0xc0], "{:02x?}", &w[..8]);
+
+	let mut r = w.as_slice();
+	let ty_rev = u16::deserialize_revisioned(&mut r).unwrap();
+	assert_eq!(ty_rev, 1, "outer type revision");
+	let disc = u32::deserialize_revisioned(&mut r).unwrap();
+	assert_eq!(disc, 0, "Small variant discriminant");
+	let payload = Vec::<u8>::deserialize_revisioned(&mut r).unwrap();
+	assert_eq!(payload, vec![0x5e_u8; 192]);
+	assert!(r.is_empty(), "leftover {} bytes", r.len());
 }
