@@ -7,6 +7,7 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use revision::{DeserializeRevisioned, Error, SkipRevisioned, revisioned, to_vec};
 use std::collections::BTreeMap;
+use std::f64::consts::TAU;
 use std::hint::black_box;
 use std::time::{Duration, UNIX_EPOCH};
 use uuid::Uuid;
@@ -16,7 +17,6 @@ const ROOT_SUB_KEY: &str = "k08";
 const NEST_REAL_KEY: &str = "n11";
 
 const EXPECT_U64: u64 = 0xFEED_BEEF_CAFE_u64;
-const EXPECT_F64: f64 = 6.283185307179586; // 2 * PI
 
 /// Decl order: `SysTime`, `Text`, `Num`, `Bytes`, `Tags`, `Real`, `Id`, `Sub` → `Num` is `2`, `Sub` is `7`.
 const DISC_ROOT_NUM: u32 = 2;
@@ -75,7 +75,7 @@ fn build_inner_map() -> BTreeMap<String, MixedInner> {
 	for i in 0..15 {
 		let key = format!("n{i:02}");
 		let v = if i == 11 {
-			MixedInner::Real(EXPECT_F64)
+			MixedInner::Real(TAU)
 		} else {
 			inner_scalar_rotate(i)
 		};
@@ -191,7 +191,7 @@ fn mixed_nested_two_field_benches(c: &mut Criterion) {
 	assert_eq!(full.0, stream.0);
 	assert_eq!(full.0, EXPECT_U64);
 	assert!((full.1 - stream.1).abs() < f64::EPSILON);
-	assert!((full.1 - EXPECT_F64).abs() < f64::EPSILON);
+	assert!((full.1 - TAU).abs() < f64::EPSILON);
 
 	let mut grp = c.benchmark_group("mixed_btreemap_nested_two_fields");
 	grp.throughput(Throughput::Bytes(bytes.len() as u64));

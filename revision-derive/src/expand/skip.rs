@@ -87,7 +87,6 @@ pub struct SkipVariant<'a> {
 impl<'ast> Visit<'ast> for SkipVariant<'_> {
 	fn visit_variant(&mut self, i: &'ast Variant) -> syn::Result<()> {
 		let exists_current = i.attrs.options.exists_at(self.current);
-		let exists_target = i.attrs.options.exists_at(self.target);
 
 		if !exists_current {
 			return Ok(());
@@ -102,19 +101,17 @@ impl<'ast> Visit<'ast> for SkipVariant<'_> {
 		}
 		.visit_variant(i)?;
 
-		if exists_target && exists_current || !exists_target && exists_current {
-			let discr = self
-				.discriminants
-				.get(&i.ident)
-				.expect("missed variant during discriminant calculation");
+		let discr = self
+			.discriminants
+			.get(&i.ident)
+			.expect("missed variant during discriminant calculation");
 
-			self.stream.append_all(quote! {
-				#discr => {
-					#fields
-					Ok(())
-				},
-			});
-		}
+		self.stream.append_all(quote! {
+			#discr => {
+				#fields
+				Ok(())
+			},
+		});
 
 		Ok(())
 	}
