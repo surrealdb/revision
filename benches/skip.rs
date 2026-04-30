@@ -1,4 +1,6 @@
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+//! Micro-benchmarks for `skip_*` helpers vs full `deserialize_revisioned` on a small struct.
+
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use revision::{
 	DeserializeRevisioned, revisioned, skip_check_slice, skip_reader, skip_slice, to_vec,
 };
@@ -21,7 +23,7 @@ fn skip_benchmarks(c: &mut Criterion) {
 	};
 	let bytes = to_vec(&payload).unwrap();
 	let mut grp = c.benchmark_group("skip_vs_deserialize");
-	grp.throughput(criterion::Throughput::Elements(1));
+	grp.throughput(Throughput::Elements(1));
 
 	grp.bench_function(BenchmarkId::from_parameter("deserialize"), |b| {
 		b.iter(|| {

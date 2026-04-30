@@ -25,6 +25,7 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 license.workspace = true
+autobenches = false
 
 [workspace.lints]
 
@@ -134,6 +135,21 @@ harness = false
 
 [[bench]]
 name = "skip"
+harness = false
+required-features = ["skip"]
+
+[[bench]]
+name = "skip_nested_struct"
+harness = false
+required-features = ["skip"]
+
+[[bench]]
+name = "skip_nested_btreemap"
+harness = false
+required-features = ["skip"]
+
+[[bench]]
+name = "skip_surrealdb_doc"
 harness = false
 required-features = ["skip"]
 
