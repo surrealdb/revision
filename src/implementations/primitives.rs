@@ -904,6 +904,16 @@ mod tests {
 	test_integer_compat!(compat_i128, i128);
 	test_integer_compat!(compat_u128, u128);
 
+	#[cfg(feature = "skip")]
+	#[test]
+	fn skip_u32_consumes_serialised_length() {
+		use crate::{SerializeRevisioned, skip_slice};
+		let v = 0x1234_5678u32;
+		let mut mem = Vec::new();
+		v.serialize_revisioned(&mut mem).unwrap();
+		assert_eq!(skip_slice::<u32>(&mem).unwrap(), mem.len());
+	}
+
 	#[test]
 	fn compat_f64() {
 		assert_bincode_compat(&0f64);

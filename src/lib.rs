@@ -12,14 +12,65 @@
 pub mod error;
 pub mod implementations;
 
+#[cfg(feature = "skip")]
+pub mod slice_reader;
+
 pub use crate::error::Error;
 pub use revision_derive::revisioned;
 
 use std::any::TypeId;
 use std::io::{Read, Write};
 
+#[cfg(feature = "skip")]
+pub use slice_reader::{SliceReader, advance_read};
+
+#[cfg(feature = "skip")]
+pub trait SkipRevisioned: Revisioned {
+	fn skip_revisioned<R: Read>(r: &mut R) -> Result<(), Error>;
+}
+
+#[cfg(feature = "skip")]
+pub trait SkipCheckRevisioned: Revisioned {
+	fn skip_check_revisioned<R: Read>(r: &mut R) -> Result<(), Error>;
+}
+
+#[cfg(feature = "skip")]
+#[inline]
+pub fn skip_revisioned<T: SkipRevisioned, R: Read>(r: &mut R) -> Result<(), Error> {
+	T::skip_revisioned(r)
+}
+
+#[cfg(feature = "skip")]
+#[inline]
+pub fn skip_check_revisioned<T: SkipCheckRevisioned, R: Read>(r: &mut R) -> Result<(), Error> {
+	T::skip_check_revisioned(r)
+}
+
+#[cfg(feature = "skip")]
+#[inline]
+pub fn skip_slice<T: SkipRevisioned>(bytes: &[u8]) -> Result<usize, Error> {
+	let mut cursor = bytes;
+	let start = cursor.len();
+	<T as SkipRevisioned>::skip_revisioned(&mut cursor)?;
+	Ok(start - cursor.len())
+}
+
+#[cfg(feature = "skip")]
+#[inline]
+pub fn skip_check_slice<T: SkipCheckRevisioned>(bytes: &[u8]) -> Result<usize, Error> {
+	let mut cursor = bytes;
+	let start = cursor.len();
+	<T as SkipCheckRevisioned>::skip_check_revisioned(&mut cursor)?;
+	Ok(start - cursor.len())
+}
+
 pub mod prelude {
 	pub use crate::{DeserializeRevisioned, Revisioned, SerializeRevisioned, revisioned};
+	#[cfg(feature = "skip")]
+	pub use crate::{
+		SkipCheckRevisioned, SkipRevisioned, skip_check_revisioned, skip_check_slice,
+		skip_revisioned, skip_slice,
+	};
 }
 
 /// Trait that provides an interface for version aware serialization and deserialization.

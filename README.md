@@ -37,6 +37,7 @@ Revision supports the following feature flags:
 
 - **`specialised-vectors`** (default): Enables specialised implementations for certain vector types that provide serialisation and deserialisation performance improvements.
 - **`fixed-width-encoding`**: Uses fixed-width encoding for integers instead of variable-length encoding. By default, Revision uses variable-length encoding which is more space-efficient for small values but has overhead for large values. With this feature enabled, all integers use their full size (2 bytes for `u16`/`i16`, 4 bytes for `u32`/`i32`, 8 bytes for `u64`/`i64`, 16 bytes for `u128`/`i128`), providing predictable serialization sizes, and improved serialisation and deserialisation performance.
+- **`skip`** (disabled by default): Enables `SkipRevisioned` / `SkipCheckRevisioned`, `skip_revisioned`, `skip_slice`, `skip_check_revisioned`, `skip_check_slice`, and derive output for skipping encoded values (`#[revisioned(..., skip = false)]` to opt out per type). Emitted impls sit behind `cfg(feature = "skip")`; enable the feature on the **`revision`** dependency and expose a matching **`skip`** feature in your crate when you rely on procedural output.
 
 ### Integer Encoding Trade-offs
 
