@@ -132,7 +132,6 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 
 	let skip_revisioned_impl = if skip_derive_enabled {
 		quote! {
-			#[cfg(feature = "skip")]
 			impl ::revision::SkipRevisioned for #name {
 				fn skip_revisioned<R: ::std::io::Read>(reader: &mut R)
 					-> ::std::result::Result<(), ::revision::Error> {
@@ -163,7 +162,6 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 
 	let skip_check_impl = if skip_derive_enabled && attrs.0.deserialize {
 		quote! {
-			#[cfg(feature = "skip")]
 			impl ::revision::SkipCheckRevisioned for #name {
 				fn skip_check_revisioned<R: ::std::io::Read>(reader: &mut R)
 					-> ::std::result::Result<(), ::revision::Error> {

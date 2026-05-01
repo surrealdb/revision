@@ -1,4 +1,3 @@
-#![cfg(feature = "skip")]
 #![allow(dead_code)]
 
 use revision::{
