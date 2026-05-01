@@ -904,7 +904,6 @@ mod tests {
 	test_integer_compat!(compat_i128, i128);
 	test_integer_compat!(compat_u128, u128);
 
-	#[cfg(feature = "skip")]
 	#[test]
 	fn skip_u32_consumes_serialised_length() {
 		use crate::{SerializeRevisioned, skip_slice};

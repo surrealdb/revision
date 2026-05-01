@@ -69,12 +69,10 @@ mod expand;
 ///
 /// By default both serialization and deserialization are enabled.
 ///
-/// ## Skipping payloads (`revision` feature **`skip`**)
+/// ## Skipping payloads
 ///
-/// With `revision` built using `--features skip`, and your crate enabling a **`skip`** feature that
-/// activates `revision/skip`, the macro emits `SkipRevisioned` and (when deserialization is enabled)
-/// `SkipCheckRevisioned` implementations behind `#[cfg(feature = "skip")]`. Disable per type via
-/// `#[revisioned(revision = N, skip = false)]` (defaults to the same toggle as deserialization).
+/// By default, deserialization enabled types also get `SkipRevisioned` and `SkipCheckRevisioned`
+/// implementations. Opt out per type with `#[revisioned(revision = N, skip = false)]`.
 ///
 /// ## Example
 ///

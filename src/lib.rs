@@ -12,7 +12,6 @@
 pub mod error;
 pub mod implementations;
 
-#[cfg(feature = "skip")]
 pub mod slice_reader;
 
 pub use crate::error::Error;
@@ -21,10 +20,8 @@ pub use revision_derive::revisioned;
 use std::any::TypeId;
 use std::io::{Read, Write};
 
-#[cfg(feature = "skip")]
 pub use slice_reader::{SliceReader, advance_read};
 
-#[cfg(feature = "skip")]
 pub trait SkipRevisioned: Revisioned {
 	fn skip_revisioned<R: Read>(r: &mut R) -> Result<(), Error>;
 
@@ -38,38 +35,32 @@ pub trait SkipRevisioned: Revisioned {
 	}
 }
 
-#[cfg(feature = "skip")]
 pub trait SkipCheckRevisioned: Revisioned {
 	fn skip_check_revisioned<R: Read>(r: &mut R) -> Result<(), Error>;
 }
 
-#[cfg(feature = "skip")]
 #[inline]
 pub fn skip_revisioned<T: SkipRevisioned, R: Read>(r: &mut R) -> Result<(), Error> {
 	T::skip_revisioned(r)
 }
 
 /// Alias for [`skip_revisioned`].
-#[cfg(feature = "skip")]
 #[inline]
 pub fn skip_reader<T: SkipRevisioned, R: Read>(r: &mut R) -> Result<(), Error> {
 	skip_revisioned::<T, R>(r)
 }
 
-#[cfg(feature = "skip")]
 #[inline]
 pub fn skip_check_revisioned<T: SkipCheckRevisioned, R: Read>(r: &mut R) -> Result<(), Error> {
 	T::skip_check_revisioned(r)
 }
 
 /// Alias for [`skip_check_revisioned`].
-#[cfg(feature = "skip")]
 #[inline]
 pub fn skip_check_reader<T: SkipCheckRevisioned, R: Read>(r: &mut R) -> Result<(), Error> {
 	skip_check_revisioned::<T, R>(r)
 }
 
-#[cfg(feature = "skip")]
 #[inline]
 pub fn skip_slice<T: SkipRevisioned>(bytes: &[u8]) -> Result<usize, Error> {
 	let mut sr = SliceReader::new(bytes);
@@ -77,7 +68,6 @@ pub fn skip_slice<T: SkipRevisioned>(bytes: &[u8]) -> Result<usize, Error> {
 	Ok(sr.consumed_len())
 }
 
-#[cfg(feature = "skip")]
 #[inline]
 pub fn skip_check_slice<T: SkipCheckRevisioned>(bytes: &[u8]) -> Result<usize, Error> {
 	let mut cursor = bytes;
@@ -88,7 +78,6 @@ pub fn skip_check_slice<T: SkipCheckRevisioned>(bytes: &[u8]) -> Result<usize, E
 
 pub mod prelude {
 	pub use crate::{DeserializeRevisioned, Revisioned, SerializeRevisioned, revisioned};
-	#[cfg(feature = "skip")]
 	pub use crate::{
 		SkipCheckRevisioned, SkipRevisioned, skip_check_reader, skip_check_revisioned,
 		skip_check_slice, skip_reader, skip_revisioned, skip_slice,
