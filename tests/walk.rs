@@ -519,3 +519,159 @@ fn deserialize_still_handles_older_wire_revision() {
 	assert_eq!(parsed.kind, 3);
 	assert_eq!(parsed.flags, 0);
 }
+
+// -----------------------------------------------------------------------------
+// Zero-copy peeking via BorrowedReader + LengthPrefixedBytes
+// -----------------------------------------------------------------------------
+
+#[test]
+fn leaf_walker_with_bytes_matches_decode_for_string() {
+	let s = "hello, walker".to_string();
+	let bytes = to_vec(&s).unwrap();
+
+	let mut r = bytes.as_slice();
+	let walker = String::walk_revisioned(&mut r).unwrap();
+	let observed = walker.with_bytes(|key| key.to_vec()).unwrap();
+	assert_eq!(observed.as_slice(), s.as_bytes());
+	assert!(r.is_empty(), "with_bytes should consume the whole leaf");
+
+	let mut r2 = bytes.as_slice();
+	let decoded = String::deserialize_revisioned(&mut r2).unwrap();
+	assert_eq!(decoded, s);
+}
+
+#[test]
+fn leaf_walker_with_bytes_matches_decode_for_pathbuf() {
+	use std::path::PathBuf;
+	let p = PathBuf::from("/etc/passwd");
+	let bytes = to_vec(&p).unwrap();
+
+	let mut r = bytes.as_slice();
+	let walker = PathBuf::walk_revisioned(&mut r).unwrap();
+	let observed = walker.with_bytes(|raw| raw.to_vec()).unwrap();
+	assert_eq!(observed.as_slice(), p.to_string_lossy().as_bytes());
+	assert!(r.is_empty());
+}
+
+#[test]
+fn map_walker_find_bytes_matches_find_for_string_keys() {
+	let mut map: BTreeMap<String, u32> = BTreeMap::new();
+	for (k, v) in [("alpha", 1u32), ("beta", 2), ("delta", 3), ("epsilon", 4)] {
+		map.insert(k.into(), v);
+	}
+	let bytes = to_vec(&map).unwrap();
+
+	// Typed path: existing `find`.
+	let mut r1 = bytes.as_slice();
+	let walker_typed: MapWalker<String, u32, _> =
+		<BTreeMap<String, u32>>::walk_revisioned(&mut r1).unwrap();
+	let typed = walker_typed
+		.find(|k: &String| k.as_str().cmp("delta"))
+		.unwrap()
+		.expect("delta should be present")
+		.decode()
+		.unwrap();
+
+	// Bytes path: new `find_bytes`.
+	let mut r2 = bytes.as_slice();
+	let walker_bytes: MapWalker<String, u32, _> =
+		<BTreeMap<String, u32>>::walk_revisioned(&mut r2).unwrap();
+	let bytewise = walker_bytes
+		.find_bytes(|k| k.cmp(b"delta".as_slice()))
+		.unwrap()
+		.expect("delta should be present")
+		.decode()
+		.unwrap();
+
+	assert_eq!(typed, bytewise);
+}
+
+#[test]
+fn map_walker_find_bytes_returns_none_consumes_all() {
+	let mut map: BTreeMap<String, u32> = BTreeMap::new();
+	map.insert("alpha".into(), 1);
+	map.insert("beta".into(), 2);
+	let bytes = to_vec(&map).unwrap();
+
+	let mut r = bytes.as_slice();
+	let walker: MapWalker<String, u32, _> =
+		<BTreeMap<String, u32>>::walk_revisioned(&mut r).unwrap();
+	let result = walker.find_bytes(|k| k.cmp(b"zzz".as_slice())).unwrap();
+	assert!(result.is_none());
+	assert!(r.is_empty(), "no-match find_bytes should consume entire map");
+}
+
+#[test]
+fn map_entry_with_key_bytes_zero_copy_iteration() {
+	let mut map: BTreeMap<String, u32> = BTreeMap::new();
+	map.insert("alpha".into(), 1);
+	map.insert("beta".into(), 2);
+	map.insert("gamma".into(), 3);
+	let bytes = to_vec(&map).unwrap();
+
+	let mut r = bytes.as_slice();
+	let mut walker: MapWalker<String, u32, _> =
+		<BTreeMap<String, u32>>::walk_revisioned(&mut r).unwrap();
+
+	let mut found_beta = None;
+	while let Some(mut entry) = walker.next_entry() {
+		let is_target = entry.with_key_bytes(|k| k == b"beta").unwrap();
+		if is_target {
+			found_beta = Some(entry.decode_value().unwrap());
+		} else {
+			entry.skip_value().unwrap();
+		}
+	}
+	assert_eq!(found_beta, Some(2));
+	assert!(r.is_empty(), "map walker should consume the entire map");
+}
+
+#[test]
+fn map_entry_with_value_bytes_for_byte_values() {
+	let mut map: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+	map.insert("a".into(), b"first-value".to_vec());
+	map.insert("b".into(), b"second-value-longer".to_vec());
+	let bytes = to_vec(&map).unwrap();
+
+	let mut r = bytes.as_slice();
+	let mut walker: MapWalker<String, Vec<u8>, _> =
+		<BTreeMap<String, Vec<u8>>>::walk_revisioned(&mut r).unwrap();
+
+	let mut second_observed: Option<Vec<u8>> = None;
+	while let Some(mut entry) = walker.next_entry() {
+		let key = entry.decode_key().unwrap();
+		if key == "b" {
+			second_observed = Some(entry.with_value_bytes(|raw| raw.to_vec()).unwrap());
+		} else {
+			entry.skip_value().unwrap();
+		}
+	}
+	assert_eq!(second_observed.as_deref(), Some(b"second-value-longer".as_slice()));
+	assert!(r.is_empty());
+}
+
+#[test]
+fn seq_item_with_bytes_for_string_seq() {
+	let v: Vec<String> = vec!["alpha".into(), "beta".into(), "gamma".into(), "delta".into()];
+	let bytes = to_vec(&v).unwrap();
+
+	let mut r = bytes.as_slice();
+	let mut walker: SeqWalker<String, _> = <Vec<String>>::walk_revisioned(&mut r).unwrap();
+	assert_eq!(walker.remaining(), 4);
+
+	// Mix three behaviours within a single iteration:
+	//   - first item: peek bytes, copy into Vec
+	//   - second item: decode normally
+	//   - third item: skip
+	//   - fourth item: peek bytes, comparison
+	let first = walker.next_item().unwrap().with_bytes(|b| b.to_vec()).unwrap();
+	let second = walker.next_item().unwrap().decode().unwrap();
+	walker.next_item().unwrap().skip().unwrap();
+	let fourth_starts_with_d =
+		walker.next_item().unwrap().with_bytes(|b| b.starts_with(b"d")).unwrap();
+
+	assert_eq!(first.as_slice(), b"alpha");
+	assert_eq!(second, "beta");
+	assert!(fourth_starts_with_d);
+	assert!(r.is_empty());
+}

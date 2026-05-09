@@ -9,9 +9,7 @@
     </a>
 </p> -->
 
-<p align="center">A framework for revision-tolerant serialization and deserialization,
-with support for schema evolution over time, allowing for easy revisioning of structs and enums for data storage requirements which need to support backwards
-compatibility, but where the design of the data format evolves over time.</p>
+<p align="center">A framework for revision-tolerant serialization and deserialization, with support for schema evolution over time, allowing for easy revisioning of structs and enums for data storage requirements which need to support backwards compatibility, but where the design of the data format evolves over time.</p>
 
 <br>
 
@@ -219,20 +217,11 @@ Use **`skip_check_*`** when you want validation that matches stricter deserializ
 
 ## Walking encoded values
 
-`WalkRevisioned` is a higher-level companion to `SkipRevisioned`: it lets a caller progress
-**element-by-element** through revisioned bytes, deciding per-element whether to **decode**,
-**skip**, or **walk into** further structure — without rewriting the byte-arithmetic by hand each
-time. The trait sits between `DeserializeRevisioned` (decode the entire value) and `SkipRevisioned`
-(consume the whole encoding).
+`WalkRevisioned` is a higher-level companion to `SkipRevisioned`: it lets a caller progress **element-by-element** through revisioned bytes, deciding per-element whether to **decode**, **skip**, or **walk into** further structure — without rewriting the byte-arithmetic by hand each time. The trait sits between `DeserializeRevisioned` (decode the entire value) and `SkipRevisioned` (consume the whole encoding).
 
-The derive macro emits `WalkRevisioned` for every `#[revisioned(...)]` type by default
-(controlled by the same flag as `deserialize`). Opt out per type with
-`#[revisioned(revision = N, walk = false)]`.
+The derive macro emits `WalkRevisioned` for every `#[revisioned(...)]` type by default (controlled by the same flag as `deserialize`). Opt out per type with `#[revisioned(revision = N, walk = false)]`.
 
-For each `#[revisioned(...)]` type the derive emits a per-type walker
-(`<TypeName>Walker<'r, R>`) with named per-field / per-variant methods.
-This is in addition to the generic `StructWalker` / `EnumWalker` / `MapWalker`
-/ `SeqWalker` types that hand-written `WalkRevisioned` impls can return.
+For each `#[revisioned(...)]` type the derive emits a per-type walker (`<TypeName>Walker<'r, R>`) with named per-field / per-variant methods. This is in addition to the generic `StructWalker` / `EnumWalker` / `MapWalker` / `SeqWalker` types that hand-written `WalkRevisioned` impls can return.
 
 ### Walking a struct
 
@@ -254,9 +243,7 @@ fn read_row_id_only(mut reader: &[u8]) -> Result<u64, revision::Error> {
 
 ### Walking a map
 
-`BTreeMap<K, V>` returns a `MapWalker` whose `next_entry` borrows one
-key/value pair at a time. Decode the key, then either decode/skip/walk the
-value before moving on:
+`BTreeMap<K, V>` returns a `MapWalker` whose `next_entry` borrows one key/value pair at a time. Decode the key, then either decode/skip/walk the value before moving on:
 
 ```rust
 use revision::{MapWalker, WalkRevisioned, to_vec};
@@ -283,10 +270,7 @@ assert_eq!(found, Some(99));
 
 ### Walking an enum
 
-For each variant, the derive emits an `into_<variant>` consuming method
-that descends into the variant's payload (for unit and single-field tuple
-variants), and a per-revision `walk_revisioned_variant_name(wire_rev, disc)`
-lookup:
+For each variant, the derive emits an `into_<variant>` consuming method that descends into the variant's payload (for unit and single-field tuple variants), and a per-revision `walk_revisioned_variant_name(wire_rev, disc)` lookup:
 
 ```rust
 use revision::{WalkRevisioned, revisioned, to_vec};
@@ -311,25 +295,12 @@ if walker.is_circle() {
 
 ### Walking across revisions
 
-`WalkRevisioned` honours the same cross-revision contract as
-`DeserializeRevisioned`: any wire revision in `1..=current` is accepted, and
-the walker presents the **latest schema** view. There are two internal modes:
+`WalkRevisioned` honours the same cross-revision contract as `DeserializeRevisioned`: any wire revision in `1..=current` is accepted, and the walker presents the **latest schema** view. There are two internal modes:
 
-- **Wire mode** (the fast path) is used when the wire revision matches the
-  current schema, and for any older revision of a type that does **not** use
-  `convert_fn`. Per-field methods branch on `wire_rev` against the field's
-  `start` annotation: fields added after the wire revision are synthesised
-  via `Default::default()` (or the user-supplied `default_fn`); no
-  allocations.
-- **Materialised mode** is used when the wire revision differs from the
-  current schema *and* the type has at least one `convert_fn`. The walker
-  internally calls `Self::deserialize_revisioned` (which honours
-  `convert_fn`), re-encodes the result at the current revision, and then
-  byte-walks those new bytes. The user-facing API is identical; the cost is
-  a single `Vec<u8>` allocation plus the deserialize/serialize roundtrip.
+- **Wire mode** (the fast path) is used when the wire revision matches the current schema, and for any older revision of a type that does **not** use `convert_fn`. Per-field methods branch on `wire_rev` against the field's `start` annotation: fields added after the wire revision are synthesised via `Default::default()` (or the user-supplied `default_fn`); no allocations.
+- **Materialised mode** is used when the wire revision differs from the current schema *and* the type has at least one `convert_fn`. The walker internally calls `Self::deserialize_revisioned` (which honours `convert_fn`), re-encodes the result at the current revision, and then byte-walks those new bytes. The user-facing API is identical; the cost is a single `Vec<u8>` allocation plus the deserialize/serialize roundtrip.
 
-The walker's mode selection happens at construction; per-method code paths
-do not branch beyond a single match on the internal repr.
+The walker's mode selection happens at construction; per-method code paths do not branch beyond a single match on the internal repr.
 
 ```rust
 use revision::{WalkRevisioned, revisioned, to_vec};
@@ -362,20 +333,156 @@ assert_eq!((kind, flags), (3, 0));
 | Wire rev < current, type without `convert_fn` | one extra branch per field; allocation-free |
 | Wire rev < current, type with `convert_fn` | `deserialize + serialize + walk`; rare in practice |
 
+### Zero-copy peeking
+
+When a walker visits a value whose wire format is `usize len || raw bytes` — a string, a `Vec<u8>`, a `PathBuf`, or any newtype wrapping one — the caller usually wants to compare those bytes against a needle, hash them, or stream them somewhere. Decoding the value just to throw the owned `String` / `Vec<u8>` / `Bytes` away is pure overhead.
+
+Two small traits unlock zero-copy peeking on those payloads:
+
+| Trait | Implemented for | Purpose |
+| --- | --- | --- |
+| [`BorrowedReader`] | `&[u8]`, [`SliceReader`] | A `Read` whose buffer is addressable, so a slice of upcoming bytes can be borrowed without copying. |
+| [`LengthPrefixedBytes`] | `String`, `&str`, `Box<str>`, `Arc<str>`, `Cow<'_, str>`, `Vec<u8>`, `Vec<i8>`, `PathBuf`, `bytes::Bytes` (feature-gated), and downstream newtypes | Marker: this type's `SerializeRevisioned` writes exactly `usize len || raw bytes`. Does **not** apply to derived `#[revisioned(...)]` types — they prepend a `u16` revision header. |
+
+When **both** are satisfied, walkers expose the following methods:
+
+| Walker | Method | Reader bound | Element bound |
+| --- | --- | --- | --- |
+| [`LeafWalker<T>`] | [`with_bytes`] | `BorrowedReader` | `T: LengthPrefixedBytes` |
+| [`MapWalker<K, V>`] | [`find_bytes`] | `BorrowedReader` | `K: LengthPrefixedBytes` |
+| [`MapEntry<K, V>`] | [`with_key_bytes`] | `BorrowedReader` | `K: LengthPrefixedBytes` |
+| [`MapEntry<K, V>`] | [`with_value_bytes`] | `BorrowedReader` | `V: LengthPrefixedBytes` |
+| [`SeqItem<T>`] | [`with_bytes`] | `BorrowedReader` | `T: LengthPrefixedBytes` |
+
+[`BorrowedReader`]: crate::BorrowedReader
+[`LengthPrefixedBytes`]: crate::LengthPrefixedBytes
+[`LeafWalker<T>`]: crate::LeafWalker
+[`MapWalker<K, V>`]: crate::MapWalker
+[`MapEntry<K, V>`]: crate::MapEntry
+[`SeqItem<T>`]: crate::SeqItem
+[`with_bytes`]: crate::LeafWalker::with_bytes
+[`find_bytes`]: crate::MapWalker::find_bytes
+[`with_key_bytes`]: crate::MapEntry::with_key_bytes
+[`with_value_bytes`]: crate::MapEntry::with_value_bytes
+
+#### Worked example: matching a map key by raw bytes
+
+`MapWalker::find_bytes` is the direct analogue of `find`, but the predicate sees the key's wire bytes instead of a decoded `K`:
+
+```rust
+use std::collections::BTreeMap;
+use revision::{MapWalker, WalkRevisioned, to_vec};
+
+let mut table = BTreeMap::new();
+table.insert("alpha".to_string(), 1u32);
+table.insert("delta".to_string(), 2);
+table.insert("zeta".to_string(), 3);
+let bytes = to_vec(&table).unwrap();
+
+let mut r = bytes.as_slice();
+let walker: MapWalker<String, u32, _> =
+    <BTreeMap<String, u32>>::walk_revisioned(&mut r).unwrap();
+
+// Compare keys as `&[u8]` — no Strand / String allocated per visit.
+let value = walker
+    .find_bytes(|k| k.cmp(b"delta".as_slice()))
+    .unwrap()
+    .map(|leaf| leaf.decode())
+    .transpose()
+    .unwrap();
+
+assert_eq!(value, Some(2));
+```
+
+#### Worked example: peeking a single key during streaming iteration
+
+`MapEntry::with_key_bytes` is the per-entry counterpart. Use it when iterating with `next_entry` and you want to decide what to do with the value based on the key's bytes:
+
+```rust
+use std::collections::BTreeMap;
+use revision::{MapWalker, WalkRevisioned, to_vec};
+
+let mut table = BTreeMap::new();
+table.insert("alpha".to_string(), 1u32);
+table.insert("beta".to_string(), 2);
+table.insert("gamma".to_string(), 3);
+let bytes = to_vec(&table).unwrap();
+
+let mut r = bytes.as_slice();
+let mut walker: MapWalker<String, u32, _> =
+    <BTreeMap<String, u32>>::walk_revisioned(&mut r).unwrap();
+
+let mut beta = None;
+while let Some(mut entry) = walker.next_entry() {
+    let is_target = entry.with_key_bytes(|k| k == b"beta").unwrap();
+    if is_target {
+        beta = Some(entry.decode_value().unwrap());
+    } else {
+        entry.skip_value().unwrap();
+    }
+}
+assert_eq!(beta, Some(2));
+```
+
+#### Worked example: filtering a map by value bytes
+
+`MapEntry::with_value_bytes` mirrors `with_key_bytes` for the value slot. Useful when the key has already been handled (decoded or skipped) and the caller wants to filter based on the value's raw bytes:
+
+```rust
+use std::collections::BTreeMap;
+use revision::{MapWalker, WalkRevisioned, to_vec};
+
+let mut table: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+table.insert("a".into(), b"first-value".to_vec());
+table.insert("b".into(), b"target-value".to_vec());
+let bytes = to_vec(&table).unwrap();
+
+let mut r = bytes.as_slice();
+let mut walker: MapWalker<String, Vec<u8>, _> =
+    <BTreeMap<String, Vec<u8>>>::walk_revisioned(&mut r).unwrap();
+
+let mut hits = 0;
+while let Some(mut entry) = walker.next_entry() {
+    entry.skip_key().unwrap();
+    if entry.with_value_bytes(|raw| raw.starts_with(b"target")).unwrap() {
+        hits += 1;
+    }
+}
+assert_eq!(hits, 1);
+```
+
+#### Worked example: scanning a sequence of strings
+
+`SeqItem::with_bytes` lets a scan over `Vec<String>` (or any `SeqWalker` whose item type implements `LengthPrefixedBytes`) compare items as raw bytes without paying for a per-item allocation:
+
+```rust
+use revision::{SeqWalker, WalkRevisioned, to_vec};
+
+let v = vec!["alpha".to_string(), "beta".into(), "gamma".into()];
+let bytes = to_vec(&v).unwrap();
+
+let mut r = bytes.as_slice();
+let mut walker: SeqWalker<String, _> =
+    <Vec<String>>::walk_revisioned(&mut r).unwrap();
+
+let mut found = false;
+while let Some(item) = walker.next_item() {
+    if item.with_bytes(|s| s == b"beta").unwrap() {
+        found = true;
+    }
+}
+assert!(found);
+```
+
+#### When zero-copy peeking does **not** apply
+
+- The reader is a streaming source (`std::fs::File`, `TcpStream`, …). `BorrowedReader` is only implemented for slice-backed readers.
+- The element type is a derived `#[revisioned(...)]` type. Its wire format includes a `u16` revision header followed by the body, not bare length-prefixed bytes; use `decode` / `walk` and let the walker read past the header.
+- The element is a primitive numeric (`u32`, `f64`, …) or a fixed-size array. There is no length prefix; the wire bytes are the value bytes. Use `decode` directly.
+
 ### Limitations
 
-- `walk_<field>` consumes the parent walker; it is supported in wire mode
-  and errors with `Error::Conversion` in materialised mode (older revs of
-  `convert_fn`-bearing types). Callers that hit the materialised path should
-  `decode_<field>` instead — they already paid the deserialize cost during
-  walker construction.
-- `into_<variant>` is currently emitted for unit variants and single-field
-  tuple variants. Multi-field tuple variants and struct variants are
-  reachable via `discriminant()` + `decode_<field>` on the underlying
-  bytes.
-- `Vec<T>` for primitive numeric `T` may use the `specialised-vectors`
-  bulk encoding which the generic `SeqWalker` does not understand. Use
-  `DeserializeRevisioned` (or `SkipRevisioned`) for those.
-- Types declared `#[revisioned(serialize = false)]` cannot materialise; if
-  they also use `convert_fn`, walking older wire revisions will not be
-  supported.
+- `walk_<field>` consumes the parent walker; it is supported in wire mode and errors with `Error::Conversion` in materialised mode (older revs of `convert_fn`-bearing types). Callers that hit the materialised path should `decode_<field>` instead — they already paid the deserialize cost during walker construction.
+- `into_<variant>` is currently emitted for unit variants and single-field tuple variants. Multi-field tuple variants and struct variants are reachable via `discriminant()` + `decode_<field>` on the underlying bytes.
+- `Vec<T>` for primitive numeric `T` may use the `specialised-vectors` bulk encoding which the generic `SeqWalker` does not understand. Use `DeserializeRevisioned` (or `SkipRevisioned`) for those.
+- Types declared `#[revisioned(serialize = false)]` cannot materialise; if they also use `convert_fn`, walking older wire revisions will not be supported.

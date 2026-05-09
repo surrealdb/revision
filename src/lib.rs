@@ -21,10 +21,10 @@ pub use revision_derive::revisioned;
 use std::any::TypeId;
 use std::io::{Read, Write};
 
-pub use slice_reader::{SliceReader, advance_read};
+pub use slice_reader::{BorrowedReader, SliceReader, advance_read};
 pub use walk::{
-	EnumWalker, LeafWalker, MapEntry, MapWalker, OptionWalker, ResultWalker, SeqItem, SeqWalker,
-	StructWalker, WalkRevisioned, read_enum_discriminant,
+	EnumWalker, LeafWalker, LengthPrefixedBytes, MapEntry, MapWalker, OptionWalker, ResultWalker,
+	SeqItem, SeqWalker, StructWalker, WalkRevisioned, read_enum_discriminant,
 };
 
 pub trait SkipRevisioned: Revisioned {
@@ -82,11 +82,11 @@ pub fn skip_check_slice<T: SkipCheckRevisioned>(bytes: &[u8]) -> Result<usize, E
 }
 
 pub mod prelude {
-	pub use crate::{DeserializeRevisioned, Revisioned, SerializeRevisioned, revisioned};
 	pub use crate::{
-		EnumWalker, LeafWalker, MapEntry, MapWalker, OptionWalker, ResultWalker, SeqItem,
-		SeqWalker, StructWalker, WalkRevisioned,
+		BorrowedReader, EnumWalker, LeafWalker, LengthPrefixedBytes, MapEntry, MapWalker,
+		OptionWalker, ResultWalker, SeqItem, SeqWalker, StructWalker, WalkRevisioned,
 	};
+	pub use crate::{DeserializeRevisioned, Revisioned, SerializeRevisioned, revisioned};
 	pub use crate::{
 		SkipCheckRevisioned, SkipRevisioned, skip_check_reader, skip_check_revisioned,
 		skip_check_slice, skip_reader, skip_revisioned, skip_slice,

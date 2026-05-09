@@ -39,6 +39,7 @@ use std::cmp::Ordering;
 use std::io::Read;
 use std::marker::PhantomData;
 
+use crate::slice_reader::BorrowedReader;
 use crate::{DeserializeRevisioned, Error, Revisioned, SkipRevisioned};
 
 // -----------------------------------------------------------------------------
@@ -81,6 +82,73 @@ pub trait WalkRevisioned: Revisioned {
 	/// Read the type's revision-level prefix and return a walker positioned at
 	/// the start of the body.
 	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error>;
+}
+
+// -----------------------------------------------------------------------------
+// Zero-copy peek primitives
+// -----------------------------------------------------------------------------
+
+/// Marker for revisioned types whose wire format is `usize len || raw bytes`.
+///
+/// Types implementing this trait can have their wire payload **peeked as
+/// `&[u8]`** from a [`BorrowedReader`] without allocating. Walker methods
+/// such as [`LeafWalker::with_bytes`], [`MapWalker::find_bytes`],
+/// [`MapEntry::with_key_bytes`] / [`MapEntry::with_value_bytes`], and
+/// [`SeqItem::with_bytes`] are gated on this trait so callers can compare,
+/// hash, or copy the wire bytes without paying for an intermediate
+/// `String` / `Vec<u8>` / `Bytes`.
+///
+/// The trait does **not** apply to derived `#[revisioned(...)]` types,
+/// which prepend a `u16` revision header to their body. Only types whose
+/// `SerializeRevisioned` impl writes `usize` then raw bytes qualify; this
+/// includes the standard string- and bytes-shaped types
+/// (`String`, `&str`, `Box<str>`, `Arc<str>`, `Cow<'_, str>`, `Vec<u8>`,
+/// `Vec<i8>`, `PathBuf`) and feature-gated types like `bytes::Bytes`.
+///
+/// Downstream crates can opt their newtypes in by adding a one-line impl
+/// (e.g. `impl LengthPrefixedBytes for MyId {}`) when the newtype's
+/// `SerializeRevisioned` ultimately writes `usize len || raw bytes`.
+pub trait LengthPrefixedBytes: Revisioned {}
+
+impl LengthPrefixedBytes for String {}
+impl LengthPrefixedBytes for str {}
+impl LengthPrefixedBytes for std::sync::Arc<str> {}
+impl LengthPrefixedBytes for std::path::PathBuf {}
+impl LengthPrefixedBytes for Vec<u8> {}
+impl LengthPrefixedBytes for Vec<i8> {}
+
+impl<T> LengthPrefixedBytes for std::borrow::Cow<'_, T>
+where
+	T: ToOwned + Revisioned,
+	T::Owned: LengthPrefixedBytes,
+{
+}
+
+#[cfg(feature = "bytes")]
+impl LengthPrefixedBytes for bytes::Bytes {}
+
+/// Peek a length-prefixed byte payload at the reader's current position
+/// and pass it to `f` as a borrowed slice; advance the reader past the
+/// bytes once `f` returns.
+///
+/// Used by [`LeafWalker::with_bytes`], [`MapEntry::with_key_bytes`] /
+/// [`with_value_bytes`](MapEntry::with_value_bytes), [`SeqItem::with_bytes`],
+/// and [`MapWalker::find_bytes`]. Each of those methods is just a thin
+/// wrapper around this helper plus the appropriate cursor / counter
+/// bookkeeping.
+#[inline]
+pub(crate) fn with_length_prefixed_bytes<R, F, T>(reader: &mut R, f: F) -> Result<T, Error>
+where
+	R: BorrowedReader,
+	F: FnOnce(&[u8]) -> T,
+{
+	let len = usize::deserialize_revisioned(reader)?;
+	let result = {
+		let bytes = reader.peek_bytes(len)?;
+		f(bytes)
+	};
+	reader.advance(len)?;
+	Ok(result)
 }
 
 // -----------------------------------------------------------------------------
@@ -148,6 +216,29 @@ impl<'r, T, R: Read + 'r> LeafWalker<'r, T, R> {
 	#[inline]
 	pub fn into_reader(self) -> &'r mut R {
 		self.reader
+	}
+}
+
+impl<'r, T, R> LeafWalker<'r, T, R>
+where
+	T: LengthPrefixedBytes,
+	R: BorrowedReader + 'r,
+{
+	/// Inspect the leaf's wire bytes without allocating, calling `f` with
+	/// a slice borrowed from the underlying buffer; the reader is
+	/// advanced past the bytes after `f` returns.
+	///
+	/// Only available when the underlying reader is slice-backed
+	/// ([`BorrowedReader`]) and the value's wire format is exactly
+	/// `usize len || raw bytes` ([`LengthPrefixedBytes`]). For decoded
+	/// access use [`decode`](Self::decode); for fall-through advancement
+	/// use [`skip`](Self::skip).
+	#[inline]
+	pub fn with_bytes<F, U>(self, f: F) -> Result<U, Error>
+	where
+		F: FnOnce(&[u8]) -> U,
+	{
+		with_length_prefixed_bytes(self.reader, f)
 	}
 }
 
@@ -437,6 +528,30 @@ impl<'a, 'r, T, R: Read + 'r> SeqItem<'a, 'r, T, R> {
 	}
 }
 
+impl<'a, 'r, T, R> SeqItem<'a, 'r, T, R>
+where
+	T: LengthPrefixedBytes,
+	R: BorrowedReader + 'r,
+{
+	/// Inspect the item's wire bytes without allocating, calling `f` with
+	/// a slice borrowed from the underlying buffer; the reader is
+	/// advanced past the item once `f` returns and the seq walker's
+	/// remaining counter is decremented.
+	///
+	/// Useful for searching sorted sequences (`Vec<String>`,
+	/// `BTreeSet<Bytes>`, …) by byte compare without paying for a
+	/// per-item decode allocation.
+	#[inline]
+	pub fn with_bytes<F, U>(self, f: F) -> Result<U, Error>
+	where
+		F: FnOnce(&[u8]) -> U,
+	{
+		let result = with_length_prefixed_bytes(self.walker.reader, f)?;
+		self.walker.remaining -= 1;
+		Ok(result)
+	}
+}
+
 // -----------------------------------------------------------------------------
 // MapWalker — HashMap<K, V>, BTreeMap<K, V>, …
 // -----------------------------------------------------------------------------
@@ -529,6 +644,63 @@ impl<'r, K, V, R: Read + 'r> MapWalker<'r, K, V, R> {
 		while self.remaining > 0 {
 			let key = K::deserialize_revisioned(self.reader)?;
 			match predicate(&key) {
+				Ordering::Less => {
+					V::skip_revisioned(self.reader)?;
+					self.remaining -= 1;
+				}
+				Ordering::Equal => {
+					return Ok(Some(LeafWalker::new(self.reader)));
+				}
+				Ordering::Greater => {
+					V::skip_revisioned(self.reader)?;
+					self.remaining -= 1;
+					while self.remaining > 0 {
+						K::skip_revisioned(self.reader)?;
+						V::skip_revisioned(self.reader)?;
+						self.remaining -= 1;
+					}
+					return Ok(None);
+				}
+			}
+		}
+		Ok(None)
+	}
+}
+
+impl<'r, K, V, R> MapWalker<'r, K, V, R>
+where
+	K: LengthPrefixedBytes + SkipRevisioned,
+	V: SkipRevisioned,
+	R: BorrowedReader + 'r,
+{
+	/// Linear search by **byte-borrowed** key, returning a value handle for
+	/// the matching entry or `None` if no entry passes `predicate`.
+	///
+	/// Sibling of [`find`](Self::find) for keys whose wire format is
+	/// exactly `usize len || raw bytes` ([`LengthPrefixedBytes`]). Each
+	/// visited key is presented to `predicate` as a borrowed `&[u8]`
+	/// without being decoded into `K`, so a 128-key scan over a
+	/// `BTreeMap<Strand, _>` does zero allocations regardless of key
+	/// length.
+	///
+	/// Behaviour identical to [`find`](Self::find) otherwise: the
+	/// `Less / Equal / Greater` control flow assumes the underlying map
+	/// is sorted by key; on a match, all entries up to and including the
+	/// match are consumed; on no-match the entire remainder is
+	/// consumed.
+	#[inline]
+	pub fn find_bytes<F>(mut self, mut predicate: F) -> Result<Option<LeafWalker<'r, V, R>>, Error>
+	where
+		F: FnMut(&[u8]) -> Ordering,
+	{
+		while self.remaining > 0 {
+			let key_len = usize::deserialize_revisioned(self.reader)?;
+			let cmp = {
+				let key_bytes = self.reader.peek_bytes(key_len)?;
+				predicate(key_bytes)
+			};
+			self.reader.advance(key_len)?;
+			match cmp {
 				Ordering::Less => {
 					V::skip_revisioned(self.reader)?;
 					self.remaining -= 1;
@@ -645,6 +817,56 @@ impl<'a, 'r, K, V, R: Read + 'r> MapEntry<'a, 'r, K, V, R> {
 	{
 		self.skip_key()?;
 		self.skip_value()
+	}
+}
+
+impl<'a, 'r, K, V, R> MapEntry<'a, 'r, K, V, R>
+where
+	R: BorrowedReader + 'r,
+{
+	/// Inspect the entry's key as raw wire bytes without allocating.
+	///
+	/// Available when the key type's wire format is `usize len || raw
+	/// bytes` ([`LengthPrefixedBytes`]) and the reader is slice-backed
+	/// ([`BorrowedReader`]). The cursor advances past the key once `f`
+	/// returns; the caller must then handle the value
+	/// (`decode_value` / `skip_value` / `walk_value`).
+	///
+	/// Cheaper sibling of [`decode_key`](Self::decode_key) for the
+	/// common case "compare key bytes against a needle and decide what
+	/// to do with the value".
+	#[inline]
+	pub fn with_key_bytes<F, U>(&mut self, f: F) -> Result<U, Error>
+	where
+		K: LengthPrefixedBytes,
+		F: FnOnce(&[u8]) -> U,
+	{
+		debug_assert_eq!(self.cursor, MapCursor::BeforeKey, "key already consumed");
+		let result = with_length_prefixed_bytes(self.walker.reader, f)?;
+		self.cursor = MapCursor::BeforeValue;
+		Ok(result)
+	}
+
+	/// Inspect the entry's value as raw wire bytes without allocating
+	/// (key must already be consumed).
+	///
+	/// Available when the value type's wire format is `usize len || raw
+	/// bytes` ([`LengthPrefixedBytes`]) and the reader is slice-backed
+	/// ([`BorrowedReader`]). Consumes the entry; the entry's
+	/// `remaining` counter is decremented.
+	///
+	/// Cheaper sibling of [`decode_value`](Self::decode_value) for the
+	/// "filter map by value bytes" pattern.
+	#[inline]
+	pub fn with_value_bytes<F, U>(self, f: F) -> Result<U, Error>
+	where
+		V: LengthPrefixedBytes,
+		F: FnOnce(&[u8]) -> U,
+	{
+		debug_assert_eq!(self.cursor, MapCursor::BeforeValue, "key not yet consumed");
+		let result = with_length_prefixed_bytes(self.walker.reader, f)?;
+		self.walker.remaining -= 1;
+		Ok(result)
 	}
 }
 

@@ -152,6 +152,21 @@ fn bench_extract_via_walker(c: &mut Criterion) {
 	});
 }
 
+fn bench_extract_via_walker_bytes(c: &mut Criterion) {
+	let bytes = build_doc_payload();
+	let needle = TARGET_KEY.as_bytes();
+	c.bench_function("doc_extract_target_via_walker_bytes", |b| {
+		b.iter(|| {
+			let mut r = bytes.as_slice();
+			let doc_walker = Doc::walk_revisioned(&mut r).unwrap();
+			let map: MapWalker<String, Payload, _> = doc_walker.walk_table().unwrap();
+			let handle = map.find_bytes(|k| k.cmp(needle)).unwrap().expect("target key");
+			let payload = handle.decode().unwrap();
+			black_box(&payload);
+		})
+	});
+}
+
 fn bench_walker_older_rev_additive(c: &mut Criterion) {
 	let bytes = build_additive_v1_payload();
 	c.bench_function("additive_walker_older_wire_rev", |b| {
@@ -311,14 +326,192 @@ fn bench_nested_fused_via_walker(c: &mut Criterion) {
 	});
 }
 
+fn bench_nested_fused_via_walker_bytes(c: &mut Criterion) {
+	let bytes = build_nested_payload();
+	c.bench_function("nested_fused_walker_streaming_scan_bytes", |b| {
+		b.iter(|| {
+			// Same shape as the typed scan but compares each key as raw
+			// wire bytes via `with_key_bytes` — zero allocations per key.
+			let mut r = bytes.as_slice();
+			let doc_walker = NestedDoc::walk_revisioned(&mut r).unwrap();
+			let mut map: MapWalker<String, NestedPayload, _> = doc_walker.walk_outer().unwrap();
+			let mut needles_iter = NESTED_NEEDLES.iter().peekable();
+			let mut hits: Vec<Option<i64>> = vec![None; NESTED_NEEDLES.len()];
+			let mut idx = 0usize;
+			while let Some(mut entry) = map.next_entry() {
+				// Inspect key bytes: returns either Match, AlreadyPast,
+				// or NotMatch and tells caller whether to advance the
+				// needle iterator.
+				#[derive(Eq, PartialEq)]
+				enum Cmp {
+					Match,
+					NotMatch,
+				}
+				let cmp = entry
+					.with_key_bytes(|key| {
+						while let Some(&&n) = needles_iter.peek() {
+							if n.as_bytes() < key {
+								idx += 1;
+								needles_iter.next();
+							} else {
+								break;
+							}
+						}
+						if needles_iter.peek().is_some_and(|&&n| n.as_bytes() == key) {
+							Cmp::Match
+						} else {
+							Cmp::NotMatch
+						}
+					})
+					.unwrap();
+				if cmp == Cmp::Match {
+					let payload = entry.decode_value().unwrap();
+					hits[idx] = Some(payload.score);
+					idx += 1;
+					needles_iter.next();
+				} else {
+					entry.skip_value().unwrap();
+				}
+				if needles_iter.peek().is_none() {
+					break;
+				}
+			}
+			black_box(&hits);
+		})
+	});
+}
+
+// -----------------------------------------------------------------------------
+// Sibling fixture: BTreeMap<String, Bytes>-shape value-filter scan.
+// Compares decode-then-cmp against zero-copy `with_value_bytes`.
+// -----------------------------------------------------------------------------
+
+const VALUE_FILTER_ENTRY_COUNT: usize = 64;
+const VALUE_FILTER_VALUE_LEN: usize = 96;
+const VALUE_FILTER_NEEDLE: &[u8] = b"target";
+
+fn build_value_filter_payload() -> Vec<u8> {
+	let mut map: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+	for i in 0..VALUE_FILTER_ENTRY_COUNT {
+		// Half the values start with the needle prefix.
+		let mut value = vec![0x42u8; VALUE_FILTER_VALUE_LEN];
+		if i % 2 == 0 {
+			value[..VALUE_FILTER_NEEDLE.len()].copy_from_slice(VALUE_FILTER_NEEDLE);
+		}
+		map.insert(format!("k{i:04}"), value);
+	}
+	to_vec(&map).unwrap()
+}
+
+fn bench_value_filter_via_decode(c: &mut Criterion) {
+	let bytes = build_value_filter_payload();
+	c.bench_function("map_value_filter_via_decode", |b| {
+		b.iter(|| {
+			let mut r = bytes.as_slice();
+			let mut walker: MapWalker<String, Vec<u8>, _> =
+				<BTreeMap<String, Vec<u8>>>::walk_revisioned(&mut r).unwrap();
+			let mut hits = 0usize;
+			while let Some(mut entry) = walker.next_entry() {
+				entry.skip_key().unwrap();
+				let value = entry.decode_value().unwrap();
+				if value.starts_with(VALUE_FILTER_NEEDLE) {
+					hits += 1;
+				}
+			}
+			black_box(hits);
+		})
+	});
+}
+
+fn bench_value_filter_via_with_bytes(c: &mut Criterion) {
+	let bytes = build_value_filter_payload();
+	c.bench_function("map_value_filter_via_with_bytes", |b| {
+		b.iter(|| {
+			let mut r = bytes.as_slice();
+			let mut walker: MapWalker<String, Vec<u8>, _> =
+				<BTreeMap<String, Vec<u8>>>::walk_revisioned(&mut r).unwrap();
+			let mut hits = 0usize;
+			while let Some(mut entry) = walker.next_entry() {
+				entry.skip_key().unwrap();
+				let matched =
+					entry.with_value_bytes(|raw| raw.starts_with(VALUE_FILTER_NEEDLE)).unwrap();
+				if matched {
+					hits += 1;
+				}
+			}
+			black_box(hits);
+		})
+	});
+}
+
+// -----------------------------------------------------------------------------
+// Sibling fixture: Vec<String>-shape sorted-set membership scan.
+// Compares per-item decode against zero-copy `with_bytes`.
+// -----------------------------------------------------------------------------
+
+const SEQ_MEMBERSHIP_ITEM_COUNT: usize = 256;
+const SEQ_MEMBERSHIP_ITEM_LEN: usize = 32;
+const SEQ_MEMBERSHIP_TARGET: &str = "needle-aaaaaaaaaaaaaaaaaaaaaaaa";
+
+fn build_seq_membership_payload() -> Vec<u8> {
+	let mut v: Vec<String> = Vec::with_capacity(SEQ_MEMBERSHIP_ITEM_COUNT);
+	for i in 0..SEQ_MEMBERSHIP_ITEM_COUNT - 1 {
+		v.push(format!("filler-{i:0width$}", width = SEQ_MEMBERSHIP_ITEM_LEN - 7));
+	}
+	v.push(SEQ_MEMBERSHIP_TARGET.to_string());
+	to_vec(&v).unwrap()
+}
+
+fn bench_seq_membership_via_decode(c: &mut Criterion) {
+	let bytes = build_seq_membership_payload();
+	c.bench_function("seq_membership_via_decode", |b| {
+		b.iter(|| {
+			let mut r = bytes.as_slice();
+			let mut walker = <Vec<String>>::walk_revisioned(&mut r).unwrap();
+			let mut found = false;
+			while let Some(item) = walker.next_item() {
+				let s = item.decode().unwrap();
+				if s == SEQ_MEMBERSHIP_TARGET {
+					found = true;
+				}
+			}
+			black_box(found);
+		})
+	});
+}
+
+fn bench_seq_membership_via_with_bytes(c: &mut Criterion) {
+	let bytes = build_seq_membership_payload();
+	let needle = SEQ_MEMBERSHIP_TARGET.as_bytes();
+	c.bench_function("seq_membership_via_with_bytes", |b| {
+		b.iter(|| {
+			let mut r = bytes.as_slice();
+			let mut walker = <Vec<String>>::walk_revisioned(&mut r).unwrap();
+			let mut found = false;
+			while let Some(item) = walker.next_item() {
+				if item.with_bytes(|s| s == needle).unwrap() {
+					found = true;
+				}
+			}
+			black_box(found);
+		})
+	});
+}
+
 criterion_group!(
 	walk_bench,
 	bench_extract_via_deserialize,
 	bench_extract_via_walker,
+	bench_extract_via_walker_bytes,
 	bench_walker_older_rev_additive,
 	bench_walker_older_rev_convert_fn,
 	bench_deserialize_plus_reserialize,
 	bench_nested_fused_via_materialise,
 	bench_nested_fused_via_walker,
+	bench_nested_fused_via_walker_bytes,
+	bench_value_filter_via_decode,
+	bench_value_filter_via_with_bytes,
+	bench_seq_membership_via_decode,
+	bench_seq_membership_via_with_bytes,
 );
 criterion_main!(walk_bench);
