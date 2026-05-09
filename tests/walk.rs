@@ -706,6 +706,37 @@ fn seq_walk_accepts_numeric_vec_when_specialised_vectors_disabled() {
 }
 
 #[test]
+#[cfg(all(feature = "specialised-vectors", feature = "uuid"))]
+fn seq_walk_rejects_bulk_uuid_without_consuming_reader() {
+	let v = vec![uuid::Uuid::nil(), uuid::Uuid::nil()];
+	let bytes = to_vec(&v).unwrap();
+	let mut r = bytes.as_slice();
+	let before = r.len();
+	let err = match Vec::<uuid::Uuid>::walk_revisioned(&mut r) {
+		Err(e) => e,
+		Ok(_) => panic!("expected specialised bulk Vec<Uuid> walk to fail"),
+	};
+	assert!(matches!(err, Error::Deserialize(_)));
+	assert_eq!(r.len(), before);
+}
+
+#[test]
+#[cfg(all(feature = "specialised-vectors", feature = "rust_decimal"))]
+fn seq_walk_rejects_bulk_decimal_without_consuming_reader() {
+	use rust_decimal::Decimal;
+	let v = vec![Decimal::ZERO, Decimal::ONE];
+	let bytes = to_vec(&v).unwrap();
+	let mut r = bytes.as_slice();
+	let before = r.len();
+	let err = match Vec::<Decimal>::walk_revisioned(&mut r) {
+		Err(e) => e,
+		Ok(_) => panic!("expected specialised bulk Vec<Decimal> walk to fail"),
+	};
+	assert!(matches!(err, Error::Deserialize(_)));
+	assert_eq!(r.len(), before);
+}
+
+#[test]
 fn map_entry_out_of_order_returns_error_without_io() {
 	let mut map = BTreeMap::new();
 	map.insert("only".to_string(), 42u32);

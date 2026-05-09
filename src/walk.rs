@@ -115,6 +115,8 @@ pub trait WalkRevisioned: Revisioned {
 /// layout — will mis-parse under [`LeafWalker::with_bytes`],
 /// [`MapWalker::find_bytes`], and related helpers; the trait is a **trusted**
 /// wire-shape contract, not validated at runtime beyond normal deserialization.
+/// That is the same class of hazard as an incorrect manual [`Revisioned`]
+/// implementation: the library cannot prove the marker matches the bytes.
 pub trait LengthPrefixedBytes: Revisioned {}
 
 impl LengthPrefixedBytes for String {}
@@ -433,6 +435,11 @@ impl<'r, T, E, R: Read + 'r> ResultWalker<'r, T, E, R> {
 /// compact bulk layout that does not match [`SeqWalker`]'s per-item framing.
 /// [`SeqWalker::new`] returns [`Error::Deserialize`] for those `T` **before**
 /// reading the sequence length, so the caller's reader is unchanged.
+///
+/// This mirrors every element type for which [`SerializeRevisioned`] on [`Vec`]
+/// selects the specialised bulk path (`try_specialized!` in `implementations/vecs.rs`):
+/// numeric primitives, `bool`, and — when the optional `uuid` / `rust_decimal`
+/// dependencies are enabled — `uuid::Uuid` and `rust_decimal::Decimal`.
 #[cfg(feature = "specialised-vectors")]
 #[inline]
 fn seq_walk_rejects_bulk_encoded_element<T: 'static>() -> bool {
@@ -442,10 +449,18 @@ fn seq_walk_rejects_bulk_encoded_element<T: 'static>() -> bool {
 			$(if id == TypeId::of::<$ty>() {
 				return true;
 			})*
-			false
 		}};
 	}
-	bulk_primitive!(bool, u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, f32, f64)
+	bulk_primitive!(bool, u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, f32, f64);
+	#[cfg(feature = "uuid")]
+	if id == TypeId::of::<uuid::Uuid>() {
+		return true;
+	}
+	#[cfg(feature = "rust_decimal")]
+	if id == TypeId::of::<rust_decimal::Decimal>() {
+		return true;
+	}
+	false
 }
 
 #[cfg(not(feature = "specialised-vectors"))]
@@ -457,8 +472,10 @@ fn seq_walk_rejects_bulk_encoded_element<T: 'static>() -> bool {
 /// Walker for a homogeneous sequence (length-prefix followed by `T` elements).
 ///
 /// **Caveat:** With the `specialised-vectors` feature (enabled by default),
-/// primitive numeric `Vec<T>` values use bulk encoding. [`SeqWalker::new`]
-/// refuses those element types and returns an error without consuming bytes.
+/// [`Vec<T>`](crate::implementations::vecs) may use bulk encoding for several
+/// element types (primitives, `bool`, and optionally `uuid::Uuid` /
+/// `rust_decimal::Decimal` when those optional deps are enabled). [`SeqWalker::new`]
+/// refuses each such `T` and returns an error without consuming bytes.
 /// Without `specialised-vectors`, all `Vec<T>` use per-element layout and are
 /// safe to walk.
 pub struct SeqWalker<'r, T, R: Read + 'r> {
@@ -671,6 +688,13 @@ impl<'r, K, V, R: Read + 'r> MapWalker<'r, K, V, R> {
 	/// Linear search by **decoded** key, returning a value handle for the
 	/// matching entry or `None` if no entry passes `predicate`.
 	///
+	/// **Sorted maps only:** The predicate is compared with **encoded key order**
+	/// as visited on the wire (the order [`BTreeMap`](std::collections::BTreeMap)
+	/// serialises). Using this on bytes produced from a [`HashMap`](std::collections::HashMap)
+	/// while assuming lexicographic or sorted-key ordering is invalid: you may match
+	/// the wrong entry or drop the tail under `Ordering::Greater` while the true key
+	/// still appears later in the stream.
+	///
 	/// The returned [`LeafWalker`] is positioned at the start of the value's
 	/// encoding (i.e. the type-level prefix has not been read yet); the
 	/// caller can then call `decode`, `skip`, or `walk` on it.
@@ -725,6 +749,9 @@ where
 {
 	/// Linear search by **byte-borrowed** key, returning a value handle for
 	/// the matching entry or `None` if no entry passes `predicate`.
+	///
+	/// Inherits the **sorted-map** requirement from [`find`](Self::find): wire
+	/// visit order must match the predicate's assumed ordering (see [`find`]).
 	///
 	/// Sibling of [`find`](Self::find) for keys whose wire format is
 	/// exactly `usize len || raw bytes` ([`LengthPrefixedBytes`]). Each
@@ -792,12 +819,10 @@ pub struct MapEntry<'a, 'r, K, V, R: Read + 'r> {
 impl<'a, 'r, K, V, R: Read + 'r> MapEntry<'a, 'r, K, V, R> {
 	fn expect_cursor(&self, expected: MapCursor, operation: &'static str) -> Result<(), Error> {
 		if self.cursor != expected {
-			return Err(Error::Deserialize(
-				format!(
-					"MapEntry: invalid cursor for {operation} (expected {expected:?}, found {:?})",
-					self.cursor,
-				),
-			));
+			return Err(Error::Deserialize(format!(
+				"MapEntry: invalid cursor for {operation} (expected {expected:?}, found {:?})",
+				self.cursor,
+			)));
 		}
 		Ok(())
 	}

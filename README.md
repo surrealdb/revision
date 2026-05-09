@@ -366,6 +366,7 @@ When **both** are satisfied, walkers expose the following methods:
 [`with_value_bytes`]: crate::MapEntry::with_value_bytes
 [`DeserializeRevisioned`]: crate::DeserializeRevisioned
 [`SkipRevisioned`]: crate::SkipRevisioned
+[`Revisioned`]: crate::Revisioned
 [`MapWalker::find`]: crate::MapWalker::find
 [`LeafWalker`]: crate::LeafWalker
 [`MapWalker`]: crate::MapWalker
@@ -489,12 +490,12 @@ assert!(found);
 ### Limitations
 
 - **Untrusted inputs:** Wire lengths are `usize` length prefixes like everywhere else in `revision`; they bound how much is read, skipped, or materialised. Walkers add **no** extra caps or validation — same trust model as [`DeserializeRevisioned`] / [`SkipRevisioned`].
-- **[`MapWalker::find`] / [`find_bytes`]:** On a match you only get a [`LeafWalker`] for that entry's value. The method consumes the [`MapWalker`]; you cannot resume [`next_entry`] on it. Key–value pairs that sort after the match remain on the underlying reader for other callers, not for the same walker instance (by design).
-- **[`LengthPrefixedBytes`] on custom types:** The marker must match the type's real `SerializeRevisioned` layout (`usize len || raw bytes`). A wrong impl breaks [`with_bytes`] / [`find_bytes`] and related paths — it is an explicit contract, not something the library can detect.
+- **[`MapWalker::find`] / [`find_bytes`]:** On a match you only get a [`LeafWalker`] for that entry's value. The method consumes the [`MapWalker`]; you cannot resume [`next_entry`] on it. Key–value pairs that sort after the match remain on the underlying reader for other callers, not for the same walker instance (by design). Both methods assume **wire visit order matches sorted-map encoding** (as when serialising `BTreeMap`). Using an ordering predicate on bytes produced from unsorted maps (`HashMap` insertion order, …) can match incorrectly or discard the tail under `Ordering::Greater`.
+- **[`LengthPrefixedBytes`] on custom types:** The marker must match the type's real `SerializeRevisioned` layout (`usize len || raw bytes`). A wrong impl breaks [`with_bytes`] / [`find_bytes`] and related paths — it is an explicit contract, not something the library can detect (same class of risk as any incorrect [`Revisioned`] impl).
 
 - `walk_<field>` consumes the parent walker; it is supported in wire mode and errors with `Error::Conversion` in materialised mode (older revs of `convert_fn`-bearing types). Callers that hit the materialised path should `decode_<field>` instead — they already paid the deserialize cost during walker construction.
 - `into_<variant>` is currently emitted for unit variants and single-field tuple variants. Multi-field tuple variants and struct variants are reachable via `discriminant()` + `decode_<field>` on the underlying bytes.
-- `Vec<T>` for primitive numeric `T` uses the `specialised-vectors` bulk encoding when that Cargo feature is enabled (the default). [`SeqWalker::new`] detects those element types and returns [`Error::Deserialize`] **before** reading the sequence length, leaving the reader unchanged — use [`DeserializeRevisioned`] or [`SkipRevisioned`] instead. With `specialised-vectors` disabled, walking numeric `Vec`s uses the same per-element layout as other sequences.
+- `Vec<T>` uses `specialised-vectors` bulk encoding for several element types when that Cargo feature is enabled (the default): primitives, `bool`, and — if the optional `uuid` / `rust_decimal` crate features are also enabled — `uuid::Uuid` and `rust_decimal::Decimal` (see `try_specialized!` in `src/implementations/vecs.rs`). [`SeqWalker::new`] rejects each such `T` with [`Error::Deserialize`] **before** reading the sequence length, leaving the reader unchanged — use [`DeserializeRevisioned`] or [`SkipRevisioned`] instead. With `specialised-vectors` disabled, every `Vec<T>` uses per-element layout and is safe to walk.
 - [`MapEntry`] methods enforce key/value ordering in every build: calling `decode_value` before `decode_key` / `skip_key`, or repeating `decode_key`, returns [`Error::Deserialize`] without advancing the reader when the check fails before I/O.
 - [`SeqItem::walk`], [`MapEntry::walk_value`], and [`StructWalker::walk`] advance counters (`remaining`, `position`) only after `walk_revisioned` succeeds, so a failed nested walk does not desynchronise the parent walker from the byte stream.
 - Types declared `#[revisioned(serialize = false)]` cannot materialise; if they also use `convert_fn`, walking older wire revisions will not be supported.

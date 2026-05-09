@@ -12,10 +12,10 @@
 use std::collections::BTreeMap;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use std::hint::black_box;
 use revision::{
 	DeserializeRevisioned, MapWalker, SerializeRevisioned, WalkRevisioned, revisioned, to_vec,
 };
+use std::hint::black_box;
 
 // -----------------------------------------------------------------------------
 // Fixture: SurrealDB-doc-shaped payload (current rev = 1, no convert_fn).
