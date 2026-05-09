@@ -13,6 +13,7 @@ pub mod error;
 pub mod implementations;
 
 pub mod slice_reader;
+pub mod walk;
 
 pub use crate::error::Error;
 pub use revision_derive::revisioned;
@@ -21,6 +22,10 @@ use std::any::TypeId;
 use std::io::{Read, Write};
 
 pub use slice_reader::{SliceReader, advance_read};
+pub use walk::{
+	EnumWalker, LeafWalker, MapEntry, MapWalker, OptionWalker, ResultWalker, SeqItem, SeqWalker,
+	StructWalker, WalkRevisioned, read_enum_discriminant,
+};
 
 pub trait SkipRevisioned: Revisioned {
 	fn skip_revisioned<R: Read>(r: &mut R) -> Result<(), Error>;
@@ -81,6 +86,10 @@ pub mod prelude {
 	pub use crate::{
 		SkipCheckRevisioned, SkipRevisioned, skip_check_reader, skip_check_revisioned,
 		skip_check_slice, skip_reader, skip_revisioned, skip_slice,
+	};
+	pub use crate::{
+		EnumWalker, LeafWalker, MapEntry, MapWalker, OptionWalker, ResultWalker, SeqItem,
+		SeqWalker, StructWalker, WalkRevisioned,
 	};
 }
 

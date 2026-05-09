@@ -216,3 +216,99 @@ assert_eq!(get_u64(&bytes, "answer").unwrap(), 99);
 For **map values that are themselves `#[revisioned]` enums or structs**, deserialize the discriminant / nested revision as you would when fully deserializing, and call `MyValue::skip_revisioned` on entries you discard (see `benches/skip_mixed_btreemap_nested.rs`).
 
 Use **`skip_check_*`** when you want validation that matches stricter deserialize checks (e.g. UTF-8 for `String`). Disable skip for a type with `#[revisioned(revision = N, skip = false)]`.
+
+## Walking encoded values
+
+`WalkRevisioned` is a higher-level companion to `SkipRevisioned`: it lets a caller progress
+**element-by-element** through revisioned bytes, deciding per-element whether to **decode**,
+**skip**, or **walk into** further structure — without rewriting the byte-arithmetic by hand each
+time. The trait sits between `DeserializeRevisioned` (decode the entire value) and `SkipRevisioned`
+(consume the whole encoding).
+
+The derive macro emits `WalkRevisioned` for every `#[revisioned(...)]` type by default
+(controlled by the same flag as `deserialize`). Opt out per type with
+`#[revisioned(revision = N, walk = false)]`.
+
+### Walking a struct
+
+```rust
+use revision::{StructWalker, WalkRevisioned, revisioned, to_vec};
+
+#[revisioned(revision = 1)]
+struct Row {
+    blob: Vec<u8>,
+    id: u64,
+}
+
+fn read_row_id_only(mut reader: &[u8]) -> Result<u64, revision::Error> {
+    let mut walker: StructWalker<_> = Row::walk_revisioned(&mut reader)?;
+    walker.skip::<Vec<u8>>()?;
+    walker.decode::<u64>()
+}
+```
+
+### Walking a map
+
+`BTreeMap<K, V>` returns a `MapWalker` whose `next_entry` borrows one
+key/value pair at a time. Decode the key, then either decode/skip/walk the
+value before moving on:
+
+```rust
+use revision::{MapWalker, WalkRevisioned, to_vec};
+use std::collections::BTreeMap;
+
+let mut map: BTreeMap<String, u64> = BTreeMap::new();
+map.insert("noise".into(), 0);
+map.insert("answer".into(), 99);
+let bytes = to_vec(&map).unwrap();
+
+let mut reader = bytes.as_slice();
+let mut walker: MapWalker<String, u64, _> = <BTreeMap<String, u64>>::walk_revisioned(&mut reader)?;
+let mut found = None;
+while let Some(mut entry) = walker.next_entry() {
+    let k = entry.decode_key()?;
+    if k == "answer" {
+        found = Some(entry.decode_value()?);
+    } else {
+        entry.skip_value()?;
+    }
+}
+assert_eq!(found, Some(99));
+```
+
+### Walking an enum
+
+The derive emits a `__WALK_VARIANT_TABLE` and `__walk_variant_name` accessor
+so callers can dispatch on a discriminant by name rather than hard-coding
+integers:
+
+```rust
+use revision::{EnumWalker, WalkRevisioned, revisioned, to_vec};
+
+#[revisioned(revision = 1)]
+#[derive(Debug, PartialEq)]
+enum Shape {
+    Square(u32),
+    Rectangle { w: u32, h: u32 },
+    Circle(u32),
+}
+
+let bytes = to_vec(&Shape::Circle(7)).unwrap();
+let mut reader = bytes.as_slice();
+let walker: EnumWalker<_> = Shape::walk_revisioned(&mut reader)?;
+match Shape::__walk_variant_name(walker.discriminant()) {
+    Some("Circle") => {
+        let radius: u32 = walker.decode()?;
+        assert_eq!(radius, 7);
+    }
+    _ => panic!(),
+}
+```
+
+### Limitations
+
+- `WalkRevisioned` requires the wire revision to match the schema's current
+  revision; older payloads should fall back to `DeserializeRevisioned`.
+- `Vec<T>` for primitive numeric `T` may use the `specialised-vectors`
+  bulk encoding which the generic `SeqWalker` does not understand. Use
+  `DeserializeRevisioned` (or `SkipRevisioned`) for those.

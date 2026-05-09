@@ -4,6 +4,7 @@ mod reexport;
 mod ser;
 mod skip;
 mod validate_version;
+mod walk;
 
 use de::{DeserializeVisitor, EnumStructsVisitor};
 use proc_macro2::{Span, TokenStream};
@@ -174,6 +175,20 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 		quote! {}
 	};
 
+	let walk_derive_enabled = attrs.0.walk.unwrap_or(attrs.0.deserialize);
+	let walk_impl = if walk_derive_enabled {
+		walk::emit_walk_impl(
+			match &ast.kind {
+				ast::ItemKind::Enum(x) => &x.name,
+				ast::ItemKind::Struct(x) => &x.name,
+			},
+			revision,
+			&ast,
+		)?
+	} else {
+		quote! {}
+	};
+
 	let serialize_impl = if attrs.0.serialize {
 		quote! {
 			impl ::revision::SerializeRevisioned for #name {
@@ -215,6 +230,7 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 		#deserialize_impl
 		#skip_revisioned_impl
 		#skip_check_impl
+		#walk_impl
 
 		impl ::revision::Revisioned for #name {
 			#[inline]
