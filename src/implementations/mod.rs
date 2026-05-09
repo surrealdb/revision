@@ -28,6 +28,7 @@ pub mod vecs;
 pub mod wrapping;
 
 mod skip;
+mod walk;
 
 #[cfg(test)]
 #[track_caller]

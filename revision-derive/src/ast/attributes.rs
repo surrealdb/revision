@@ -22,6 +22,7 @@ mod kw {
 	syn::custom_keyword!(serialize);
 	syn::custom_keyword!(deserialize);
 	syn::custom_keyword!(skip);
+	syn::custom_keyword!(walk);
 }
 
 #[derive(Debug)]
@@ -239,6 +240,7 @@ pub struct ItemOptions {
 	pub serialize: bool,
 	pub deserialize: bool,
 	pub skip: Option<bool>,
+	pub walk: Option<bool>,
 }
 
 pub enum ItemOption {
@@ -246,6 +248,7 @@ pub enum ItemOption {
 	Serialize(ValueOption<kw::serialize, LitBool>),
 	Deserialize(ValueOption<kw::deserialize, LitBool>),
 	Skip(ValueOption<kw::skip, LitBool>),
+	Walk(ValueOption<kw::walk, LitBool>),
 }
 
 impl Parse for ItemOption {
@@ -262,6 +265,9 @@ impl Parse for ItemOption {
 		if input.peek(kw::skip) {
 			return Ok(ItemOption::Skip(input.parse()?));
 		}
+		if input.peek(kw::walk) {
+			return Ok(ItemOption::Walk(input.parse()?));
+		}
 
 		Err(input.error("invalid item option"))
 	}
@@ -275,6 +281,7 @@ impl AttributeOptions for ItemOptions {
 		let mut serialize = true;
 		let mut deserialize = true;
 		let mut skip = None;
+		let mut walk = None;
 
 		for option in options {
 			match option {
@@ -297,6 +304,12 @@ impl AttributeOptions for ItemOptions {
 					}
 					skip = Some(x.value.value());
 				}
+				ItemOption::Walk(x) => {
+					if walk.is_some() {
+						return Err(Error::new(x.key.span(), "tried to set an option twice"));
+					}
+					walk = Some(x.value.value());
+				}
 			}
 		}
 
@@ -305,6 +318,7 @@ impl AttributeOptions for ItemOptions {
 			serialize,
 			deserialize,
 			skip,
+			walk,
 		})
 	}
 }

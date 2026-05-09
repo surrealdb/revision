@@ -57,6 +57,10 @@ paste = "1.0"
 name = "skip"
 path = "tests/skip.rs"
 
+[[test]]
+name = "walk"
+path = "tests/walk.rs"
+
 [[bench]]
 name = "roaring"
 harness = false
@@ -129,6 +133,10 @@ required-features = ["imbl"]
 
 [[bench]]
 name = "varint_comparison"
+harness = false
+
+[[bench]]
+name = "walk"
 harness = false
 
 [[bench]]

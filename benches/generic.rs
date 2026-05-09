@@ -1,6 +1,5 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use revision::prelude::*;
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::time::Duration;
 
@@ -78,8 +77,9 @@ struct ComplexData {
 	// Duration
 	time_duration: Duration,
 
-	// Cow
-	borrowed_or_owned: Cow<'static, str>,
+	// Same wire shape as `Cow<'static, str>` owned variant; `String` avoids
+	// `WalkRevisioned`/`Sized` mismatch with `Cow<str>` in derived walkers.
+	borrowed_or_owned: String,
 }
 
 impl ComplexData {
@@ -177,7 +177,7 @@ impl ComplexData {
 
 			time_duration: Duration::from_secs(3600),
 
-			borrowed_or_owned: Cow::Owned("static string".to_string()),
+			borrowed_or_owned: "static string".to_string(),
 		}
 	}
 }

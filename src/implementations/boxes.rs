@@ -34,6 +34,29 @@ where
 	}
 }
 
+// Specialized implementations for `Box<str>` (`str` is `?Sized`; distinct from the `T: Sized`
+// blanket impls above).
+impl SerializeRevisioned for Box<str> {
+	#[inline]
+	fn serialize_revisioned<W: std::io::Write>(&self, writer: &mut W) -> Result<(), Error> {
+		self.as_ref().serialize_revisioned(writer)
+	}
+}
+
+impl DeserializeRevisioned for Box<str> {
+	#[inline]
+	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
+		String::deserialize_revisioned(reader).map(String::into_boxed_str)
+	}
+}
+
+impl Revisioned for Box<str> {
+	#[inline]
+	fn revision() -> u16 {
+		1
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -49,6 +72,21 @@ mod tests {
 		assert_eq!(mem.len(), 22);
 		let out =
 			<Box<String> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+				.unwrap();
+		assert_eq!(val, out);
+	}
+
+	#[test]
+	fn test_box_str() {
+		let val: Box<str> = String::from("hello world").into_boxed_str();
+		let mut mem: Vec<u8> = vec![];
+		val.serialize_revisioned(&mut mem).unwrap();
+		#[cfg(not(feature = "fixed-width-encoding"))]
+		assert_eq!(mem.len(), 12);
+		#[cfg(feature = "fixed-width-encoding")]
+		assert_eq!(mem.len(), 19);
+		let out: Box<str> =
+			<Box<str> as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 				.unwrap();
 		assert_eq!(val, out);
 	}

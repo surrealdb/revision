@@ -474,6 +474,22 @@ impl SkipCheckRevisioned for Arc<str> {
 	}
 }
 
+impl SkipRevisioned for Box<str> {
+	fn skip_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
+		String::skip_revisioned(reader)
+	}
+	fn skip_revisioned_slice(reader: &mut SliceReader<'_>) -> Result<(), Error> {
+		String::skip_revisioned_slice(reader)
+	}
+}
+
+impl SkipCheckRevisioned for Box<str> {
+	fn skip_check_revisioned<R: Read>(reader: &mut R) -> Result<(), Error> {
+		let _ = <Self as DeserializeRevisioned>::deserialize_revisioned(reader)?;
+		Ok(())
+	}
+}
+
 impl<T> SkipRevisioned for Wrapping<T>
 where
 	T: SkipRevisioned + Revisioned,
