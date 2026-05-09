@@ -197,6 +197,120 @@ fn bench_deserialize_plus_reserialize(c: &mut Criterion) {
 	});
 }
 
+// -----------------------------------------------------------------------------
+// Nested fused-flat: scope an N-key scan under a navigation prefix.
+//
+// Models the SurrealDB shape `WHERE outer.a = ? AND outer.b = ? AND ...`
+// where `outer` is a nested `BTreeMap<String, T>`. Compares two pipelines:
+//
+//   - **Materialise + scan**: deserialize the navigated `BTreeMap` fully,
+//     then look up each needle key in the in-memory map. This is the
+//     pre-fix behaviour from the prior commit.
+//   - **Walker streaming scan**: walk into the navigated map and stream
+//     entries; only matched values are decoded. This is the post-fix
+//     behaviour that the SurrealDB pre-decode filter now uses.
+// -----------------------------------------------------------------------------
+
+#[revisioned(revision = 1)]
+#[derive(Debug, Clone)]
+struct NestedDoc {
+	outer: BTreeMap<String, NestedPayload>,
+}
+
+#[revisioned(revision = 1)]
+#[derive(Debug, Clone)]
+struct NestedPayload {
+	score: i64,
+	tag: String,
+}
+
+const NESTED_ENTRY_COUNT: usize = 64;
+const NESTED_TAG_LEN: usize = 24;
+const NESTED_NEEDLES: &[&str] = &["alpha", "delta", "omega", "zeta"];
+
+fn build_nested_payload() -> Vec<u8> {
+	let mut outer = BTreeMap::new();
+	for i in 0..NESTED_ENTRY_COUNT {
+		outer.insert(
+			format!("k{i:04}"),
+			NestedPayload {
+				score: i as i64,
+				tag: "x".repeat(NESTED_TAG_LEN),
+			},
+		);
+	}
+	for (i, n) in NESTED_NEEDLES.iter().enumerate() {
+		outer.insert(
+			(*n).to_string(),
+			NestedPayload {
+				score: 1000 + i as i64,
+				tag: "match".to_string(),
+			},
+		);
+	}
+	to_vec(&NestedDoc {
+		outer,
+	})
+	.unwrap()
+}
+
+fn bench_nested_fused_via_materialise(c: &mut Criterion) {
+	let bytes = build_nested_payload();
+	c.bench_function("nested_fused_materialise_then_scan", |b| {
+		b.iter(|| {
+			// Old shape: deserialize the navigated map, then look up
+			// each needle key in the in-memory map and read its value.
+			let mut r = bytes.as_slice();
+			let doc = NestedDoc::deserialize_revisioned(&mut r).unwrap();
+			let mut hits: Vec<Option<i64>> = Vec::with_capacity(NESTED_NEEDLES.len());
+			for needle in NESTED_NEEDLES {
+				let v = doc.outer.get(*needle).map(|p| p.score);
+				hits.push(v);
+			}
+			black_box(&hits);
+		})
+	});
+}
+
+fn bench_nested_fused_via_walker(c: &mut Criterion) {
+	let bytes = build_nested_payload();
+	c.bench_function("nested_fused_walker_streaming_scan", |b| {
+		b.iter(|| {
+			// New shape: walk into the navigated map, stream entries,
+			// decode only matched values.
+			let mut r = bytes.as_slice();
+			let doc_walker = NestedDoc::walk_revisioned(&mut r).unwrap();
+			let mut map: MapWalker<String, NestedPayload, _> = doc_walker.walk_outer().unwrap();
+			let mut needles_iter = NESTED_NEEDLES.iter().peekable();
+			let mut hits: Vec<Option<i64>> = vec![None; NESTED_NEEDLES.len()];
+			let mut idx = 0usize;
+			while let Some(mut entry) = map.next_entry() {
+				let key = entry.decode_key().unwrap();
+				while let Some(&&n) = needles_iter.peek() {
+					if n < key.as_str() {
+						idx += 1;
+						needles_iter.next();
+					} else {
+						break;
+					}
+				}
+				if needles_iter.peek().is_some_and(|&&n| n == key.as_str()) {
+					let payload = entry.decode_value().unwrap();
+					hits[idx] = Some(payload.score);
+					idx += 1;
+					needles_iter.next();
+				} else {
+					entry.skip_value().unwrap();
+				}
+				if needles_iter.peek().is_none() {
+					break;
+				}
+			}
+			black_box(&hits);
+		})
+	});
+}
+
 criterion_group!(
 	walk_bench,
 	bench_extract_via_deserialize,
@@ -204,5 +318,7 @@ criterion_group!(
 	bench_walker_older_rev_additive,
 	bench_walker_older_rev_convert_fn,
 	bench_deserialize_plus_reserialize,
+	bench_nested_fused_via_materialise,
+	bench_nested_fused_via_walker,
 );
 criterion_main!(walk_bench);
