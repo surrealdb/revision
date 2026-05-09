@@ -278,7 +278,7 @@ assert_eq!(found, Some(99));
 
 ### Walking an enum
 
-The derive emits a `__WALK_VARIANT_TABLE` and `__walk_variant_name` accessor
+The derive emits a `WALK_REVISIONED_VARIANT_TABLE` and `walk_revisioned_variant_name` accessor
 so callers can dispatch on a discriminant by name rather than hard-coding
 integers:
 
@@ -296,7 +296,7 @@ enum Shape {
 let bytes = to_vec(&Shape::Circle(7)).unwrap();
 let mut reader = bytes.as_slice();
 let walker: EnumWalker<_> = Shape::walk_revisioned(&mut reader)?;
-match Shape::__walk_variant_name(walker.discriminant()) {
+match Shape::walk_revisioned_variant_name(walker.discriminant()) {
     Some("Circle") => {
         let radius: u32 = walker.decode()?;
         assert_eq!(radius, 7);

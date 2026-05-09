@@ -263,7 +263,7 @@ fn derive_struct_walker_skip_field_skips_correctly() {
 
 #[test]
 fn derive_struct_walker_field_table_is_emitted() {
-	assert_eq!(Document::__WALK_FIELD_NAMES, &["name", "count"]);
+	assert_eq!(Document::WALK_REVISIONED_FIELD_NAMES, &["name", "count"]);
 }
 
 // -----------------------------------------------------------------------------
@@ -290,7 +290,7 @@ fn derive_enum_walker_exposes_discriminant() {
 	let walker: EnumWalker<_> = Shape::walk_revisioned(&mut r).unwrap();
 	assert_eq!(walker.revision(), 1);
 	let disc = walker.discriminant();
-	let name = Shape::__walk_variant_name(disc);
+	let name = Shape::walk_revisioned_variant_name(disc);
 	assert_eq!(name, Some("Circle"));
 
 	let payload: u32 = walker.decode().unwrap();
@@ -300,7 +300,7 @@ fn derive_enum_walker_exposes_discriminant() {
 
 #[test]
 fn derive_enum_variant_table_is_emitted() {
-	let table = Shape::__WALK_VARIANT_TABLE;
+	let table = Shape::WALK_REVISIONED_VARIANT_TABLE;
 	let names: Vec<&'static str> = table.iter().map(|(n, _)| *n).collect();
 	assert_eq!(names, vec!["Square", "Rectangle", "Circle"]);
 }
