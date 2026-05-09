@@ -110,6 +110,11 @@ pub trait WalkRevisioned: Revisioned {
 /// Downstream crates can opt their newtypes in by adding a one-line impl
 /// (e.g. `impl LengthPrefixedBytes for MyId {}`) when the newtype's
 /// `SerializeRevisioned` ultimately writes `usize len || raw bytes`.
+///
+/// Marking a type incorrectly — when its encoding is **not** exactly that
+/// layout — will mis-parse under [`LeafWalker::with_bytes`],
+/// [`MapWalker::find_bytes`], and related helpers; the trait is a **trusted**
+/// wire-shape contract, not validated at runtime beyond normal deserialization.
 pub trait LengthPrefixedBytes: Revisioned {}
 
 impl LengthPrefixedBytes for String {}
@@ -670,9 +675,15 @@ impl<'r, K, V, R: Read + 'r> MapWalker<'r, K, V, R> {
 	/// encoding (i.e. the type-level prefix has not been read yet); the
 	/// caller can then call `decode`, `skip`, or `walk` on it.
 	///
-	/// All entries up to and including the match are consumed; entries
-	/// strictly after a match are **not** consumed. On `None` (no match)
-	/// the entire remainder of the map is consumed.
+	/// Every strictly preceding entry (full key and value) is skipped.
+	/// For the matching entry, only the key has been read off the wire;
+	/// the value remains for the leaf walker. Entries that sort **after**
+	/// the matched key stay on the reader, but this method consumes `self`,
+	/// so you cannot call [`next_entry`](Self::next_entry) afterward — there
+	/// is no way to resume the same [`MapWalker`]. Prefer streaming iteration
+	/// if you must handle one hit then walk the tail.
+	///
+	/// On `None` (no match) the entire remainder of the map is consumed.
 	#[inline]
 	pub fn find<F>(mut self, mut predicate: F) -> Result<Option<LeafWalker<'r, V, R>>, Error>
 	where
@@ -724,9 +735,9 @@ where
 	///
 	/// Behaviour identical to [`find`](Self::find) otherwise: the
 	/// `Less / Equal / Greater` control flow assumes the underlying map
-	/// is sorted by key; on a match, all entries up to and including the
-	/// match are consumed; on no-match the entire remainder is
-	/// consumed.
+	/// is sorted by key; `Equal` returns a leaf at the matched value and
+	/// consumes `self` (see [`find`](Self::find)); on no-match the entire
+	/// remainder is consumed.
 	#[inline]
 	pub fn find_bytes<F>(mut self, mut predicate: F) -> Result<Option<LeafWalker<'r, V, R>>, Error>
 	where

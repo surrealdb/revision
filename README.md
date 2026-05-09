@@ -364,6 +364,12 @@ When **both** are satisfied, walkers expose the following methods:
 [`find_bytes`]: crate::MapWalker::find_bytes
 [`with_key_bytes`]: crate::MapEntry::with_key_bytes
 [`with_value_bytes`]: crate::MapEntry::with_value_bytes
+[`DeserializeRevisioned`]: crate::DeserializeRevisioned
+[`SkipRevisioned`]: crate::SkipRevisioned
+[`MapWalker::find`]: crate::MapWalker::find
+[`LeafWalker`]: crate::LeafWalker
+[`MapWalker`]: crate::MapWalker
+[`next_entry`]: crate::MapWalker::next_entry
 
 #### Worked example: matching a map key by raw bytes
 
@@ -481,6 +487,10 @@ assert!(found);
 - The element is a primitive numeric (`u32`, `f64`, …) or a fixed-size array. There is no length prefix; the wire bytes are the value bytes. Use `decode` directly.
 
 ### Limitations
+
+- **Untrusted inputs:** Wire lengths are `usize` length prefixes like everywhere else in `revision`; they bound how much is read, skipped, or materialised. Walkers add **no** extra caps or validation — same trust model as [`DeserializeRevisioned`] / [`SkipRevisioned`].
+- **[`MapWalker::find`] / [`find_bytes`]:** On a match you only get a [`LeafWalker`] for that entry's value. The method consumes the [`MapWalker`]; you cannot resume [`next_entry`] on it. Key–value pairs that sort after the match remain on the underlying reader for other callers, not for the same walker instance (by design).
+- **[`LengthPrefixedBytes`] on custom types:** The marker must match the type's real `SerializeRevisioned` layout (`usize len || raw bytes`). A wrong impl breaks [`with_bytes`] / [`find_bytes`] and related paths — it is an explicit contract, not something the library can detect.
 
 - `walk_<field>` consumes the parent walker; it is supported in wire mode and errors with `Error::Conversion` in materialised mode (older revs of `convert_fn`-bearing types). Callers that hit the materialised path should `decode_<field>` instead — they already paid the deserialize cost during walker construction.
 - `into_<variant>` is currently emitted for unit variants and single-field tuple variants. Multi-field tuple variants and struct variants are reachable via `discriminant()` + `decode_<field>` on the underlying bytes.
