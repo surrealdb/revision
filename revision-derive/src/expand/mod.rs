@@ -176,6 +176,7 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 	};
 
 	let walk_derive_enabled = attrs.0.walk.unwrap_or(attrs.0.deserialize);
+	let has_convert_fn = common::HasConvertFn::check(&ast)?;
 	let walk_impl = if walk_derive_enabled {
 		walk::emit_walk_impl(
 			match &ast.kind {
@@ -184,6 +185,9 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 			},
 			revision,
 			&ast,
+			has_convert_fn,
+			attrs.0.serialize,
+			attrs.0.deserialize,
 		)?
 	} else {
 		quote! {}
@@ -204,9 +208,18 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 
 	let deserialize_impl = if attrs.0.deserialize {
 		quote! {
-			impl ::revision::DeserializeRevisioned for #name {
-				fn deserialize_revisioned<R: ::std::io::Read>(reader: &mut R) -> ::std::result::Result<Self, ::revision::Error> {
-					let __revision = <u16 as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
+			impl #name {
+				/// Deserialize the body of a revisioned encoding **after** the
+				/// `u16` revision header has already been read.
+				///
+				/// Used internally by [`DeserializeRevisioned::deserialize_revisioned`]
+				/// and by the walker's materialised cross-revision fallback.
+				#[doc(hidden)]
+				#[allow(non_snake_case)]
+				fn __deserialize_after_header<R: ::std::io::Read>(
+					reader: &mut R,
+					__revision: u16,
+				) -> ::std::result::Result<Self, ::revision::Error> {
 					match __revision {
 						#(#deserialize)*
 						x => {
@@ -215,6 +228,13 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 							))
 						}
 					}
+				}
+			}
+
+			impl ::revision::DeserializeRevisioned for #name {
+				fn deserialize_revisioned<R: ::std::io::Read>(reader: &mut R) -> ::std::result::Result<Self, ::revision::Error> {
+					let __revision = <u16 as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
+					Self::__deserialize_after_header(reader, __revision)
 				}
 			}
 		}

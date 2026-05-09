@@ -84,12 +84,12 @@ pub fn skip_check_slice<T: SkipCheckRevisioned>(bytes: &[u8]) -> Result<usize, E
 pub mod prelude {
 	pub use crate::{DeserializeRevisioned, Revisioned, SerializeRevisioned, revisioned};
 	pub use crate::{
-		SkipCheckRevisioned, SkipRevisioned, skip_check_reader, skip_check_revisioned,
-		skip_check_slice, skip_reader, skip_revisioned, skip_slice,
-	};
-	pub use crate::{
 		EnumWalker, LeafWalker, MapEntry, MapWalker, OptionWalker, ResultWalker, SeqItem,
 		SeqWalker, StructWalker, WalkRevisioned,
+	};
+	pub use crate::{
+		SkipCheckRevisioned, SkipRevisioned, skip_check_reader, skip_check_revisioned,
+		skip_check_slice, skip_reader, skip_revisioned, skip_slice,
 	};
 }
 

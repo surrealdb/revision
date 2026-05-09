@@ -229,10 +229,15 @@ The derive macro emits `WalkRevisioned` for every `#[revisioned(...)]` type by d
 (controlled by the same flag as `deserialize`). Opt out per type with
 `#[revisioned(revision = N, walk = false)]`.
 
+For each `#[revisioned(...)]` type the derive emits a per-type walker
+(`<TypeName>Walker<'r, R>`) with named per-field / per-variant methods.
+This is in addition to the generic `StructWalker` / `EnumWalker` / `MapWalker`
+/ `SeqWalker` types that hand-written `WalkRevisioned` impls can return.
+
 ### Walking a struct
 
 ```rust
-use revision::{StructWalker, WalkRevisioned, revisioned, to_vec};
+use revision::{WalkRevisioned, revisioned, to_vec};
 
 #[revisioned(revision = 1)]
 struct Row {
@@ -241,9 +246,9 @@ struct Row {
 }
 
 fn read_row_id_only(mut reader: &[u8]) -> Result<u64, revision::Error> {
-    let mut walker: StructWalker<_> = Row::walk_revisioned(&mut reader)?;
-    walker.skip::<Vec<u8>>()?;
-    walker.decode::<u64>()
+    let mut walker = Row::walk_revisioned(&mut reader)?;
+    walker.skip_blob()?;
+    walker.decode_id()
 }
 ```
 
@@ -278,12 +283,13 @@ assert_eq!(found, Some(99));
 
 ### Walking an enum
 
-The derive emits a `WALK_REVISIONED_VARIANT_TABLE` and `walk_revisioned_variant_name` accessor
-so callers can dispatch on a discriminant by name rather than hard-coding
-integers:
+For each variant, the derive emits an `into_<variant>` consuming method
+that descends into the variant's payload (for unit and single-field tuple
+variants), and a per-revision `walk_revisioned_variant_name(wire_rev, disc)`
+lookup:
 
 ```rust
-use revision::{EnumWalker, WalkRevisioned, revisioned, to_vec};
+use revision::{WalkRevisioned, revisioned, to_vec};
 
 #[revisioned(revision = 1)]
 #[derive(Debug, PartialEq)]
@@ -295,20 +301,81 @@ enum Shape {
 
 let bytes = to_vec(&Shape::Circle(7)).unwrap();
 let mut reader = bytes.as_slice();
-let walker: EnumWalker<_> = Shape::walk_revisioned(&mut reader)?;
-match Shape::walk_revisioned_variant_name(walker.discriminant()) {
-    Some("Circle") => {
-        let radius: u32 = walker.decode()?;
-        assert_eq!(radius, 7);
-    }
-    _ => panic!(),
+let walker = Shape::walk_revisioned(&mut reader)?;
+if walker.is_circle() {
+    let inner = walker.into_circle()?;
+    let radius = inner.decode()?;
+    assert_eq!(radius, 7);
 }
 ```
 
+### Walking across revisions
+
+`WalkRevisioned` honours the same cross-revision contract as
+`DeserializeRevisioned`: any wire revision in `1..=current` is accepted, and
+the walker presents the **latest schema** view. There are two internal modes:
+
+- **Wire mode** (the fast path) is used when the wire revision matches the
+  current schema, and for any older revision of a type that does **not** use
+  `convert_fn`. Per-field methods branch on `wire_rev` against the field's
+  `start` annotation: fields added after the wire revision are synthesised
+  via `Default::default()` (or the user-supplied `default_fn`); no
+  allocations.
+- **Materialised mode** is used when the wire revision differs from the
+  current schema *and* the type has at least one `convert_fn`. The walker
+  internally calls `Self::deserialize_revisioned` (which honours
+  `convert_fn`), re-encodes the result at the current revision, and then
+  byte-walks those new bytes. The user-facing API is identical; the cost is
+  a single `Vec<u8>` allocation plus the deserialize/serialize roundtrip.
+
+The walker's mode selection happens at construction; per-method code paths
+do not branch beyond a single match on the internal repr.
+
+```rust
+use revision::{WalkRevisioned, revisioned, to_vec};
+
+#[revisioned(revision = 1)]
+struct ShapeV1 {
+    kind: u8,
+}
+
+#[revisioned(revision = 2)]
+struct Shape {
+    kind: u8,
+    #[revision(start = 2)]
+    flags: u8,
+}
+
+let bytes = to_vec(&ShapeV1 { kind: 3 }).unwrap();
+let mut r = bytes.as_slice();
+let mut walker = Shape::walk_revisioned(&mut r)?;
+let kind = walker.decode_kind()?;   // exists at all revisions
+let flags = walker.decode_flags()?; // synthesised default at wire rev 1
+assert_eq!((kind, flags), (3, 0));
+```
+
+### Performance characteristics
+
+| Path | Cost |
+| --- | --- |
+| Wire rev = current | identical to the current-rev hot path; per-field methods inline |
+| Wire rev < current, type without `convert_fn` | one extra branch per field; allocation-free |
+| Wire rev < current, type with `convert_fn` | `deserialize + serialize + walk`; rare in practice |
+
 ### Limitations
 
-- `WalkRevisioned` requires the wire revision to match the schema's current
-  revision; older payloads should fall back to `DeserializeRevisioned`.
+- `walk_<field>` consumes the parent walker; it is supported in wire mode
+  and errors with `Error::Conversion` in materialised mode (older revs of
+  `convert_fn`-bearing types). Callers that hit the materialised path should
+  `decode_<field>` instead — they already paid the deserialize cost during
+  walker construction.
+- `into_<variant>` is currently emitted for unit variants and single-field
+  tuple variants. Multi-field tuple variants and struct variants are
+  reachable via `discriminant()` + `decode_<field>` on the underlying
+  bytes.
 - `Vec<T>` for primitive numeric `T` may use the `specialised-vectors`
   bulk encoding which the generic `SeqWalker` does not understand. Use
   `DeserializeRevisioned` (or `SkipRevisioned`) for those.
+- Types declared `#[revisioned(serialize = false)]` cannot materialise; if
+  they also use `convert_fn`, walking older wire revisions will not be
+  supported.

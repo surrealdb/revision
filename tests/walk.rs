@@ -9,8 +9,8 @@
 use std::collections::BTreeMap;
 
 use revision::{
-	DeserializeRevisioned, EnumWalker, Error, MapWalker, SeqWalker, SkipRevisioned, StructWalker,
-	WalkRevisioned, revisioned, to_vec,
+	DeserializeRevisioned, Error, MapWalker, SeqWalker, SkipRevisioned, WalkRevisioned, revisioned,
+	to_vec,
 };
 
 // -----------------------------------------------------------------------------
@@ -95,7 +95,8 @@ fn seq_walker_iterates_decode_skip_mix() {
 	// `specialised-vectors` bulk encoding which the generic SeqWalker does
 	// not understand. Non-numeric Vec<T> uses the standard length-prefixed
 	// per-element encoding.
-	let v: Vec<String> = vec!["one".into(), "two".into(), "three".into(), "four".into(), "five".into()];
+	let v: Vec<String> =
+		vec!["one".into(), "two".into(), "three".into(), "four".into(), "five".into()];
 	let bytes = to_vec(&v).unwrap();
 
 	let mut r = bytes.as_slice();
@@ -209,9 +210,7 @@ fn map_walker_find_returns_none_consumes_all() {
 	let walker: MapWalker<String, u32, _> =
 		<BTreeMap<String, u32>>::walk_revisioned(&mut r).unwrap();
 
-	let result = walker
-		.find(|k: &String| k.as_str().cmp("zzz"))
-		.unwrap();
+	let result = walker.find(|k: &String| k.as_str().cmp("zzz")).unwrap();
 	assert!(result.is_none());
 	assert!(r.is_empty(), "no-match find should consume entire map");
 }
@@ -236,10 +235,10 @@ fn derive_struct_walker_decodes_each_field_in_order() {
 	let bytes = to_vec(&doc).unwrap();
 
 	let mut r = bytes.as_slice();
-	let mut walker: StructWalker<_> = Document::walk_revisioned(&mut r).unwrap();
+	let mut walker = Document::walk_revisioned(&mut r).unwrap();
 	assert_eq!(walker.revision(), 1);
-	let name: String = walker.decode().unwrap();
-	let count: u32 = walker.decode().unwrap();
+	let name = walker.decode_name().unwrap();
+	let count = walker.decode_count().unwrap();
 	assert_eq!(name, doc.name);
 	assert_eq!(count, doc.count);
 	assert!(r.is_empty());
@@ -254,16 +253,16 @@ fn derive_struct_walker_skip_field_skips_correctly() {
 	let bytes = to_vec(&doc).unwrap();
 
 	let mut r = bytes.as_slice();
-	let mut walker: StructWalker<_> = Document::walk_revisioned(&mut r).unwrap();
-	walker.skip::<String>().unwrap();
-	let count: u32 = walker.decode().unwrap();
+	let mut walker = Document::walk_revisioned(&mut r).unwrap();
+	walker.skip_name().unwrap();
+	let count = walker.decode_count().unwrap();
 	assert_eq!(count, 99);
 	assert!(r.is_empty());
 }
 
 #[test]
 fn derive_struct_walker_field_table_is_emitted() {
-	assert_eq!(Document::WALK_REVISIONED_FIELD_NAMES, &["name", "count"]);
+	assert_eq!(Document::walk_revisioned_field_names(1), &["name", "count"]);
 }
 
 // -----------------------------------------------------------------------------
@@ -287,20 +286,23 @@ fn derive_enum_walker_exposes_discriminant() {
 	let bytes = to_vec(&s).unwrap();
 
 	let mut r = bytes.as_slice();
-	let walker: EnumWalker<_> = Shape::walk_revisioned(&mut r).unwrap();
+	let walker = Shape::walk_revisioned(&mut r).unwrap();
 	assert_eq!(walker.revision(), 1);
 	let disc = walker.discriminant();
-	let name = Shape::walk_revisioned_variant_name(disc);
+	let name = Shape::walk_revisioned_variant_name(1, disc);
 	assert_eq!(name, Some("Circle"));
+	assert!(walker.is_circle());
 
-	let payload: u32 = walker.decode().unwrap();
+	// Single-field tuple variant: into_circle yields the inner walker over `u32`.
+	let inner = walker.into_circle().unwrap();
+	let payload = inner.decode().unwrap();
 	assert_eq!(payload, 7);
 	assert!(r.is_empty());
 }
 
 #[test]
 fn derive_enum_variant_table_is_emitted() {
-	let table = Shape::WALK_REVISIONED_VARIANT_TABLE;
+	let table = Shape::walk_revisioned_variant_table(1);
 	let names: Vec<&'static str> = table.iter().map(|(n, _)| *n).collect();
 	assert_eq!(names, vec!["Square", "Rectangle", "Circle"]);
 }
@@ -311,8 +313,10 @@ fn derive_enum_walker_skip_matches_skip_revisioned() {
 	let bytes = to_vec(&s).unwrap();
 
 	let mut r = bytes.as_slice();
-	let walker: EnumWalker<_> = Shape::walk_revisioned(&mut r).unwrap();
-	walker.skip::<u32>().unwrap();
+	let walker = Shape::walk_revisioned(&mut r).unwrap();
+	assert!(walker.is_square());
+	let inner = walker.into_square().unwrap();
+	inner.skip().unwrap();
 	assert!(r.is_empty());
 
 	let mut r2 = bytes.as_slice();
@@ -345,16 +349,14 @@ fn struct_walker_walks_into_nested_map() {
 	let bytes = to_vec(&outer).unwrap();
 
 	let mut r = bytes.as_slice();
-	let mut walker: StructWalker<_> = Outer::walk_revisioned(&mut r).unwrap();
-	let header: u16 = walker.decode().unwrap();
+	let mut walker = Outer::walk_revisioned(&mut r).unwrap();
+	let header = walker.decode_header().unwrap();
 	assert_eq!(header, 7);
 
-	let map_walker: MapWalker<String, u32, _> = walker.into_walk::<BTreeMap<String, u32>>().unwrap();
-
 	let collected: BTreeMap<String, u32> = {
-		let mut walker = map_walker;
+		let mut map_walker = walker.walk_body().unwrap();
 		let mut acc = BTreeMap::new();
-		while let Some(entry) = walker.next_entry() {
+		while let Some(entry) = map_walker.next_entry() {
 			let (k, v) = entry.decode_pair().unwrap();
 			acc.insert(k, v);
 		}
@@ -368,7 +370,7 @@ fn struct_walker_walks_into_nested_map() {
 }
 
 // -----------------------------------------------------------------------------
-// Multi-revision: walker rejects mismatched wire revision
+// Multi-revision: walker accepts any wire revision and presents latest schema
 // -----------------------------------------------------------------------------
 
 #[revisioned(revision = 1)]
@@ -386,15 +388,123 @@ struct NewShape {
 }
 
 #[test]
-fn walker_rejects_older_wire_revision() {
+fn walker_accepts_older_wire_revision_with_default_for_added_field() {
+	// Encode at rev 1, walk at rev 2. Wire-mode walker should read the
+	// existing `kind` field directly and synthesise a default for the
+	// `flags` field added at rev 2.
 	let old = OldShape {
 		kind: 3,
 	};
 	let bytes = to_vec(&old).unwrap();
 
 	let mut r = bytes.as_slice();
+	let mut walker = NewShape::walk_revisioned(&mut r).unwrap();
+	assert_eq!(walker.revision(), 1);
+	let kind = walker.decode_kind().unwrap();
+	let flags = walker.decode_flags().unwrap();
+	assert_eq!(kind, 3);
+	assert_eq!(flags, 0); // default for `flags` at wire rev 1
+	assert!(r.is_empty());
+}
+
+#[test]
+fn walker_rejects_invalid_wire_revision() {
+	// A wire revision that exceeds the schema's current revision must error.
+	let mut bytes = Vec::new();
+	use revision::SerializeRevisioned;
+	99u16.serialize_revisioned(&mut bytes).unwrap();
+	bytes.push(0u8);
+
+	let mut r = bytes.as_slice();
 	let res = NewShape::walk_revisioned(&mut r);
 	assert!(matches!(res, Err(Error::Deserialize(_))));
+}
+
+// -----------------------------------------------------------------------------
+// Materialised-mode cross-rev: types using `convert_fn`
+// -----------------------------------------------------------------------------
+
+#[revisioned(revision = 1)]
+#[derive(Debug, Clone, PartialEq)]
+struct ConvertedFooV1 {
+	width: u32,
+}
+
+#[revisioned(revision = 2)]
+#[derive(Debug, PartialEq)]
+struct ConvertedFoo {
+	#[revision(end = 2, convert_fn = "convert_width")]
+	width_old: u32,
+	#[revision(start = 2)]
+	width: u32,
+	#[revision(start = 2)]
+	height: u32,
+}
+
+impl ConvertedFoo {
+	fn convert_width(&mut self, _rev: u16, value: u32) -> Result<(), revision::Error> {
+		self.width = value * 10;
+		self.height = value + 1;
+		Ok(())
+	}
+}
+
+#[test]
+fn walker_materialises_for_convert_fn_type_at_older_revision() {
+	// Encode at rev 1, walk at rev 2. The walker should detect the
+	// `convert_fn` and materialise: deserialize at wire rev 1 (which
+	// runs the converter) and re-encode at current revision so the
+	// walker can read sequentially at the latest schema.
+	let v1 = ConvertedFooV1 {
+		width: 5,
+	};
+	let bytes = to_vec(&v1).unwrap();
+
+	let mut r = bytes.as_slice();
+	let mut walker = ConvertedFoo::walk_revisioned(&mut r).unwrap();
+	// Materialised mode reports the schema revision since bytes are
+	// re-encoded at current.
+	assert_eq!(walker.revision(), 2);
+
+	let width = walker.decode_width().unwrap();
+	let height = walker.decode_height().unwrap();
+	assert_eq!(width, 50); // 5 * 10
+	assert_eq!(height, 6); // 5 + 1
+	assert!(r.is_empty());
+}
+
+#[test]
+fn walker_materialised_walk_field_errors_with_useful_message() {
+	let v1 = ConvertedFooV1 {
+		width: 5,
+	};
+	let bytes = to_vec(&v1).unwrap();
+	let mut r = bytes.as_slice();
+	let mut walker = ConvertedFoo::walk_revisioned(&mut r).unwrap();
+	let res = walker.walk_width();
+	assert!(matches!(res, Err(Error::Conversion(_))));
+}
+
+#[test]
+fn walker_current_rev_path_for_convert_fn_type_uses_wire_mode() {
+	// At the current revision, no materialisation happens; the walker
+	// reads sequentially from the input reader.
+	let v2 = ConvertedFoo {
+		width: 42,
+		height: 99,
+	};
+	let mut bytes = Vec::new();
+	use revision::SerializeRevisioned;
+	v2.serialize_revisioned(&mut bytes).unwrap();
+
+	let mut r = bytes.as_slice();
+	let mut walker = ConvertedFoo::walk_revisioned(&mut r).unwrap();
+	assert_eq!(walker.revision(), 2);
+	let width = walker.decode_width().unwrap();
+	let height = walker.decode_height().unwrap();
+	assert_eq!(width, 42);
+	assert_eq!(height, 99);
+	assert!(r.is_empty());
 }
 
 #[test]

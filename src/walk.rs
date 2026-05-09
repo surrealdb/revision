@@ -80,9 +80,7 @@ pub trait WalkRevisioned: Revisioned {
 
 	/// Read the type's revision-level prefix and return a walker positioned at
 	/// the start of the body.
-	fn walk_revisioned<'r, R: Read>(
-		reader: &'r mut R,
-	) -> Result<Self::Walker<'r, R>, Error>;
+	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error>;
 }
 
 // -----------------------------------------------------------------------------
