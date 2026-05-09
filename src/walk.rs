@@ -35,8 +35,6 @@
 //! Walkers honour these invariants and read the relevant prefix in
 //! `walk_revisioned` before returning so the caller can step over the body.
 
-#[cfg(feature = "specialised-vectors")]
-use std::any::TypeId;
 use std::cmp::Ordering;
 use std::io::Read;
 use std::marker::PhantomData;
@@ -120,6 +118,9 @@ pub trait WalkRevisioned: Revisioned {
 pub trait LengthPrefixedBytes: Revisioned {}
 
 impl LengthPrefixedBytes for String {}
+// `str` is `?Sized`, so a `LeafWalker<'_, str, R>` cannot exist in
+// practice — this impl is here so the `Cow<'_, T>` blanket impl below
+// can apply to `Cow<'_, str>` (whose `T::Owned` is `String`).
 impl LengthPrefixedBytes for str {}
 impl LengthPrefixedBytes for std::sync::Arc<str> {}
 impl LengthPrefixedBytes for Box<str> {}
@@ -146,6 +147,11 @@ impl LengthPrefixedBytes for bytes::Bytes {}
 /// and [`MapWalker::find_bytes`]. Each of those methods is just a thin
 /// wrapper around this helper plus the appropriate cursor / counter
 /// bookkeeping.
+///
+/// **Panic safety:** if `f` panics, the reader is left positioned between
+/// the consumed length prefix and the un-advanced body bytes. The reader is
+/// in a corrupt state and should not be reused after the unwind. In the
+/// usual case where a panic ends use of the reader this does not matter.
 #[inline]
 pub(crate) fn with_length_prefixed_bytes<R, F, T>(reader: &mut R, f: F) -> Result<T, Error>
 where
@@ -432,53 +438,22 @@ impl<'r, T, E, R: Read + 'r> ResultWalker<'r, T, E, R> {
 // SeqWalker — Vec<T>, HashSet<T>, BTreeSet<T>, BinaryHeap<T>, …
 // -----------------------------------------------------------------------------
 
-/// When `specialised-vectors` is enabled, certain `Vec<T>` element types use a
-/// compact bulk layout that does not match [`SeqWalker`]'s per-item framing.
-/// [`SeqWalker::new`] returns [`Error::Deserialize`] for those `T` **before**
-/// reading the sequence length, so the caller's reader is unchanged.
-///
-/// This mirrors every element type for which [`SerializeRevisioned`] on [`Vec`]
-/// selects the specialised bulk path (`try_specialized!` in `implementations/vecs.rs`):
-/// numeric primitives, `bool`, and — when the optional `uuid` / `rust_decimal`
-/// dependencies are enabled — `uuid::Uuid` and `rust_decimal::Decimal`.
-#[cfg(feature = "specialised-vectors")]
-#[inline]
-fn seq_walk_rejects_bulk_encoded_element<T: 'static>() -> bool {
-	let id = TypeId::of::<T>();
-	macro_rules! bulk_primitive {
-		($($ty:ty),* $(,)?) => {{
-			$(if id == TypeId::of::<$ty>() {
-				return true;
-			})*
-		}};
-	}
-	bulk_primitive!(bool, u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, f32, f64);
-	#[cfg(feature = "uuid")]
-	if id == TypeId::of::<uuid::Uuid>() {
-		return true;
-	}
-	#[cfg(feature = "rust_decimal")]
-	if id == TypeId::of::<rust_decimal::Decimal>() {
-		return true;
-	}
-	false
-}
-
-#[cfg(not(feature = "specialised-vectors"))]
-#[inline]
-fn seq_walk_rejects_bulk_encoded_element<T: 'static>() -> bool {
-	false
-}
-
 /// Walker for a homogeneous sequence (length-prefix followed by `T` elements).
 ///
-/// **Caveat:** With the `specialised-vectors` feature (enabled by default),
-/// [`Vec<T>`](crate::implementations::vecs) may use bulk encoding for several
-/// element types (primitives, `bool`, and optionally `uuid::Uuid` /
-/// `rust_decimal::Decimal` when those optional deps are enabled). [`SeqWalker::new`]
-/// refuses each such `T` and returns an error without consuming bytes.
-/// Without `specialised-vectors`, all `Vec<T>` use per-element layout and are
-/// safe to walk.
+/// All collections whose [`SerializeRevisioned`] writes `usize len || T per
+/// element` use this walker — `HashSet<T>`, `BTreeSet<T>`, `BinaryHeap<T>`,
+/// `imbl::{Vector, OrdSet, HashSet}`, and `Vec<T>` for non-bulk element
+/// types.
+///
+/// **Caveat for `Vec<T>` only:** with the `specialised-vectors` feature
+/// (enabled by default), [`Vec<T>`](crate::implementations::vecs) uses a
+/// compact bulk layout for primitive numeric types, `bool`, and (when the
+/// optional `uuid` / `rust_decimal` features are enabled) `uuid::Uuid` /
+/// `rust_decimal::Decimal`. [`Vec<T>::walk_revisioned`] rejects those
+/// element types up front; sets and heaps are unaffected because they
+/// always use per-element framing.
+///
+/// [`SerializeRevisioned`]: crate::SerializeRevisioned
 pub struct SeqWalker<'r, T, R: Read + 'r> {
 	reader: &'r mut R,
 	remaining: usize,
@@ -487,22 +462,8 @@ pub struct SeqWalker<'r, T, R: Read + 'r> {
 
 impl<'r, T, R: Read + 'r> SeqWalker<'r, T, R> {
 	/// Construct a sequence walker. Reads the `usize` length prefix.
-	///
-	/// Requires `T: 'static` so bulk-encoded primitive layouts can be rejected
-	/// when `specialised-vectors` is enabled.
 	#[inline]
-	pub fn new(reader: &'r mut R) -> Result<Self, Error>
-	where
-		T: 'static,
-	{
-		if seq_walk_rejects_bulk_encoded_element::<T>() {
-			return Err(Error::Deserialize(
-				"SeqWalker: cannot walk sequences whose element type uses specialised bulk encoding \
-				 when the `specialised-vectors` feature is enabled; use DeserializeRevisioned or \
-				 SkipRevisioned instead."
-					.into(),
-			));
-		}
+	pub fn new(reader: &'r mut R) -> Result<Self, Error> {
 		let len = usize::deserialize_revisioned(reader)?;
 		Ok(Self {
 			reader,

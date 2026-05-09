@@ -144,7 +144,7 @@ fn bench_extract_via_walker(c: &mut Criterion) {
 		b.iter(|| {
 			let mut r = bytes.as_slice();
 			let doc_walker = Doc::walk_revisioned(&mut r).unwrap();
-			let map: MapWalker<String, Payload, _> = doc_walker.walk_table().unwrap();
+			let map: MapWalker<String, Payload, _> = doc_walker.into_walk_table().unwrap();
 			let handle =
 				map.find(|k: &String| k.as_str().cmp(TARGET_KEY)).unwrap().expect("target key");
 			let payload = handle.decode().unwrap();
@@ -160,7 +160,7 @@ fn bench_extract_via_walker_bytes(c: &mut Criterion) {
 		b.iter(|| {
 			let mut r = bytes.as_slice();
 			let doc_walker = Doc::walk_revisioned(&mut r).unwrap();
-			let map: MapWalker<String, Payload, _> = doc_walker.walk_table().unwrap();
+			let map: MapWalker<String, Payload, _> = doc_walker.into_walk_table().unwrap();
 			let handle = map.find_bytes(|k| k.cmp(needle)).unwrap().expect("target key");
 			let payload = handle.decode().unwrap();
 			black_box(&payload);
@@ -296,7 +296,8 @@ fn bench_nested_fused_via_walker(c: &mut Criterion) {
 			// decode only matched values.
 			let mut r = bytes.as_slice();
 			let doc_walker = NestedDoc::walk_revisioned(&mut r).unwrap();
-			let mut map: MapWalker<String, NestedPayload, _> = doc_walker.walk_outer().unwrap();
+			let mut map: MapWalker<String, NestedPayload, _> =
+				doc_walker.into_walk_outer().unwrap();
 			let mut needles_iter = NESTED_NEEDLES.iter().peekable();
 			let mut hits: Vec<Option<i64>> = vec![None; NESTED_NEEDLES.len()];
 			let mut idx = 0usize;
@@ -335,7 +336,8 @@ fn bench_nested_fused_via_walker_bytes(c: &mut Criterion) {
 			// wire bytes via `with_key_bytes` — zero allocations per key.
 			let mut r = bytes.as_slice();
 			let doc_walker = NestedDoc::walk_revisioned(&mut r).unwrap();
-			let mut map: MapWalker<String, NestedPayload, _> = doc_walker.walk_outer().unwrap();
+			let mut map: MapWalker<String, NestedPayload, _> =
+				doc_walker.into_walk_outer().unwrap();
 			let mut needles_iter = NESTED_NEEDLES.iter().peekable();
 			let mut hits: Vec<Option<i64>> = vec![None; NESTED_NEEDLES.len()];
 			let mut idx = 0usize;
