@@ -11,7 +11,8 @@
 
 use std::collections::BTreeMap;
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use revision::{
 	DeserializeRevisioned, MapWalker, SerializeRevisioned, WalkRevisioned, revisioned, to_vec,
 };

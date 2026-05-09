@@ -480,7 +480,7 @@ fn walker_materialised_walk_field_errors_with_useful_message() {
 	};
 	let bytes = to_vec(&v1).unwrap();
 	let mut r = bytes.as_slice();
-	let mut walker = ConvertedFoo::walk_revisioned(&mut r).unwrap();
+	let walker = ConvertedFoo::walk_revisioned(&mut r).unwrap();
 	let res = walker.walk_width();
 	assert!(matches!(res, Err(Error::Conversion(_))));
 }
@@ -673,5 +673,50 @@ fn seq_item_with_bytes_for_string_seq() {
 	assert_eq!(first.as_slice(), b"alpha");
 	assert_eq!(second, "beta");
 	assert!(fourth_starts_with_d);
+	assert!(r.is_empty());
+}
+
+#[test]
+#[cfg(feature = "specialised-vectors")]
+fn seq_walk_rejects_bulk_primitive_without_consuming_reader() {
+	let v: Vec<u32> = vec![1, 2, 3];
+	let bytes = to_vec(&v).unwrap();
+	let mut r = bytes.as_slice();
+	let before = r.len();
+	let err = match Vec::<u32>::walk_revisioned(&mut r) {
+		Err(e) => e,
+		Ok(_) => panic!("expected specialised bulk Vec<u32> walk to fail"),
+	};
+	assert!(matches!(err, Error::Deserialize(_)));
+	assert_eq!(r.len(), before);
+}
+
+#[test]
+#[cfg(not(feature = "specialised-vectors"))]
+fn seq_walk_accepts_numeric_vec_when_specialised_vectors_disabled() {
+	let v: Vec<u32> = vec![7, 8];
+	let bytes = to_vec(&v).unwrap();
+	let mut r = bytes.as_slice();
+	let mut walker = Vec::<u32>::walk_revisioned(&mut r).unwrap();
+	let first = walker.next_item().unwrap().decode().unwrap();
+	assert_eq!(first, 7);
+	let second = walker.next_item().unwrap().decode().unwrap();
+	assert_eq!(second, 8);
+	assert!(r.is_empty());
+}
+
+#[test]
+fn map_entry_out_of_order_returns_error_without_io() {
+	let mut map = BTreeMap::new();
+	map.insert("only".to_string(), 42u32);
+	let bytes = to_vec(&map).unwrap();
+	let mut r = bytes.as_slice();
+	let mut walker = <BTreeMap<String, u32>>::walk_revisioned(&mut r).unwrap();
+	let mut entry = walker.next_entry().unwrap();
+	entry.skip_key().unwrap();
+	let err = entry.decode_key().unwrap_err();
+	assert!(matches!(err, Error::Deserialize(_)));
+	let v = entry.decode_value().unwrap();
+	assert_eq!(v, 42);
 	assert!(r.is_empty());
 }

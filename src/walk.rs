@@ -35,6 +35,8 @@
 //! Walkers honour these invariants and read the relevant prefix in
 //! `walk_revisioned` before returning so the caller can step over the body.
 
+#[cfg(feature = "specialised-vectors")]
+use std::any::TypeId;
 use std::cmp::Ordering;
 use std::io::Read;
 use std::marker::PhantomData;
@@ -422,14 +424,38 @@ impl<'r, T, E, R: Read + 'r> ResultWalker<'r, T, E, R> {
 // SeqWalker — Vec<T>, HashSet<T>, BTreeSet<T>, BinaryHeap<T>, …
 // -----------------------------------------------------------------------------
 
+/// When `specialised-vectors` is enabled, certain `Vec<T>` element types use a
+/// compact bulk layout that does not match [`SeqWalker`]'s per-item framing.
+/// [`SeqWalker::new`] returns [`Error::Deserialize`] for those `T` **before**
+/// reading the sequence length, so the caller's reader is unchanged.
+#[cfg(feature = "specialised-vectors")]
+#[inline]
+fn seq_walk_rejects_bulk_encoded_element<T: 'static>() -> bool {
+	let id = TypeId::of::<T>();
+	macro_rules! bulk_primitive {
+		($($ty:ty),* $(,)?) => {{
+			$(if id == TypeId::of::<$ty>() {
+				return true;
+			})*
+			false
+		}};
+	}
+	bulk_primitive!(bool, u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, f32, f64)
+}
+
+#[cfg(not(feature = "specialised-vectors"))]
+#[inline]
+fn seq_walk_rejects_bulk_encoded_element<T: 'static>() -> bool {
+	false
+}
+
 /// Walker for a homogeneous sequence (length-prefix followed by `T` elements).
 ///
-/// **Caveat:** `Vec<T>` for primitive numeric `T` may use the
-/// `specialised-vectors` bulk encoding (a single contiguous `T::SIZE * len`
-/// byte run). The generic `SeqWalker` assumes the standard per-element
-/// length-prefixed layout and therefore should not be used to walk
-/// specialised numeric `Vec`s. Use `DeserializeRevisioned` (or
-/// `SkipRevisioned`) for those.
+/// **Caveat:** With the `specialised-vectors` feature (enabled by default),
+/// primitive numeric `Vec<T>` values use bulk encoding. [`SeqWalker::new`]
+/// refuses those element types and returns an error without consuming bytes.
+/// Without `specialised-vectors`, all `Vec<T>` use per-element layout and are
+/// safe to walk.
 pub struct SeqWalker<'r, T, R: Read + 'r> {
 	reader: &'r mut R,
 	remaining: usize,
@@ -438,8 +464,22 @@ pub struct SeqWalker<'r, T, R: Read + 'r> {
 
 impl<'r, T, R: Read + 'r> SeqWalker<'r, T, R> {
 	/// Construct a sequence walker. Reads the `usize` length prefix.
+	///
+	/// Requires `T: 'static` so bulk-encoded primitive layouts can be rejected
+	/// when `specialised-vectors` is enabled.
 	#[inline]
-	pub fn new(reader: &'r mut R) -> Result<Self, Error> {
+	pub fn new(reader: &'r mut R) -> Result<Self, Error>
+	where
+		T: 'static,
+	{
+		if seq_walk_rejects_bulk_encoded_element::<T>() {
+			return Err(Error::Deserialize(
+				"SeqWalker: cannot walk sequences whose element type uses specialised bulk encoding \
+				 when the `specialised-vectors` feature is enabled; use DeserializeRevisioned or \
+				 SkipRevisioned instead."
+					.into(),
+			));
+		}
 		let len = usize::deserialize_revisioned(reader)?;
 		Ok(Self {
 			reader,
@@ -521,10 +561,9 @@ impl<'a, 'r, T, R: Read + 'r> SeqItem<'a, 'r, T, R> {
 	where
 		T: WalkRevisioned,
 	{
-		// Manually decrement before handing back the borrow so the seq walker
-		// reflects the consumed item once the sub-walker is finished.
+		let walker = T::walk_revisioned(self.walker.reader)?;
 		self.walker.remaining -= 1;
-		T::walk_revisioned(self.walker.reader)
+		Ok(walker)
 	}
 }
 
@@ -730,19 +769,35 @@ where
 /// handle the key (`decode_key` or `skip_key`) and then the value
 /// (`decode_value`, `skip_value`, or `walk_value`). `decode_pair` and
 /// `skip_pair` shortcut both at once.
+///
+/// Calling methods out of order returns [`Error::Deserialize`] in all builds
+/// (not only debug builds), without advancing the reader when the check fails
+/// before I/O.
 pub struct MapEntry<'a, 'r, K, V, R: Read + 'r> {
 	walker: &'a mut MapWalker<'r, K, V, R>,
 	cursor: MapCursor,
 }
 
 impl<'a, 'r, K, V, R: Read + 'r> MapEntry<'a, 'r, K, V, R> {
+	fn expect_cursor(&self, expected: MapCursor, operation: &'static str) -> Result<(), Error> {
+		if self.cursor != expected {
+			return Err(Error::Deserialize(
+				format!(
+					"MapEntry: invalid cursor for {operation} (expected {expected:?}, found {:?})",
+					self.cursor,
+				),
+			));
+		}
+		Ok(())
+	}
+
 	/// Decode the key. The cursor advances to the value.
 	#[inline]
 	pub fn decode_key(&mut self) -> Result<K, Error>
 	where
 		K: DeserializeRevisioned,
 	{
-		debug_assert_eq!(self.cursor, MapCursor::BeforeKey, "key already consumed");
+		self.expect_cursor(MapCursor::BeforeKey, "decode_key")?;
 		let k = K::deserialize_revisioned(self.walker.reader)?;
 		self.cursor = MapCursor::BeforeValue;
 		Ok(k)
@@ -754,7 +809,7 @@ impl<'a, 'r, K, V, R: Read + 'r> MapEntry<'a, 'r, K, V, R> {
 	where
 		K: SkipRevisioned,
 	{
-		debug_assert_eq!(self.cursor, MapCursor::BeforeKey, "key already consumed");
+		self.expect_cursor(MapCursor::BeforeKey, "skip_key")?;
 		K::skip_revisioned(self.walker.reader)?;
 		self.cursor = MapCursor::BeforeValue;
 		Ok(())
@@ -766,7 +821,7 @@ impl<'a, 'r, K, V, R: Read + 'r> MapEntry<'a, 'r, K, V, R> {
 	where
 		V: DeserializeRevisioned,
 	{
-		debug_assert_eq!(self.cursor, MapCursor::BeforeValue, "key not yet consumed");
+		self.expect_cursor(MapCursor::BeforeValue, "decode_value")?;
 		let v = V::deserialize_revisioned(self.walker.reader)?;
 		self.walker.remaining -= 1;
 		Ok(v)
@@ -778,7 +833,7 @@ impl<'a, 'r, K, V, R: Read + 'r> MapEntry<'a, 'r, K, V, R> {
 	where
 		V: SkipRevisioned,
 	{
-		debug_assert_eq!(self.cursor, MapCursor::BeforeValue, "key not yet consumed");
+		self.expect_cursor(MapCursor::BeforeValue, "skip_value")?;
 		V::skip_revisioned(self.walker.reader)?;
 		self.walker.remaining -= 1;
 		Ok(())
@@ -791,9 +846,10 @@ impl<'a, 'r, K, V, R: Read + 'r> MapEntry<'a, 'r, K, V, R> {
 	where
 		V: WalkRevisioned,
 	{
-		debug_assert_eq!(self.cursor, MapCursor::BeforeValue, "key not yet consumed");
+		self.expect_cursor(MapCursor::BeforeValue, "walk_value")?;
+		let w = V::walk_revisioned(self.walker.reader)?;
 		self.walker.remaining -= 1;
-		V::walk_revisioned(self.walker.reader)
+		Ok(w)
 	}
 
 	/// Decode key and value together, advancing past the entry.
@@ -841,7 +897,7 @@ where
 		K: LengthPrefixedBytes,
 		F: FnOnce(&[u8]) -> U,
 	{
-		debug_assert_eq!(self.cursor, MapCursor::BeforeKey, "key already consumed");
+		self.expect_cursor(MapCursor::BeforeKey, "with_key_bytes")?;
 		let result = with_length_prefixed_bytes(self.walker.reader, f)?;
 		self.cursor = MapCursor::BeforeValue;
 		Ok(result)
@@ -863,7 +919,7 @@ where
 		V: LengthPrefixedBytes,
 		F: FnOnce(&[u8]) -> U,
 	{
-		debug_assert_eq!(self.cursor, MapCursor::BeforeValue, "key not yet consumed");
+		self.expect_cursor(MapCursor::BeforeValue, "with_value_bytes")?;
 		let result = with_length_prefixed_bytes(self.walker.reader, f)?;
 		self.walker.remaining -= 1;
 		Ok(result)
@@ -933,8 +989,9 @@ impl<'r, R: Read + 'r> StructWalker<'r, R> {
 	/// from `&mut self`; the parent walker can resume after it is dropped.
 	#[inline]
 	pub fn walk<T: WalkRevisioned>(&mut self) -> Result<T::Walker<'_, R>, Error> {
+		let w = T::walk_revisioned(self.reader)?;
 		self.position += 1;
-		T::walk_revisioned(self.reader)
+		Ok(w)
 	}
 
 	/// Consume the struct walker and walk into the next field as type `T`,

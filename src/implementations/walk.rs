@@ -188,7 +188,7 @@ where
 
 impl<T> WalkRevisioned for Vec<T>
 where
-	T: Revisioned,
+	T: Revisioned + 'static,
 {
 	type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
 
@@ -204,7 +204,7 @@ where
 
 impl<T, S> WalkRevisioned for HashSet<T, S>
 where
-	T: Revisioned + Eq + Hash,
+	T: Revisioned + Eq + Hash + 'static,
 	S: BuildHasher + Default,
 {
 	type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
@@ -217,7 +217,7 @@ where
 
 impl<T> WalkRevisioned for BTreeSet<T>
 where
-	T: Revisioned + Ord,
+	T: Revisioned + Ord + 'static,
 {
 	type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
 
@@ -229,7 +229,7 @@ where
 
 impl<T> WalkRevisioned for BinaryHeap<T>
 where
-	T: Revisioned + Ord,
+	T: Revisioned + Ord + 'static,
 {
 	type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
 
@@ -522,7 +522,7 @@ mod imbl_walk {
 
 	impl<T> WalkRevisioned for Vector<T>
 	where
-		T: Revisioned + Clone,
+		T: Revisioned + Clone + 'static,
 	{
 		type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
 
@@ -547,7 +547,7 @@ mod imbl_walk {
 
 	impl<T> WalkRevisioned for OrdSet<T>
 	where
-		T: Revisioned + Clone + Ord,
+		T: Revisioned + Clone + Ord + 'static,
 	{
 		type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
 
@@ -572,7 +572,7 @@ mod imbl_walk {
 
 	impl<T> WalkRevisioned for ImblHashSet<T>
 	where
-		T: Revisioned + Clone + Eq + Hash,
+		T: Revisioned + Clone + Eq + Hash + 'static,
 	{
 		type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
 
