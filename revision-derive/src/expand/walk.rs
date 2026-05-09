@@ -54,6 +54,21 @@ pub fn emit_walk_impl(
 	serialize_enabled: bool,
 	deserialize_enabled: bool,
 ) -> syn::Result<TokenStream> {
+	// Reject `walk` on a `convert_fn`-bearing type when either side of the
+	// materialised round-trip is disabled. Without both `serialize` and
+	// `deserialize` the wire-only walker can't apply the converter or skip
+	// removed (`end = ..`) fields, which would silently miscompare bytes
+	// across revisions.
+	if has_convert_fn && !(serialize_enabled && deserialize_enabled) {
+		return Err(syn::Error::new(
+			name.span(),
+			"`walk` on a type using `convert_fn` requires both `serialize = true` and \
+			 `deserialize = true`: the walker's cross-revision materialised path needs \
+			 to deserialize at the wire revision and re-serialize at the current \
+			 revision. Either enable both, or set `walk = false`.",
+		));
+	}
+
 	let revision_lit = revision as u16;
 	let revision_error = format!("Invalid revision `{{}}` for type `{}`", name);
 	let walker_name = format_ident!("{}Walker", name);
@@ -319,6 +334,7 @@ fn emit_struct_methods(
 		let decode_name = format_ident!("decode_{}", method_base);
 		let skip_name = format_ident!("skip_{}", method_base);
 		let walk_name = format_ident!("walk_{}", method_base);
+		let into_walk_name = format_ident!("into_walk_{}", method_base);
 		let ty = &f.ty;
 		let pos_lit = latest_idx as u32;
 
@@ -369,13 +385,15 @@ fn emit_struct_methods(
 			}
 		};
 
-		let walk_wire_body = if always_present {
+		// Consuming variant body — `reader` is `&'r mut R` (moved from `self.repr`),
+		// `wire_rev` is `u16` (moved).
+		let into_walk_wire_body = if always_present {
 			quote! {
 				<#ty as ::revision::WalkRevisioned>::walk_revisioned(reader)
 			}
 		} else {
 			let walk_err_msg = format!(
-				"walk_{} not available at wire revision {{}}: field added at revision {}",
+				"into_walk_{} not available at wire revision {{}}: field added at revision {}",
 				method_base, start_val,
 			);
 			quote! {
@@ -385,6 +403,33 @@ fn emit_struct_methods(
 					));
 				}
 				<#ty as ::revision::WalkRevisioned>::walk_revisioned(reader)
+			}
+		};
+
+		// Borrowing variant body — `reader` is `&mut &'r mut R` (from
+		// `match &mut self.repr`); reborrow as `&mut R` via `&mut **reader`
+		// so the inner walker carries a shorter lifetime tied to `&mut self`.
+		// `wire_rev` is `&mut u16`, so dereference for comparison.
+		let walk_wire_body_borrow = if always_present {
+			quote! {
+				let __w = <#ty as ::revision::WalkRevisioned>::walk_revisioned(&mut **reader)?;
+				*pos = #pos_lit + 1;
+				::std::result::Result::Ok(__w)
+			}
+		} else {
+			let walk_err_msg = format!(
+				"walk_{} not available at wire revision {{}}: field added at revision {}",
+				method_base, start_val,
+			);
+			quote! {
+				if *wire_rev < #start_val {
+					return ::std::result::Result::Err(::revision::Error::Conversion(
+						::std::format!(#walk_err_msg, *wire_rev),
+					));
+				}
+				let __w = <#ty as ::revision::WalkRevisioned>::walk_revisioned(&mut **reader)?;
+				*pos = #pos_lit + 1;
+				::std::result::Result::Ok(__w)
 			}
 		};
 
@@ -427,6 +472,36 @@ fn emit_struct_methods(
 				}
 			}
 
+			/// Walk into this field, returning a sub-walker that **borrows**
+			/// the parent walker. Once the sub-walker is dropped or
+			/// consumed the parent can advance to the next field via
+			/// `decode_*` / `skip_*` / `walk_*` / `into_walk_*`.
+			///
+			/// Only supported in wire mode; materialised walkers (older-rev
+			/// `convert_fn` types) return [`revision::Error::Conversion`].
+			/// Callers needing to walk inside a materialised value should
+			/// `decode_*` it instead and use the resulting Rust value
+			/// directly.
+			///
+			/// See [`Self::#into_walk_name`] for the consuming variant
+			/// that returns a sub-walker tied to the original reader
+			/// lifetime when subsequent fields are not needed.
+			#[inline]
+			pub fn #walk_name(
+				&mut self,
+			) -> ::std::result::Result<<#ty as ::revision::WalkRevisioned>::Walker<'_, R>, ::revision::Error> {
+				match &mut self.repr {
+					#walker_repr_name::Wire { reader, wire_rev, pos } => {
+						#walk_wire_body_borrow
+					}
+					#walker_repr_name::Materialised { .. } => {
+						::std::result::Result::Err(::revision::Error::Conversion(
+							"walk_<field> is not supported on materialised walkers; use decode_<field>".into(),
+						))
+					}
+				}
+			}
+
 			/// Walk into this field, **consuming** the parent walker and
 			/// returning a sub-walker that owns the underlying reader for
 			/// the original `'r` lifetime. The parent walker cannot be used
@@ -434,20 +509,19 @@ fn emit_struct_methods(
 			///
 			/// Only supported in wire mode; materialised walkers (older-rev
 			/// `convert_fn` types) return [`revision::Error::Conversion`].
-			/// Callers needing to walk inside a materialised value should
-			/// `decode_*` it instead and use the resulting Rust value
-			/// directly.
+			/// Prefer [`Self::#walk_name`] when you also need to read
+			/// fields after this one.
 			#[inline]
-			pub fn #walk_name(
+			pub fn #into_walk_name(
 				self,
 			) -> ::std::result::Result<<#ty as ::revision::WalkRevisioned>::Walker<'r, R>, ::revision::Error> {
 				match self.repr {
 					#walker_repr_name::Wire { reader, wire_rev, pos: _ } => {
-						#walk_wire_body
+						#into_walk_wire_body
 					}
 					#walker_repr_name::Materialised { .. } => {
 						::std::result::Result::Err(::revision::Error::Conversion(
-							"walk_<field> is not supported on materialised walkers; use decode_<field>".into(),
+							"into_walk_<field> is not supported on materialised walkers; use decode_<field>".into(),
 						))
 					}
 				}

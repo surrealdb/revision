@@ -1,6 +1,8 @@
 //! [`WalkRevisioned`] implementations for primitives, collections, wrappers,
 //! and feature-gated types. Mirror layout of [`super::skip`].
 
+#[cfg(feature = "specialised-vectors")]
+use std::any::TypeId;
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
@@ -14,6 +16,40 @@ use std::time::SystemTime;
 
 use crate::walk::{LeafWalker, MapWalker, OptionWalker, ResultWalker, SeqWalker};
 use crate::{Error, Revisioned, WalkRevisioned};
+
+/// Whether `Vec<T>` uses the compact bulk layout from `try_specialized!` in
+/// `implementations/vecs.rs` for the given `T`. Only `Vec<T>` selects that
+/// path; sets and heaps always use per-element framing, so this check is
+/// scoped to [`Vec<T>::walk_revisioned`] and not the generic [`SeqWalker`].
+#[cfg(feature = "specialised-vectors")]
+#[inline]
+fn vec_uses_bulk_encoding<T: 'static>() -> bool {
+	let id = TypeId::of::<T>();
+	macro_rules! bulk_primitive {
+		($($ty:ty),* $(,)?) => {{
+			$(if id == TypeId::of::<$ty>() {
+				return true;
+			})*
+		}};
+	}
+	bulk_primitive!(bool, u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, f32, f64);
+	#[cfg(feature = "uuid")]
+	if id == TypeId::of::<uuid::Uuid>() {
+		return true;
+	}
+	#[cfg(feature = "rust_decimal")]
+	if id == TypeId::of::<rust_decimal::Decimal>() {
+		return true;
+	}
+	false
+}
+
+#[cfg(not(feature = "specialised-vectors"))]
+#[inline]
+fn vec_uses_bulk_encoding<T: 'static>() -> bool {
+	let _ = std::marker::PhantomData::<T>;
+	false
+}
 
 // -----------------------------------------------------------------------------
 // Primitive leaves
@@ -194,6 +230,14 @@ where
 
 	#[inline]
 	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		if vec_uses_bulk_encoding::<T>() {
+			return Err(Error::Deserialize(
+				"Vec<T>: cannot walk Vec whose element type uses specialised bulk encoding \
+				 when the `specialised-vectors` feature is enabled; use DeserializeRevisioned \
+				 or SkipRevisioned instead."
+					.into(),
+			));
+		}
 		SeqWalker::new(reader)
 	}
 }
@@ -204,7 +248,7 @@ where
 
 impl<T, S> WalkRevisioned for HashSet<T, S>
 where
-	T: Revisioned + Eq + Hash + 'static,
+	T: Revisioned + Eq + Hash,
 	S: BuildHasher + Default,
 {
 	type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
@@ -217,7 +261,7 @@ where
 
 impl<T> WalkRevisioned for BTreeSet<T>
 where
-	T: Revisioned + Ord + 'static,
+	T: Revisioned + Ord,
 {
 	type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
 
@@ -229,7 +273,7 @@ where
 
 impl<T> WalkRevisioned for BinaryHeap<T>
 where
-	T: Revisioned + Ord + 'static,
+	T: Revisioned + Ord,
 {
 	type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
 
@@ -340,6 +384,14 @@ where
 	}
 }
 
+/// `Cow<'_, T>` is treated as opaque by the walker. The walker is a
+/// [`LeafWalker`] over `T::Owned` rather than a sub-walker into `T::Owned`'s
+/// shape, so `decode()` returns `T::Owned` (e.g. `String` for
+/// `Cow<'_, str>`), not a `Cow`. Use [`DeserializeRevisioned`] if you need
+/// a `Cow` back, or call `T::Owned::walk_revisioned` directly to descend
+/// into the inner shape.
+///
+/// [`DeserializeRevisioned`]: crate::DeserializeRevisioned
 impl<T> WalkRevisioned for Cow<'_, T>
 where
 	T: ToOwned + Revisioned,
@@ -531,7 +583,7 @@ mod imbl_walk {
 
 	impl<T> WalkRevisioned for Vector<T>
 	where
-		T: Revisioned + Clone + 'static,
+		T: Revisioned + Clone,
 	{
 		type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
 
@@ -556,7 +608,7 @@ mod imbl_walk {
 
 	impl<T> WalkRevisioned for OrdSet<T>
 	where
-		T: Revisioned + Clone + Ord + 'static,
+		T: Revisioned + Clone + Ord,
 	{
 		type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
 
@@ -581,7 +633,7 @@ mod imbl_walk {
 
 	impl<T> WalkRevisioned for ImblHashSet<T>
 	where
-		T: Revisioned + Clone + Eq + Hash + 'static,
+		T: Revisioned + Clone + Eq + Hash,
 	{
 		type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
 

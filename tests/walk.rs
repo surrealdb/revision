@@ -6,7 +6,7 @@
 //! mixed-mode scenarios where some children are decoded, some skipped, and some
 //! walked into.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
 
 use revision::{
 	DeserializeRevisioned, Error, MapWalker, SeqWalker, SkipRevisioned, WalkRevisioned, revisioned,
@@ -480,8 +480,11 @@ fn walker_materialised_walk_field_errors_with_useful_message() {
 	};
 	let bytes = to_vec(&v1).unwrap();
 	let mut r = bytes.as_slice();
-	let walker = ConvertedFoo::walk_revisioned(&mut r).unwrap();
+	let mut walker = ConvertedFoo::walk_revisioned(&mut r).unwrap();
 	let res = walker.walk_width();
+	assert!(matches!(res, Err(Error::Conversion(_))));
+	// Consuming variant errors the same way.
+	let res = walker.into_walk_width();
 	assert!(matches!(res, Err(Error::Conversion(_))));
 }
 
@@ -734,6 +737,124 @@ fn seq_walk_rejects_bulk_decimal_without_consuming_reader() {
 	};
 	assert!(matches!(err, Error::Deserialize(_)));
 	assert_eq!(r.len(), before);
+}
+
+// -----------------------------------------------------------------------------
+// Set / heap collections: per-element layout, never use bulk encoding.
+// Regression: SeqWalker::new used to reject bulk-encoded primitives even
+// when the surrounding collection didn't actually use bulk layout.
+// -----------------------------------------------------------------------------
+
+#[test]
+fn btreeset_walks_primitive_elements() {
+	let s: BTreeSet<u32> = [1u32, 2, 3, 4].iter().copied().collect();
+	let bytes = to_vec(&s).unwrap();
+
+	let mut r = bytes.as_slice();
+	let mut walker: SeqWalker<u32, _> = BTreeSet::<u32>::walk_revisioned(&mut r).unwrap();
+	assert_eq!(walker.remaining(), 4);
+
+	let mut collected = Vec::new();
+	while let Some(item) = walker.next_item() {
+		collected.push(item.decode().unwrap());
+	}
+	assert_eq!(collected, vec![1, 2, 3, 4]);
+	assert!(r.is_empty());
+}
+
+#[test]
+fn hashset_walks_primitive_elements() {
+	let mut s: HashSet<u64> = HashSet::new();
+	for v in [10u64, 20, 30] {
+		s.insert(v);
+	}
+	let bytes = to_vec(&s).unwrap();
+
+	let mut r = bytes.as_slice();
+	let mut walker: SeqWalker<u64, _> = HashSet::<u64>::walk_revisioned(&mut r).unwrap();
+	assert_eq!(walker.remaining(), 3);
+
+	let mut collected = HashSet::new();
+	while let Some(item) = walker.next_item() {
+		collected.insert(item.decode().unwrap());
+	}
+	assert_eq!(collected, s);
+	assert!(r.is_empty());
+}
+
+#[test]
+fn binaryheap_walks_primitive_elements() {
+	let mut h: BinaryHeap<i32> = BinaryHeap::new();
+	for v in [3i32, 1, 4, 1, 5] {
+		h.push(v);
+	}
+	let bytes = to_vec(&h).unwrap();
+
+	let mut r = bytes.as_slice();
+	let mut walker: SeqWalker<i32, _> = BinaryHeap::<i32>::walk_revisioned(&mut r).unwrap();
+	assert_eq!(walker.remaining(), 5);
+
+	let mut count = 0;
+	while let Some(item) = walker.next_item() {
+		item.skip().unwrap();
+		count += 1;
+	}
+	assert_eq!(count, 5);
+	assert!(r.is_empty());
+}
+
+// -----------------------------------------------------------------------------
+// Derive: borrowing `walk_<field>` lets the parent advance to siblings.
+// -----------------------------------------------------------------------------
+
+#[revisioned(revision = 1)]
+#[derive(Debug)]
+struct Sandwich {
+	header: u16,
+	body: BTreeMap<String, u32>,
+	trailer: u32,
+}
+
+#[test]
+fn struct_walker_walk_field_lets_parent_continue_to_sibling() {
+	let outer = Sandwich {
+		header: 7,
+		body: [("a".into(), 1u32), ("b".into(), 2)].iter().cloned().collect(),
+		trailer: 99,
+	};
+	let bytes = to_vec(&outer).unwrap();
+
+	let mut r = bytes.as_slice();
+	let mut walker = Sandwich::walk_revisioned(&mut r).unwrap();
+	assert_eq!(walker.decode_header().unwrap(), 7);
+
+	{
+		let mut body = walker.walk_body().unwrap();
+		while let Some(entry) = body.next_entry() {
+			let _ = entry.decode_pair().unwrap();
+		}
+	}
+
+	assert_eq!(walker.decode_trailer().unwrap(), 99);
+	assert!(r.is_empty());
+}
+
+#[test]
+fn struct_walker_into_walk_field_consumes_parent() {
+	let outer = Sandwich {
+		header: 1,
+		body: [("k".into(), 5u32)].iter().cloned().collect(),
+		trailer: 0,
+	};
+	let bytes = to_vec(&outer).unwrap();
+
+	let mut r = bytes.as_slice();
+	let mut walker = Sandwich::walk_revisioned(&mut r).unwrap();
+	assert_eq!(walker.decode_header().unwrap(), 1);
+	let mut body = walker.into_walk_body().unwrap();
+	while let Some(entry) = body.next_entry() {
+		let _ = entry.decode_pair().unwrap();
+	}
 }
 
 #[test]
