@@ -122,6 +122,7 @@ pub trait LengthPrefixedBytes: Revisioned {}
 impl LengthPrefixedBytes for String {}
 impl LengthPrefixedBytes for str {}
 impl LengthPrefixedBytes for std::sync::Arc<str> {}
+impl LengthPrefixedBytes for Box<str> {}
 impl LengthPrefixedBytes for std::path::PathBuf {}
 impl LengthPrefixedBytes for Vec<u8> {}
 impl LengthPrefixedBytes for Vec<i8> {}
@@ -965,9 +966,9 @@ where
 // -----------------------------------------------------------------------------
 // StructWalker — generic positional walker for `#[revisioned(...)]` structs.
 //
-// The walker tracks the wire revision and a position counter. The caller
-// supplies field types per call (matching the schema at the wire revision)
-// and chooses, per field, whether to decode, skip, or walk into it.
+// The walker tracks the wire revision and a logical field index (`position`).
+// After [`StructWalker::walk`], that counter advances even though the nested
+// walker still owns the remainder of that field on the wire until dropped.
 // -----------------------------------------------------------------------------
 
 /// Generic walker for revisioned structs.
@@ -975,6 +976,10 @@ where
 /// Field-type information is supplied by the caller per call rather than
 /// stored in the walker. The caller is responsible for invoking field methods
 /// in the wire order and matching the schema at the wire revision.
+///
+/// [`position`](Self::position) counts fields **started** (`decode`, `skip`, or
+/// `walk`), not necessarily bytes fully consumed when the last operation was
+/// [`walk`](Self::walk).
 pub struct StructWalker<'r, R: Read + 'r> {
 	reader: &'r mut R,
 	revision: u16,
@@ -999,7 +1004,15 @@ impl<'r, R: Read + 'r> StructWalker<'r, R> {
 		self.revision
 	}
 
-	/// Number of fields visited so far.
+	/// Count of fields for which [`decode`](Self::decode), [`skip`](Self::skip),
+	/// or [`walk`](Self::walk) has succeeded in wire order (starts at `0`;
+	/// increments by one per call).
+	///
+	/// This tracks which schema slot you will touch next; it does **not** imply
+	/// the previous field's bytes are fully past on the reader when that field was
+	/// opened with [`walk`](Self::walk). In that case [`position`](Self::position)
+	/// bumps as soon as the nested walker is constructed, while the child still
+	/// borrows the reader for the rest of that field until it is dropped.
 	#[inline]
 	pub fn position(&self) -> u32 {
 		self.position
@@ -1023,6 +1036,10 @@ impl<'r, R: Read + 'r> StructWalker<'r, R> {
 
 	/// Walk into the next field as type `T`. The returned walker borrows
 	/// from `&mut self`; the parent walker can resume after it is dropped.
+	///
+	/// [`position`](Self::position) increments when this returns `Ok`, before the
+	/// nested walker consumes the field payload — do not treat a higher position
+	/// as “the reader has left that field” until the child walker finishes.
 	#[inline]
 	pub fn walk<T: WalkRevisioned>(&mut self) -> Result<T::Walker<'_, R>, Error> {
 		let w = T::walk_revisioned(self.reader)?;

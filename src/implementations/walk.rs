@@ -307,6 +307,15 @@ impl WalkRevisioned for Arc<str> {
 	}
 }
 
+impl WalkRevisioned for Box<str> {
+	type Walker<'r, R: Read + 'r> = LeafWalker<'r, Box<str>, R>;
+
+	#[inline]
+	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		Ok(LeafWalker::new(reader))
+	}
+}
+
 impl<T> WalkRevisioned for Wrapping<T>
 where
 	T: WalkRevisioned,
