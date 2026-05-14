@@ -252,6 +252,10 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 		#skip_check_impl
 		#walk_impl
 
+		impl #name {
+			pub const REVISION: u16 = #revision_lit;
+		}
+
 		impl ::revision::Revisioned for #name {
 			#[inline]
 			fn revision() -> u16{

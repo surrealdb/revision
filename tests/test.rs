@@ -6,6 +6,9 @@ use revision::revisioned;
 use revision::{DeserializeRevisioned, SerializeRevisioned};
 use std::num::Wrapping;
 
+const _: () = assert!(TestEnum::REVISION == 3);
+const _: () = assert!(<TestEnum>::REVISION <= 3);
+
 #[revisioned(revision = 3)]
 #[derive(Debug, PartialEq)]
 pub enum TestEnum {
