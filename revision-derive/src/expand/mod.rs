@@ -253,6 +253,7 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 		#walk_impl
 
 		impl #name {
+			/// The revision number of this type, as declared via `#[revisioned(revision = N)]`.
 			pub const REVISION: u16 = #revision_lit;
 		}
 
