@@ -81,6 +81,10 @@ path = "tests/syntax_legacy_vs_new.rs"
 name = "macro_optimised"
 path = "tests/macro_optimised.rs"
 
+[[test]]
+name = "migration"
+path = "tests/migration.rs"
+
 [[bench]]
 name = "roaring"
 harness = false
