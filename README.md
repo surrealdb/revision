@@ -646,6 +646,41 @@ What changes:
   `decode_bio`). Skip is O(1) on rev-2 (one `u32_le` read + advance)
   regardless of how big `bio` got.
 
+### Indexed-map / indexed-seq runtime helpers
+
+For map and sequence fields that benefit from O(log n) key lookup or
+O(1) random access, [`revision::optimised::indexed::serialize_indexed_map`]
+and [`serialize_indexed_seq`] produce the wire shape that
+[`IndexedMapWalker`] and [`IndexedSeqWalker`] expect on the read side:
+
+```rust,ignore
+use std::collections::BTreeMap;
+use revision::optimised::indexed::{serialize_indexed_map, IndexedMapWalker};
+use std::cmp::Ordering;
+
+let mut m: BTreeMap<String, u32> = BTreeMap::new();
+m.insert("alpha".into(), 1);
+m.insert("bravo".into(), 2);
+m.insert("charlie".into(), 3);
+
+let mut bytes = Vec::new();
+serialize_indexed_map(&m, &mut bytes).unwrap();
+
+// Reader side: binary-search a key without allocating the map.
+let w: IndexedMapWalker<String, u32> =
+    IndexedMapWalker::from_payload(&bytes).unwrap();
+let target = "bravo".as_bytes();
+let value = w.find_value_bytes(|k| k.cmp(target))?.unwrap();
+```
+
+The macro-side routing (so that `#[revisioned(map = "indexed")]` at
+the type level automatically wraps `BTreeMap` fields with these
+helpers) is deliberately deferred: without `specialization` on stable
+Rust, the macro can't tell a `BTreeMap` field from any other type.
+For now users opt into indexed encoding manually via these helpers
+inside a custom `SerializeRevisioned` impl, or by storing data in a
+type whose `SerializeRevisioned` is hand-written to use them.
+
 ### Worked example: an enum under the optimised tag
 
 Tag size class tells the codec how to read each variant's payload.
@@ -692,10 +727,15 @@ that peek the variant before deciding whether to fully decode.
   payload buffer is a self-contained follow-up. Optimised **structs**
   are fully walkable today: the walker advances past the `u32_le
   payload_length` (and prologue, if any) before reading fields.
-- `map = "indexed"` and `seq = "indexed"` parse but do not yet emit
-  optimised codegen for `BTreeMap` / `Vec` fields directly. The
-  envelope and prologue infrastructure is in place; only the per-field
-  routing remains.
+- `map = "indexed"` and `seq = "indexed"` parse at the type level
+  but do not yet drive automatic field-level codegen for `BTreeMap` /
+  `Vec` fields. The runtime helpers
+  [`serialize_indexed_map`](crate::optimised::indexed::serialize_indexed_map)
+  / [`serialize_indexed_seq`] expose the encode side and pair with
+  the existing [`IndexedMapWalker`] / [`IndexedSeqWalker`], so users
+  can hand-write `SerializeRevisioned` impls that opt in. Macro-side
+  field routing is deferred until stable specialisation or an
+  explicit per-field attribute lands.
 - **Variants removed across an optimised history boundary** (using
   `#[revision(end = N, convert_fn = "...")]` where the boundary is at
   an optimised revision) fail to compile with a clear error. The

@@ -9,10 +9,13 @@ pub mod map_walk;
 #[doc(hidden)]
 pub mod seq_walk;
 #[doc(hidden)]
+pub mod serialize;
+#[doc(hidden)]
 pub mod struct_walk;
 
 pub use map_walk::IndexedMapWalker;
 pub use seq_walk::IndexedSeqWalker;
+pub use serialize::{serialize_indexed_map, serialize_indexed_seq};
 pub use struct_walk::IndexedStructWalker;
 
 /// Minimum entry count that triggers the indexed prologue.
