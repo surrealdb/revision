@@ -123,21 +123,43 @@ fn walker_on_optimised_enum_decodes_varlen_variant() {
 	assert_eq!(w.discriminant(), 1);
 	assert!(w.is_varlen());
 	assert!(!w.is_unit());
-	// Drilling in via `into_<variant>` is not supported on a materialised
-	// walker (which is what the optimised enum path produces); the caller
-	// is expected to fall through to `DeserializeRevisioned` for the
-	// full value. Verify the error message points the user there.
-	let err = w
-		.into_varlen()
-		.err()
-		.expect("into_varlen on optimised enum should error pending lifetime work");
+	// `decode_<variant>` works on both Wire and Materialised walkers, so
+	// it's the right way to extract the inner value from an optimised
+	// enum walker.
+	let inner = w.decode_varlen().unwrap();
+	assert_eq!(inner, "hello");
+}
+
+#[test]
+fn walker_decode_variant_works_on_legacy_enum() {
+	// Sanity: decode_<variant> on a Wire (legacy) walker also works,
+	// keeping the API symmetric.
+	#[revisioned(revision(1))]
+	#[derive(Debug)]
+	enum LegacyEnum {
+		Unit,
+		Tup(u64),
+	}
+
+	let v = LegacyEnum::Tup(0xDEADBEEF);
+	let bytes = revision::to_vec(&v).unwrap();
+	let mut r: &[u8] = &bytes;
+	let w = LegacyEnum::walk_revisioned(&mut r).unwrap();
+	let inner = w.decode_tup().unwrap();
+	assert_eq!(inner, 0xDEADBEEF);
+}
+
+#[test]
+fn walker_decode_variant_errors_on_wrong_variant() {
+	let v = OptEnum::Unit;
+	let bytes = revision::to_vec(&v).unwrap();
+	let mut r: &[u8] = &bytes;
+	let w = OptEnum::walk_revisioned(&mut r).unwrap();
+	let err = w.decode_varlen().expect_err("Unit is not Varlen — should error");
 	match err {
-		revision::Error::Conversion(msg) => {
-			assert!(
-				msg.contains("DeserializeRevisioned"),
-				"error message should redirect to DeserializeRevisioned, got: {msg}"
-			);
+		revision::Error::Deserialize(msg) => {
+			assert!(msg.contains("variant mismatch"), "expected variant-mismatch, got: {msg}");
 		}
-		other => panic!("expected Conversion error, got {other:?}"),
+		other => panic!("expected Deserialize error, got {other:?}"),
 	}
 }

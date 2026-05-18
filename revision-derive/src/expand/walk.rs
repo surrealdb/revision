@@ -661,6 +661,7 @@ fn emit_enum_methods(
 		let snake = snake_case(&variant_ident.to_string());
 		let into_name = format_ident!("into_{}", snake);
 		let is_name = format_ident!("is_{}", snake);
+		let decode_name = format_ident!("decode_{}", snake);
 
 		// Build the wire-rev → expected-discriminant arms.
 		let wire_disc_arms: Vec<TokenStream> = per_rev
@@ -716,6 +717,13 @@ fn emit_enum_methods(
 						}
 						::std::result::Result::Ok(())
 					}
+
+					/// Decode the unit variant — same as `into_<variant>` for
+					/// unit variants, kept for API symmetry.
+					#[inline]
+					pub fn #decode_name(self) -> ::std::result::Result<(), ::revision::Error> {
+						self.#into_name()
+					}
 				});
 			}
 			Fields::Unnamed {
@@ -736,7 +744,7 @@ fn emit_enum_methods(
 					/// wire encoding does not identify this variant. Errors
 					/// with [`revision::Error::Conversion`] in materialised
 					/// mode (older-rev `convert_fn` types); callers should
-					/// `decode` from a fresh walker in that case.
+					/// use [`decode_<variant>`](Self::#decode_name) in that case.
 					#[inline]
 					pub fn #into_name(
 						self,
@@ -757,8 +765,38 @@ fn emit_enum_methods(
 							}
 							#walker_repr_name::Materialised { .. } => {
 								::std::result::Result::Err(::revision::Error::Conversion(
-									"into_<variant> is not supported on materialised walkers (including optimised enums); use `DeserializeRevisioned::deserialize_revisioned` to fully decode the value".into(),
+									"into_<variant> is not supported on materialised walkers (including optimised enums); use `decode_<variant>` instead".into(),
 								))
+							}
+						}
+					}
+
+					/// Decode and return the inner value of the `#variant_ident`
+					/// variant directly. Unlike `into_<variant>`, this works for
+					/// both Wire and Materialised (including optimised) walkers
+					/// because it deserialises the inner type by value rather
+					/// than handing back a sub-walker.
+					#[inline]
+					pub fn #decode_name(
+						self,
+					) -> ::std::result::Result<#inner_ty, ::revision::Error> {
+						if !self.#is_name() {
+							return ::std::result::Result::Err(::revision::Error::Deserialize(
+								::std::format!(
+									"walker variant mismatch: expected `{}` (rev {}), got discriminant {}",
+									stringify!(#variant_ident),
+									self.revision(),
+									self.discriminant(),
+								),
+							));
+						}
+						match self.repr {
+							#walker_repr_name::Wire { reader, .. } => {
+								<#inner_ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)
+							}
+							#walker_repr_name::Materialised { ref bytes, cursor, .. } => {
+								let mut __slice: &[u8] = &bytes[cursor..];
+								<#inner_ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(&mut __slice)
 							}
 						}
 					}
