@@ -909,9 +909,14 @@ fn emit_field_tables(name: &Ident, revision: usize, s: &Struct) -> TokenStream {
 
 fn alive_field_count(s: &Struct, revision: usize) -> usize {
 	match &s.fields {
-		Fields::Named { fields, .. } | Fields::Unnamed { fields, .. } => {
-			fields.iter().filter(|f| f.attrs.options.exists_at(revision)).count()
+		Fields::Named {
+			fields,
+			..
 		}
+		| Fields::Unnamed {
+			fields,
+			..
+		} => fields.iter().filter(|f| f.attrs.options.exists_at(revision)).count(),
 		Fields::Unit => 0,
 	}
 }

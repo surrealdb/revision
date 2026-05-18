@@ -607,11 +607,23 @@ that allocates.
 
 ### Limitations (current iteration)
 
-- Walker codegen for optimised types still falls back to the
-  materialised path; the O(1) offset-jump walker arm is reserved for
-  a future iteration.
+- **Walker on optimised enums** returns a typed `Error::Deserialize`
+  pointing the caller at `DeserializeRevisioned::deserialize_revisioned`.
+  The Wire walker reads a `u32` discriminant for enums; the optimised
+  tag is a single byte with the variant id in the low 5 bits. Wiring
+  per-variant decode against the optimised tag is a self-contained
+  follow-up. Optimised **structs** are walkable today: the walker
+  advances past the `u32_le payload_length` (and prologue, if any)
+  before reading fields.
 - `map = "indexed"` and `seq = "indexed"` parse but do not yet emit
-  optimised codegen for `BTreeMap`/`Vec` fields.
+  optimised codegen for `BTreeMap` / `Vec` fields directly. The
+  envelope and prologue infrastructure is in place; only the per-field
+  routing remains.
+- **Variants removed across an optimised history boundary** (using
+  `#[revision(end = N, convert_fn = "...")]` where the boundary is at
+  an optimised revision) fail to compile with a clear error. The
+  field-removal counterpart works correctly.
 - `fixed(N)` requires the variant body to serialise to exactly `N`
-  bytes under `SerializeRevisioned`. Use `[u8; N]`, `Uuid`, etc. —
-  not varint-encoded primitives.
+  bytes under `SerializeRevisioned`. Use `[u8; N]`, `Uuid`, fixed-
+  width primitives under `fixed-width-encoding`, etc. — varint-encoded
+  primitives have variable length and won't match.
