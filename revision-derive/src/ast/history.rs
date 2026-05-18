@@ -20,6 +20,11 @@ pub enum Encoding {
 }
 
 /// Per-entry map encoding choice (only meaningful under `Optimised`).
+///
+/// Note: `Indexed` is reserved for a future iteration. Type-level
+/// `map = "indexed"` is currently rejected at parse time — use the per-field
+/// `#[revision(indexed_map)]` attribute instead.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MapEncoding {
 	Default,
@@ -27,6 +32,8 @@ pub enum MapEncoding {
 }
 
 /// Per-entry sequence encoding choice (only meaningful under `Optimised`).
+/// `Indexed` is reserved (see [`MapEncoding`]).
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum SeqEncoding {
 	Default,

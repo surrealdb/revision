@@ -431,21 +431,31 @@ fn build_history_entry(group: RevisionEntryGroup) -> syn::Result<HistoryEntry> {
 			}
 			RevisionEntryOption::Map(v) => match v.value.value().as_str() {
 				"default" => entry.map = MapEncoding::Default,
-				"indexed" => entry.map = MapEncoding::Indexed,
+				"indexed" => {
+					return Err(Error::new(
+						v.value.span(),
+						"type-level `map = \"indexed\"` is not supported; use the per-field attribute `#[revision(indexed_map)]` on each map-shaped field that should use indexed encoding instead",
+					));
+				}
 				other => {
 					return Err(Error::new(
 						v.value.span(),
-						format!("unknown map encoding `{other}` (expected `default` or `indexed`)"),
+						format!("unknown map encoding `{other}` (expected `default`)"),
 					));
 				}
 			},
 			RevisionEntryOption::Seq(v) => match v.value.value().as_str() {
 				"default" => entry.seq = SeqEncoding::Default,
-				"indexed" => entry.seq = SeqEncoding::Indexed,
+				"indexed" => {
+					return Err(Error::new(
+						v.value.span(),
+						"type-level `seq = \"indexed\"` is not supported; use the per-field attribute `#[revision(indexed_seq)]` on each sequence-shaped field that should use indexed encoding instead",
+					));
+				}
 				other => {
 					return Err(Error::new(
 						v.value.span(),
-						format!("unknown seq encoding `{other}` (expected `default` or `indexed`)"),
+						format!("unknown seq encoding `{other}` (expected `default`)"),
 					));
 				}
 			},

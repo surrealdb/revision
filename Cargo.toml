@@ -211,3 +211,7 @@ harness = false
 [[bench]]
 name = "optimised_walker"
 harness = false
+
+[[bench]]
+name = "late_field_access"
+harness = false

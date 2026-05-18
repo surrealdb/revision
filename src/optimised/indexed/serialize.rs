@@ -8,8 +8,10 @@
 //! [`IndexedMapWalker`]: crate::optimised::IndexedMapWalker
 //! [`IndexedSeqWalker`]: crate::optimised::IndexedSeqWalker
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::hash::{BuildHasher, Hash};
 use std::io::{Read, Write};
+use std::marker::PhantomData;
 
 use crate::Error;
 use crate::SkipRevisioned;
@@ -26,9 +28,54 @@ use crate::{DeserializeRevisioned, SerializeRevisioned};
 // hand-written impls; the trait blanket-delegates to them.
 
 /// Map-shaped types that opt into the indexed wire format under optimised
-/// revisions. Implemented for [`BTreeMap`] out of the box.
+/// revisions.
+///
+/// # Wire-format invariant (READ THIS BEFORE IMPLEMENTING)
+///
+/// The serialised keys region **must** be ascending under byte compare —
+/// not under `K`'s [`Ord`] impl. The [`IndexedMapWalker`] binary-searches
+/// the keys region by comparing raw bytes, so any divergence between
+/// `K`-order and byte-order would silently produce wrong lookups (and is
+/// caught at decode time by [`Error::OptimisedKeyRegionNotAscending`]).
+///
+/// This matters whenever `K`'s [`SerializeRevisioned`] impl emits a wire
+/// prefix that is **not** monotone in `K`'s ordering. Concretely:
+///
+/// - `String`, `Box<str>`, `Vec<u8>`, `Bytes`, and any type whose
+///   `SerializeRevisioned` is `varint(len) || bytes` — the varint length
+///   breaks byte-order whenever keys have different lengths. For example:
+///   `"delta"` (len 5) serialises to `[5, 'd', 'e', 'l', 't', 'a']` and
+///   `"charlie"` (len 7) to `[7, 'c', 'h', ...]`; `"delta"` sorts **before**
+///   `"charlie"` byte-wise but **after** under `String::cmp`.
+/// - Most fixed-width primitive types (`u32`, `u64`, etc.) are also
+///   problematic under varint encoding because small and large values get
+///   different lengths.
+/// - With `fixed-width-encoding` enabled, primitive keys are byte-monotone
+///   under the natural integer order.
+///
+/// The supplied [`BTreeMap`] impl handles this correctly by pre-serialising
+/// every entry and sorting the resulting `(key_bytes, val_bytes)` pairs by
+/// `key_bytes` before writing — the same strategy any new impl should use.
+///
+/// # Round-trip preservation
+///
+/// Decode does **not** depend on the encode order: keys and values are
+/// inserted into the target collection in the order they appear on the
+/// wire, then re-sorted by `K::Ord` (for `BTreeMap`) or hashed (for
+/// `HashMap`) on the receiving side. Encoding in byte-sorted order does
+/// not change the deserialised value.
+///
+/// [`IndexedMapWalker`]: crate::optimised::IndexedMapWalker
+/// [`Error::OptimisedKeyRegionNotAscending`]: crate::Error::OptimisedKeyRegionNotAscending
 #[doc(hidden)]
 pub trait IndexedMapEncoded: Sized {
+	/// Key type, exposed so the walker codegen can name [`IndexedMapWalker`]'s
+	/// type parameters from the field's encoded type.
+	///
+	/// [`IndexedMapWalker`]: crate::optimised::IndexedMapWalker
+	type Key;
+	/// Value type.
+	type Value;
 	fn serialize_indexed_map<W: Write>(&self, w: &mut W) -> Result<(), Error>;
 	fn deserialize_indexed_map<R: Read>(r: &mut R) -> Result<Self, Error>;
 	fn skip_indexed_map<R: Read>(r: &mut R) -> Result<(), Error>;
@@ -39,6 +86,8 @@ where
 	K: SerializeRevisioned + DeserializeRevisioned + SkipRevisioned + Ord,
 	V: SerializeRevisioned + DeserializeRevisioned + SkipRevisioned,
 {
+	type Key = K;
+	type Value = V;
 	fn serialize_indexed_map<W: Write>(&self, w: &mut W) -> Result<(), Error> {
 		serialize_indexed_map(self, w)
 	}
@@ -50,9 +99,61 @@ where
 	}
 }
 
+impl<K, V, S> IndexedMapEncoded for HashMap<K, V, S>
+where
+	K: SerializeRevisioned + DeserializeRevisioned + SkipRevisioned + Hash + Eq,
+	V: SerializeRevisioned + DeserializeRevisioned + SkipRevisioned,
+	S: BuildHasher + Default,
+{
+	type Key = K;
+	type Value = V;
+	fn serialize_indexed_map<W: Write>(&self, w: &mut W) -> Result<(), Error> {
+		// `HashMap` iteration order is arbitrary, but
+		// `serialize_indexed_entries` sorts entries by key bytes before
+		// writing — exactly what the indexed wire format requires.
+		serialize_indexed_entries(self.iter(), w)
+	}
+	fn deserialize_indexed_map<R: Read>(r: &mut R) -> Result<Self, Error> {
+		// Mirror BTreeMap's deserializer but build a HashMap.
+		let mut flag_buf = [0u8; 1];
+		r.read_exact(&mut flag_buf).map_err(Error::Io)?;
+		let flags = flag_buf[0];
+		let len = read_varint(r)?;
+		let mut out: HashMap<K, V, S> = HashMap::with_capacity_and_hasher(len, S::default());
+		if (flags & FLAG_INDEXED) == 0 {
+			for _ in 0..len {
+				let k = K::deserialize_revisioned(r)?;
+				let v = V::deserialize_revisioned(r)?;
+				out.insert(k, v);
+			}
+			return Ok(out);
+		}
+		// Skip the offset tables + region lengths.
+		let table_bytes = len.checked_mul(8).ok_or(Error::OptimisedSubReaderOverrun)?;
+		let mut discard = vec![0u8; table_bytes + 8];
+		r.read_exact(&mut discard).map_err(Error::Io)?;
+		let mut keys: Vec<K> = Vec::with_capacity(len);
+		for _ in 0..len {
+			keys.push(K::deserialize_revisioned(r)?);
+		}
+		let mut values: Vec<V> = Vec::with_capacity(len);
+		for _ in 0..len {
+			values.push(V::deserialize_revisioned(r)?);
+		}
+		for (k, v) in keys.into_iter().zip(values) {
+			out.insert(k, v);
+		}
+		Ok(out)
+	}
+	fn skip_indexed_map<R: Read>(r: &mut R) -> Result<(), Error> {
+		skip_indexed_map::<K, V, R>(r)
+	}
+}
+
 /// Sequence-shaped types under optimised. Implemented for [`Vec`].
 #[doc(hidden)]
 pub trait IndexedSeqEncoded: Sized {
+	type Item;
 	fn serialize_indexed_seq<W: Write>(&self, w: &mut W) -> Result<(), Error>;
 	fn deserialize_indexed_seq<R: Read>(r: &mut R) -> Result<Self, Error>;
 	fn skip_indexed_seq<R: Read>(r: &mut R) -> Result<(), Error>;
@@ -62,6 +163,7 @@ impl<T> IndexedSeqEncoded for Vec<T>
 where
 	T: SerializeRevisioned + DeserializeRevisioned + SkipRevisioned,
 {
+	type Item = T;
 	fn serialize_indexed_seq<W: Write>(&self, w: &mut W) -> Result<(), Error> {
 		serialize_indexed_seq(self, w)
 	}
@@ -70,6 +172,89 @@ where
 	}
 	fn skip_indexed_seq<R: Read>(r: &mut R) -> Result<(), Error> {
 		skip_indexed_seq::<T, R>(r)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Owned views (walker handles)
+// -----------------------------------------------------------------------------
+
+/// Owned wire-bytes handle for an indexed map field.
+///
+/// The walker's per-field `walk_<field>` / `into_walk_<field>` accessors
+/// return one of these for `#[revision(indexed_map)]` fields. The view owns
+/// the encoded payload as `Vec<u8>`; call [`walker`](Self::walker) to borrow
+/// an [`IndexedMapWalker`] from it for binary-search lookups.
+///
+/// Lifetimes: the walker borrows from the view, so the view must outlive the
+/// walker. Typical usage:
+///
+/// ```rust,ignore
+/// let view = parent_walker.walk_fields()?;
+/// let map_walker = view.walker()?;
+/// let value_bytes = map_walker.find_value_bytes(|k| k.cmp(b"target"))?;
+/// // value_bytes is valid until `view` is dropped.
+/// ```
+///
+/// [`IndexedMapWalker`]: crate::optimised::IndexedMapWalker
+pub struct OwnedIndexedMapView<K, V> {
+	bytes: Vec<u8>,
+	_marker: PhantomData<fn() -> (K, V)>,
+}
+
+impl<K, V> OwnedIndexedMapView<K, V> {
+	#[doc(hidden)]
+	pub fn new(bytes: Vec<u8>) -> Self {
+		Self {
+			bytes,
+			_marker: PhantomData,
+		}
+	}
+
+	/// Borrow an [`IndexedMapWalker`] over the owned wire bytes.
+	///
+	/// [`IndexedMapWalker`]: crate::optimised::IndexedMapWalker
+	pub fn walker(&self) -> Result<crate::optimised::IndexedMapWalker<'_, K, V>, Error> {
+		crate::optimised::IndexedMapWalker::from_payload(&self.bytes)
+	}
+
+	/// Raw wire bytes (for callers that want to feed them somewhere else).
+	pub fn as_bytes(&self) -> &[u8] {
+		&self.bytes
+	}
+
+	/// Consume and return the owned bytes.
+	pub fn into_bytes(self) -> Vec<u8> {
+		self.bytes
+	}
+}
+
+/// Owned wire-bytes handle for an indexed sequence field. Mirror of
+/// [`OwnedIndexedMapView`] for the sequence case.
+pub struct OwnedIndexedSeqView<T> {
+	bytes: Vec<u8>,
+	_marker: PhantomData<fn() -> T>,
+}
+
+impl<T> OwnedIndexedSeqView<T> {
+	#[doc(hidden)]
+	pub fn new(bytes: Vec<u8>) -> Self {
+		Self {
+			bytes,
+			_marker: PhantomData,
+		}
+	}
+
+	pub fn walker(&self) -> Result<crate::optimised::IndexedSeqWalker<'_, T>, Error> {
+		crate::optimised::IndexedSeqWalker::from_payload(&self.bytes)
+	}
+
+	pub fn as_bytes(&self) -> &[u8] {
+		&self.bytes
+	}
+
+	pub fn into_bytes(self) -> Vec<u8> {
+		self.bytes
 	}
 }
 
@@ -88,6 +273,10 @@ where
 /// Each key and value is serialised via `SerializeRevisioned`. Keys are
 /// emitted in ascending byte-compare order — `BTreeMap` already iterates in
 /// sorted key order, so no extra sort cost on the encode path.
+/// Convenience wrapper: serialise any `BTreeMap` using the indexed wire format.
+///
+/// Equivalent to [`serialize_indexed_entries`] over `map.iter()`. Provided as
+/// a stable entry point for hand-written `IndexedMapEncoded` impls.
 #[doc(hidden)]
 pub fn serialize_indexed_map<K, V, W: Write>(
 	map: &BTreeMap<K, V>,
@@ -97,16 +286,35 @@ where
 	K: SerializeRevisioned,
 	V: SerializeRevisioned,
 {
-	let len = map.len();
+	serialize_indexed_entries(map.iter(), writer)
+}
+
+/// Serialise an iterator of `(&K, &V)` pairs using the indexed wire format.
+///
+/// Use this directly when implementing [`IndexedMapEncoded`] for map types
+/// that are not [`BTreeMap`] (e.g. `HashMap`, `imbl::OrdMap`, custom map
+/// types). The function pre-serialises every entry, sorts the pairs by
+/// `key_bytes` (so the dense keys region is byte-ascending — see
+/// [`IndexedMapEncoded`] for why this matters), then writes the wire
+/// shape.
+///
+/// `len` is taken from `IntoIterator::Item` consumption; callers should
+/// pass a `&Map` whose iterator yields each entry exactly once.
+#[doc(hidden)]
+pub fn serialize_indexed_entries<'a, I, K, V, W>(entries: I, writer: &mut W) -> Result<(), Error>
+where
+	I: IntoIterator<Item = (&'a K, &'a V)>,
+	K: SerializeRevisioned + 'a,
+	V: SerializeRevisioned + 'a,
+	W: Write,
+{
 	// Pre-serialise each entry so we know the offsets and region sizes.
-	// IMPORTANT: `BTreeMap` iterates in K-order, but the indexed wire format
-	// requires the keys region to be ascending under *byte* compare (what the
-	// IndexedMapWalker uses for binary search). For variable-length key types
-	// like `String` whose `SerializeRevisioned` emits `varint(len) || bytes`,
-	// K-order and byte-order diverge whenever the varint length differs. We
-	// therefore sort the pre-serialised entries by key bytes before writing.
-	let mut pairs: Vec<(Vec<u8>, Vec<u8>)> = Vec::with_capacity(len);
-	for (k, v) in map.iter() {
+	// IMPORTANT: callers may pass entries in any order — for hash-based maps
+	// the iterator order is arbitrary, and even for sorted maps the K-order
+	// may diverge from the byte-order of the serialised keys. We therefore
+	// sort the pre-serialised entries by key bytes before writing.
+	let mut pairs: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+	for (k, v) in entries {
 		let mut kb = Vec::new();
 		k.serialize_revisioned(&mut kb)?;
 		let mut vb = Vec::new();
@@ -114,6 +322,7 @@ where
 		pairs.push((kb, vb));
 	}
 	pairs.sort_by(|a, b| a.0.cmp(&b.0));
+	let len = pairs.len();
 	let (keys, vals): (Vec<_>, Vec<_>) = pairs.into_iter().unzip();
 
 	// Header: flags = indexed, varint length.
@@ -155,7 +364,25 @@ where
 	Ok(())
 }
 
-/// Wire layout produced:
+/// Convenience wrapper: serialise a `&[T]` slice using the indexed wire format.
+///
+/// Equivalent to [`serialize_indexed_seq_iter`] over `items.iter()`. Provided
+/// as a stable entry point for hand-written `IndexedSeqEncoded` impls on
+/// `Vec`-like types.
+#[doc(hidden)]
+pub fn serialize_indexed_seq<T, W: Write>(items: &[T], writer: &mut W) -> Result<(), Error>
+where
+	T: SerializeRevisioned,
+{
+	serialize_indexed_seq_iter(items.iter(), writer)
+}
+
+/// Serialise an iterator of `&T` items using the indexed wire format.
+///
+/// Use this directly when implementing [`IndexedSeqEncoded`] for sequence
+/// types that are not `Vec` (e.g. `imbl::Vector`, custom seq types).
+///
+/// Wire layout:
 ///
 /// ```text
 /// u8 flags                       // bit 0: indexed
@@ -163,20 +390,20 @@ where
 /// [u32_le elem_off; len]         // offset table
 /// elements concatenated
 /// ```
-///
-/// Each element is serialised via `SerializeRevisioned`.
 #[doc(hidden)]
-pub fn serialize_indexed_seq<T, W: Write>(items: &[T], writer: &mut W) -> Result<(), Error>
+pub fn serialize_indexed_seq_iter<'a, I, T, W>(items: I, writer: &mut W) -> Result<(), Error>
 where
-	T: SerializeRevisioned,
+	I: IntoIterator<Item = &'a T>,
+	T: SerializeRevisioned + 'a,
+	W: Write,
 {
-	let len = items.len();
-	let mut bodies: Vec<Vec<u8>> = Vec::with_capacity(len);
+	let mut bodies: Vec<Vec<u8>> = Vec::new();
 	for item in items {
 		let mut b = Vec::new();
 		item.serialize_revisioned(&mut b)?;
 		bodies.push(b);
 	}
+	let len = bodies.len();
 
 	writer.write_all(&[FLAG_INDEXED]).map_err(Error::Io)?;
 	write_varint(writer, len)?;

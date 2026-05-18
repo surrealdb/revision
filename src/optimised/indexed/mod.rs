@@ -16,8 +16,10 @@ pub mod struct_walk;
 pub use map_walk::IndexedMapWalker;
 pub use seq_walk::IndexedSeqWalker;
 pub use serialize::{
-	IndexedMapEncoded, IndexedSeqEncoded, deserialize_indexed_map, deserialize_indexed_seq,
-	serialize_indexed_map, serialize_indexed_seq, skip_indexed_map, skip_indexed_seq,
+	IndexedMapEncoded, IndexedSeqEncoded, OwnedIndexedMapView, OwnedIndexedSeqView,
+	deserialize_indexed_map, deserialize_indexed_seq, serialize_indexed_entries,
+	serialize_indexed_map, serialize_indexed_seq, serialize_indexed_seq_iter, skip_indexed_map,
+	skip_indexed_seq,
 };
 pub use struct_walk::IndexedStructWalker;
 

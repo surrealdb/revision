@@ -527,6 +527,110 @@ fn emit_struct_methods(
 			}
 		};
 
+		// For fields with `#[revision(indexed_map)]` / `#[revision(indexed_seq)]`,
+		// the inner walker is `IndexedMapWalker` / `IndexedSeqWalker` rather
+		// than the field type's own `WalkRevisioned::Walker`. These walkers
+		// borrow from a payload slice, so we return an owned-bytes wrapper
+		// (`OwnedIndexedMapView` / `OwnedIndexedSeqView`) that the caller
+		// keeps alive while borrowing the walker from it.
+		//
+		// Implementation strategy: decode the field via the indexed
+		// deserializer, then re-serialize into a Vec<u8> via the indexed
+		// serializer. The wire format is canonical (sorted by key bytes), so
+		// re-serializing produces identical bytes a second walker can read.
+		// This is one extra alloc + walk per field — acceptable for the
+		// "I want walker access" use case; callers who only need the
+		// materialised value should use `decode_<field>` instead.
+		let walk_return_ty;
+		let walk_body;
+		let into_walk_return_ty;
+		let into_walk_body;
+		if f.attrs.options.indexed_map {
+			walk_return_ty = quote! {
+				::revision::optimised::indexed::OwnedIndexedMapView<
+					<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::Key,
+					<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::Value,
+				>
+			};
+			walk_body = quote! {
+				let __v: #ty = self.#decode_name()?;
+				let mut __bytes = ::std::vec::Vec::new();
+				<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::serialize_indexed_map(
+					&__v, &mut __bytes,
+				)?;
+				::std::result::Result::Ok(
+					::revision::optimised::indexed::OwnedIndexedMapView::new(__bytes),
+				)
+			};
+			into_walk_return_ty = walk_return_ty.clone();
+			into_walk_body = quote! {
+				let mut __self = self;
+				let __v: #ty = __self.#decode_name()?;
+				let mut __bytes = ::std::vec::Vec::new();
+				<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::serialize_indexed_map(
+					&__v, &mut __bytes,
+				)?;
+				::std::result::Result::Ok(
+					::revision::optimised::indexed::OwnedIndexedMapView::new(__bytes),
+				)
+			};
+		} else if f.attrs.options.indexed_seq {
+			walk_return_ty = quote! {
+				::revision::optimised::indexed::OwnedIndexedSeqView<
+					<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::Item,
+				>
+			};
+			walk_body = quote! {
+				let __v: #ty = self.#decode_name()?;
+				let mut __bytes = ::std::vec::Vec::new();
+				<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::serialize_indexed_seq(
+					&__v, &mut __bytes,
+				)?;
+				::std::result::Result::Ok(
+					::revision::optimised::indexed::OwnedIndexedSeqView::new(__bytes),
+				)
+			};
+			into_walk_return_ty = walk_return_ty.clone();
+			into_walk_body = quote! {
+				let mut __self = self;
+				let __v: #ty = __self.#decode_name()?;
+				let mut __bytes = ::std::vec::Vec::new();
+				<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::serialize_indexed_seq(
+					&__v, &mut __bytes,
+				)?;
+				::std::result::Result::Ok(
+					::revision::optimised::indexed::OwnedIndexedSeqView::new(__bytes),
+				)
+			};
+		} else {
+			walk_return_ty = quote! { <#ty as ::revision::WalkRevisioned>::Walker<'_, R> };
+			walk_body = quote! {
+				match &mut self.repr {
+					#walker_repr_name::Wire { reader, wire_rev, pos } => {
+						#walk_wire_body_borrow
+					}
+					#walker_repr_name::Materialised { .. } => {
+						::std::result::Result::Err(::revision::Error::Conversion(
+							"walk_<field> is not supported on materialised walkers; use decode_<field>".into(),
+						))
+					}
+				}
+			};
+			into_walk_return_ty = quote! { <#ty as ::revision::WalkRevisioned>::Walker<'r, R> };
+			into_walk_body = quote! {
+				match self.repr {
+					#walker_repr_name::Wire { reader, wire_rev, pos: _ } => {
+						#into_walk_wire_body
+					}
+					#walker_repr_name::Materialised { .. } => {
+						::std::result::Result::Err(::revision::Error::Conversion(
+							"into_walk_<field> is not supported on materialised walkers; use decode_<field>".into(),
+						))
+					}
+				}
+			};
+		}
+
 		out.append_all(quote! {
 			/// Decode this field, advancing the walker.
 			#[inline]
@@ -566,59 +670,36 @@ fn emit_struct_methods(
 				}
 			}
 
-			/// Walk into this field, returning a sub-walker that **borrows**
-			/// the parent walker. Once the sub-walker is dropped or
-			/// consumed the parent can advance to the next field via
-			/// `decode_*` / `skip_*` / `walk_*` / `into_walk_*`.
+			/// Walk into this field. For fields tagged
+			/// `#[revision(indexed_map)]` / `#[revision(indexed_seq)]`,
+			/// returns an [`OwnedIndexedMapView`] / [`OwnedIndexedSeqView`]
+			/// the caller can borrow an [`IndexedMapWalker`] /
+			/// [`IndexedSeqWalker`] from. For all other fields, returns the
+			/// inner type's `WalkRevisioned::Walker` as usual (borrowing
+			/// the parent walker for the duration of the sub-walk).
 			///
-			/// Only supported in wire mode; materialised walkers (older-rev
-			/// `convert_fn` types) return [`revision::Error::Conversion`].
-			/// Callers needing to walk inside a materialised value should
-			/// `decode_*` it instead and use the resulting Rust value
-			/// directly.
+			/// Materialised walkers (older-rev `convert_fn` types) return
+			/// [`revision::Error::Conversion`] for the legacy path; the
+			/// indexed branches re-serialise from the materialised value.
 			///
-			/// See [`Self::#into_walk_name`] for the consuming variant
-			/// that returns a sub-walker tied to the original reader
-			/// lifetime when subsequent fields are not needed.
+			/// [`OwnedIndexedMapView`]: revision::optimised::indexed::OwnedIndexedMapView
+			/// [`OwnedIndexedSeqView`]: revision::optimised::indexed::OwnedIndexedSeqView
+			/// [`IndexedMapWalker`]: revision::optimised::IndexedMapWalker
+			/// [`IndexedSeqWalker`]: revision::optimised::IndexedSeqWalker
 			#[inline]
 			pub fn #walk_name(
 				&mut self,
-			) -> ::std::result::Result<<#ty as ::revision::WalkRevisioned>::Walker<'_, R>, ::revision::Error> {
-				match &mut self.repr {
-					#walker_repr_name::Wire { reader, wire_rev, pos } => {
-						#walk_wire_body_borrow
-					}
-					#walker_repr_name::Materialised { .. } => {
-						::std::result::Result::Err(::revision::Error::Conversion(
-							"walk_<field> is not supported on materialised walkers; use decode_<field>".into(),
-						))
-					}
-				}
+			) -> ::std::result::Result<#walk_return_ty, ::revision::Error> {
+				#walk_body
 			}
 
-			/// Walk into this field, **consuming** the parent walker and
-			/// returning a sub-walker that owns the underlying reader for
-			/// the original `'r` lifetime. The parent walker cannot be used
-			/// further; subsequent fields cannot be visited.
-			///
-			/// Only supported in wire mode; materialised walkers (older-rev
-			/// `convert_fn` types) return [`revision::Error::Conversion`].
-			/// Prefer [`Self::#walk_name`] when you also need to read
-			/// fields after this one.
+			/// Walk into this field, consuming the parent walker. See
+			/// [`Self::#walk_name`] for shape details.
 			#[inline]
 			pub fn #into_walk_name(
 				self,
-			) -> ::std::result::Result<<#ty as ::revision::WalkRevisioned>::Walker<'r, R>, ::revision::Error> {
-				match self.repr {
-					#walker_repr_name::Wire { reader, wire_rev, pos: _ } => {
-						#into_walk_wire_body
-					}
-					#walker_repr_name::Materialised { .. } => {
-						::std::result::Result::Err(::revision::Error::Conversion(
-							"into_walk_<field> is not supported on materialised walkers; use decode_<field>".into(),
-						))
-					}
-				}
+			) -> ::std::result::Result<#into_walk_return_ty, ::revision::Error> {
+				#into_walk_body
 			}
 		});
 	}

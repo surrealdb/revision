@@ -1,9 +1,76 @@
 #![cfg(feature = "imbl")]
 
 use super::super::Error;
-use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned};
+use super::super::optimised::indexed::{
+	IndexedMapEncoded, IndexedSeqEncoded, deserialize_indexed_map, deserialize_indexed_seq,
+	serialize_indexed_entries, serialize_indexed_seq_iter, skip_indexed_map, skip_indexed_seq,
+};
+use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned, SkipRevisioned};
 use imbl::{HashMap, HashSet, OrdMap, OrdSet, Vector};
 use std::hash::Hash;
+
+// --------------------------------------------------
+// IndexedMapEncoded / IndexedSeqEncoded for imbl
+// --------------------------------------------------
+
+impl<K, V> IndexedMapEncoded for OrdMap<K, V>
+where
+	K: SerializeRevisioned + DeserializeRevisioned + SkipRevisioned + Ord + Clone,
+	V: SerializeRevisioned + DeserializeRevisioned + SkipRevisioned + Clone,
+{
+	type Key = K;
+	type Value = V;
+	fn serialize_indexed_map<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
+		serialize_indexed_entries(self.iter(), w)
+	}
+	fn deserialize_indexed_map<R: std::io::Read>(r: &mut R) -> Result<Self, Error> {
+		// Decode via the standard helper into a BTreeMap, then convert.
+		let std_map: std::collections::BTreeMap<K, V> = deserialize_indexed_map(r)?;
+		Ok(std_map.into_iter().collect())
+	}
+	fn skip_indexed_map<R: std::io::Read>(r: &mut R) -> Result<(), Error> {
+		skip_indexed_map::<K, V, R>(r)
+	}
+}
+
+impl<K, V> IndexedMapEncoded for HashMap<K, V>
+where
+	K: SerializeRevisioned + DeserializeRevisioned + SkipRevisioned + Hash + Eq + Clone,
+	V: SerializeRevisioned + DeserializeRevisioned + SkipRevisioned + Clone,
+{
+	type Key = K;
+	type Value = V;
+	fn serialize_indexed_map<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
+		serialize_indexed_entries(self.iter(), w)
+	}
+	fn deserialize_indexed_map<R: std::io::Read>(r: &mut R) -> Result<Self, Error> {
+		// Decode via the standard helper into a std::HashMap with the default
+		// `RandomState` hasher (matches imbl's `HashMap` alias), then convert.
+		let std_map: std::collections::HashMap<K, V> =
+			<std::collections::HashMap<K, V> as IndexedMapEncoded>::deserialize_indexed_map(r)?;
+		Ok(std_map.into_iter().collect())
+	}
+	fn skip_indexed_map<R: std::io::Read>(r: &mut R) -> Result<(), Error> {
+		skip_indexed_map::<K, V, R>(r)
+	}
+}
+
+impl<T> IndexedSeqEncoded for Vector<T>
+where
+	T: SerializeRevisioned + DeserializeRevisioned + SkipRevisioned + Clone,
+{
+	type Item = T;
+	fn serialize_indexed_seq<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
+		serialize_indexed_seq_iter(self.iter(), w)
+	}
+	fn deserialize_indexed_seq<R: std::io::Read>(r: &mut R) -> Result<Self, Error> {
+		let v: Vec<T> = deserialize_indexed_seq(r)?;
+		Ok(v.into_iter().collect())
+	}
+	fn skip_indexed_seq<R: std::io::Read>(r: &mut R) -> Result<(), Error> {
+		skip_indexed_seq::<T, R>(r)
+	}
+}
 
 // --------------------------------------------------
 // Vector<T>
