@@ -62,6 +62,35 @@ impl<'a> SliceReader<'a> {
 		self.inner = &self.inner[n..];
 		Ok(())
 	}
+
+	/// Construct a new `SliceReader` over a sub-range of the original slice.
+	///
+	/// `offset` is measured from the start of the slice this reader was originally
+	/// constructed with — *not* the current cursor position. The cursor in the
+	/// returned reader starts at the beginning of the sub-range.
+	///
+	/// Used by optimised walkers to hand a child walker exactly one field's bytes
+	/// without mutating the parent cursor.
+	#[inline]
+	pub fn sub(&self, offset: usize, len: usize) -> Result<SliceReader<'a>, Error> {
+		// `offset` is into the original slice; convert to an `inner`-relative offset.
+		let inner_offset = offset.checked_sub(self.consumed_len()).ok_or_else(|| {
+			Error::Io(std::io::Error::new(
+				std::io::ErrorKind::InvalidInput,
+				"SliceReader::sub: offset precedes current cursor",
+			))
+		})?;
+		let end = inner_offset.checked_add(len).ok_or_else(|| {
+			Error::Io(std::io::Error::new(
+				std::io::ErrorKind::InvalidInput,
+				"SliceReader::sub: offset + len overflow",
+			))
+		})?;
+		if end > self.inner.len() {
+			return Err(Error::OptimisedSubReaderOverrun);
+		}
+		Ok(SliceReader::new(&self.inner[inner_offset..end]))
+	}
 }
 
 impl Read for SliceReader<'_> {
@@ -98,6 +127,12 @@ pub trait BorrowedReader: Read {
 	/// (the bytes are never touched). Returns an error if fewer than
 	/// `n` bytes remain.
 	fn advance(&mut self, n: usize) -> Result<(), Error>;
+
+	/// Bytes consumed since the reader was constructed.
+	///
+	/// Used by optimised walkers and the encode side to compute offsets
+	/// relative to the start of an optimised compound's payload.
+	fn position(&self) -> usize;
 }
 
 impl BorrowedReader for &[u8] {
@@ -122,6 +157,13 @@ impl BorrowedReader for &[u8] {
 		*self = &self[n..];
 		Ok(())
 	}
+
+	#[inline]
+	fn position(&self) -> usize {
+		// `&[u8]` has no original-length tracking, so we cannot report a meaningful
+		// absolute position. Callers that need positions should use `SliceReader`.
+		0
+	}
 }
 
 impl<'a> BorrowedReader for SliceReader<'a> {
@@ -138,5 +180,112 @@ impl<'a> BorrowedReader for SliceReader<'a> {
 	#[inline]
 	fn advance(&mut self, n: usize) -> Result<(), Error> {
 		self.consume(n)
+	}
+
+	#[inline]
+	fn position(&self) -> usize {
+		self.consumed_len()
+	}
+}
+
+/// Borrow `n` bytes and advance past them in one step.
+///
+/// `BorrowedReader::take_bytes` would be the natural place for this, but expressing
+/// "return a borrow whose lifetime survives the mutating `advance` call" as a trait
+/// default fights the borrow checker. Per-impl free functions sidestep the issue.
+#[inline]
+pub fn take_bytes_slice<'a>(reader: &mut &'a [u8], n: usize) -> Result<&'a [u8], Error> {
+	if n > reader.len() {
+		return Err(Error::Io(std::io::Error::new(
+			std::io::ErrorKind::UnexpectedEof,
+			"unexpected EOF while taking borrowed bytes",
+		)));
+	}
+	let (head, tail) = reader.split_at(n);
+	*reader = tail;
+	Ok(head)
+}
+
+/// `take_bytes` for `SliceReader`. See [`take_bytes_slice`] for rationale.
+#[inline]
+pub fn take_bytes_reader<'r, 'a: 'r>(
+	reader: &'r mut SliceReader<'a>,
+	n: usize,
+) -> Result<&'a [u8], Error> {
+	if n > reader.inner.len() {
+		return Err(Error::Io(std::io::Error::new(
+			std::io::ErrorKind::UnexpectedEof,
+			"unexpected EOF while taking borrowed bytes",
+		)));
+	}
+	let (head, tail) = reader.inner.split_at(n);
+	reader.inner = tail;
+	Ok(head)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn slice_reader_position_tracks_consumed() {
+		let data = [0u8, 1, 2, 3, 4];
+		let mut r = SliceReader::new(&data);
+		assert_eq!(r.position(), 0);
+		r.consume(2).unwrap();
+		assert_eq!(r.position(), 2);
+		r.consume(1).unwrap();
+		assert_eq!(r.position(), 3);
+	}
+
+	#[test]
+	fn slice_reader_sub_carves_subrange() {
+		let data = [0u8, 1, 2, 3, 4, 5];
+		let r = SliceReader::new(&data);
+		let sub = r.sub(2, 3).unwrap();
+		assert_eq!(sub.remaining(), &[2, 3, 4]);
+	}
+
+	#[test]
+	fn slice_reader_sub_rejects_overflow() {
+		let data = [0u8, 1, 2, 3];
+		let r = SliceReader::new(&data);
+		assert!(matches!(r.sub(2, 3), Err(Error::OptimisedSubReaderOverrun)));
+	}
+
+	#[test]
+	fn slice_reader_sub_after_consume() {
+		let data = [0u8, 1, 2, 3, 4, 5];
+		let mut r = SliceReader::new(&data);
+		r.consume(2).unwrap();
+		// `offset` is absolute against the original slice.
+		let sub = r.sub(3, 2).unwrap();
+		assert_eq!(sub.remaining(), &[3, 4]);
+	}
+
+	#[test]
+	fn slice_reader_sub_rejects_offset_before_cursor() {
+		let data = [0u8, 1, 2, 3];
+		let mut r = SliceReader::new(&data);
+		r.consume(2).unwrap();
+		assert!(r.sub(1, 1).is_err());
+	}
+
+	#[test]
+	fn take_bytes_slice_advances_and_returns_borrow() {
+		let data: &[u8] = &[1, 2, 3, 4];
+		let mut cursor = data;
+		let taken = take_bytes_slice(&mut cursor, 2).unwrap();
+		assert_eq!(taken, &[1, 2]);
+		assert_eq!(cursor, &[3, 4]);
+	}
+
+	#[test]
+	fn take_bytes_reader_advances_and_returns_borrow() {
+		let data = [1u8, 2, 3, 4];
+		let mut r = SliceReader::new(&data);
+		let taken = take_bytes_reader(&mut r, 3).unwrap();
+		assert_eq!(taken, &[1, 2, 3]);
+		assert_eq!(r.remaining(), &[4]);
 	}
 }
