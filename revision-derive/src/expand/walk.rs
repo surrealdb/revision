@@ -31,6 +31,7 @@ use proc_macro2::TokenStream;
 use quote::{TokenStreamExt, format_ident, quote};
 use syn::Ident;
 
+use crate::ast::history::{HistoryEntry, StructEncoding};
 use crate::ast::{Enum, Field, FieldName, Fields, Item, ItemKind, Struct, Variant, Visit};
 
 use super::common::CalcDiscriminant;
@@ -50,6 +51,7 @@ pub fn emit_walk_impl(
 	name: &Ident,
 	revision: usize,
 	item: &Item,
+	history: &[HistoryEntry],
 	has_convert_fn: bool,
 	serialize_enabled: bool,
 	deserialize_enabled: bool,
@@ -131,6 +133,71 @@ pub fn emit_walk_impl(
 					});
 				}
 			},
+		}
+	};
+
+	// For each optimised history entry, emit an arm that advances the reader
+	// past the `u32_le payload_length` (and any `[u32_le; field_count]` prologue
+	// for `struct = "indexed"`) so the subsequent Wire walker reads field bytes
+	// directly. Enums under optimised use a different on-wire shape (1-byte tag
+	// instead of u32 discriminant); we error on enum walkers for now since the
+	// Wire walker reads u32 — the user must use DeserializeRevisioned directly.
+	let optimised_struct_field_count = match &item.kind {
+		ItemKind::Struct(s) => Some(alive_field_count(s, revision) as u32),
+		ItemKind::Enum(_) => None,
+	};
+	let optimised_skip_arms: Vec<TokenStream> = history
+		.iter()
+		.filter(|h| h.is_optimised())
+		.map(|h| {
+			let rev_lit = h.revision.value as u16;
+			match &item.kind {
+				ItemKind::Struct(_) => {
+					let prologue_bytes: u32 =
+						if matches!(h.struct_kind, StructEncoding::Indexed) {
+							optimised_struct_field_count.unwrap_or(0) * 4
+						} else {
+							0
+						};
+					quote! {
+						#rev_lit => {
+							let mut __len_buf = [0u8; 4];
+							::std::io::Read::read_exact(reader, &mut __len_buf)
+								.map_err(::revision::Error::Io)?;
+							let __payload_len = u32::from_le_bytes(__len_buf) as usize;
+							let _ = __payload_len;
+							if #prologue_bytes > 0 {
+								let mut __prologue = [0u8; #prologue_bytes as usize];
+								::std::io::Read::read_exact(reader, &mut __prologue)
+									.map_err(::revision::Error::Io)?;
+							}
+						}
+					}
+				}
+				ItemKind::Enum(_) => quote! {
+					#rev_lit => {
+						return ::std::result::Result::Err(
+							::revision::Error::Deserialize(
+								::std::format!(
+									"walker on optimised enum revision {} is not supported; use `DeserializeRevisioned::deserialize_revisioned` instead",
+									#rev_lit,
+								)
+							)
+						);
+					}
+				},
+			}
+		})
+		.collect();
+
+	let optimised_skip_dispatch = if optimised_skip_arms.is_empty() {
+		quote! {}
+	} else {
+		quote! {
+			match __wire_rev {
+				#(#optimised_skip_arms)*
+				_ => {}
+			}
 		}
 	};
 
@@ -227,6 +294,7 @@ pub fn emit_walk_impl(
 					));
 				}
 				#materialise_branch
+				#optimised_skip_dispatch
 				#post_header_read
 				::std::result::Result::Ok(#walker_name { repr: #wire_constructor })
 			}
@@ -836,5 +904,14 @@ fn emit_field_tables(name: &Ident, revision: usize, s: &Struct) -> TokenStream {
 				}
 			}
 		}
+	}
+}
+
+fn alive_field_count(s: &Struct, revision: usize) -> usize {
+	match &s.fields {
+		Fields::Named { fields, .. } | Fields::Unnamed { fields, .. } => {
+			fields.iter().filter(|f| f.attrs.options.exists_at(revision)).count()
+		}
+		Fields::Unit => 0,
 	}
 }

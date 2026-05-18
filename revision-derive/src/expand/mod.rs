@@ -205,6 +205,7 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 			},
 			revision,
 			&ast,
+			&history,
 			has_convert_fn,
 			attrs.0.serialize,
 			attrs.0.deserialize,
