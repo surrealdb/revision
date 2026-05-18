@@ -230,7 +230,15 @@ fn field_lifecycle_crosses_encoding_boundary() {
 //
 // NEVER edit a pin to fix a failing test; only ever add new pins for new
 // revisions. The whole point of the pin is to make wire drift visible.
+//
+// The pins below capture bytes under the **default varint** integer
+// encoding. Under `--features fixed-width-encoding` the same logical
+// values serialise to different byte counts (every u16/u32 becomes
+// fixed-width LE), so these pins are intentionally varint-only. A
+// parallel set of pins for `fixed-width-encoding` would belong here
+// gated the other way if downstream users adopt that feature.
 
+#[cfg(not(feature = "fixed-width-encoding"))]
 #[test]
 fn pin_legacy_rev1_decodes_into_legacy_and_optimised_type() {
 	// Bytes captured from `revision::to_vec(&OnlyRev1 { a: 1, b: 2 })`.
@@ -244,6 +252,7 @@ fn pin_legacy_rev1_decodes_into_legacy_and_optimised_type() {
 	assert_eq!(decoded.b, 2);
 }
 
+#[cfg(not(feature = "fixed-width-encoding"))]
 #[test]
 fn pin_optimised_rev1_struct_layout() {
 	// Bytes captured from `revision::to_vec(&OptimisedFromDayOne { a: 7, b: 11 })`.

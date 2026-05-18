@@ -5,6 +5,16 @@
 
 use revision::prelude::*;
 
+/// Bytes the outer `u16` revision header occupies. Under the default varint
+/// encoding rev 1 packs to 1 byte; under `fixed-width-encoding` every u16
+/// is 2 bytes. Compute it at runtime so byte-count assertions work under
+/// either feature flag.
+fn rev_header_size() -> usize {
+	let mut buf = Vec::new();
+	1u16.serialize_revisioned(&mut buf).unwrap();
+	buf.len()
+}
+
 #[revisioned(revision(1, encoding = "optimised"))]
 #[derive(Debug, Clone, PartialEq)]
 struct SimpleOptimised {
@@ -38,11 +48,11 @@ fn optimised_struct_wire_starts_with_revision_then_length() {
 		b: 2,
 	};
 	let bytes = revision::to_vec(&v).unwrap();
-	// First byte: revision varint header for `1`.
-	assert_eq!(bytes[0], 1u8, "revision varint should be 1");
+	let rh = rev_header_size();
+	// Skip past the revision header (1 byte varint, 2 bytes fixed-width).
 	// Next 4 bytes: u32_le payload length.
-	let payload_len = u32::from_le_bytes(bytes[1..5].try_into().unwrap()) as usize;
-	assert_eq!(bytes.len(), 1 + 4 + payload_len, "total bytes = revision + length + payload");
+	let payload_len = u32::from_le_bytes(bytes[rh..rh + 4].try_into().unwrap()) as usize;
+	assert_eq!(bytes.len(), rh + 4 + payload_len, "total bytes = revision + length + payload");
 }
 
 #[test]
@@ -65,9 +75,10 @@ fn indexed_optimised_struct_has_offset_table_prologue() {
 		c: 0,
 	};
 	let bytes = revision::to_vec(&v).unwrap();
-	// revision varint(1) | u32_le length | [3 * u32_le offset table] | fields
-	let payload_len = u32::from_le_bytes(bytes[1..5].try_into().unwrap()) as usize;
-	let payload = &bytes[5..5 + payload_len];
+	// revision header | u32_le length | [3 * u32_le offset table] | fields
+	let rh = rev_header_size();
+	let payload_len = u32::from_le_bytes(bytes[rh..rh + 4].try_into().unwrap()) as usize;
+	let payload = &bytes[rh + 4..rh + 4 + payload_len];
 	let off_a = u32::from_le_bytes(payload[0..4].try_into().unwrap());
 	let off_b = u32::from_le_bytes(payload[4..8].try_into().unwrap());
 	let off_c = u32::from_le_bytes(payload[8..12].try_into().unwrap());
@@ -146,26 +157,35 @@ fn optimised_enum_round_trips_all_size_classes() {
 }
 
 #[test]
-fn optimised_enum_inline_variant_is_two_bytes() {
-	// u16 revision varint (1 byte for 1) + u8 tag = 2 bytes total.
+fn optimised_enum_inline_variant_is_just_header_plus_tag() {
+	// revision header + u8 tag.
 	let bytes = revision::to_vec(&OptimisedEnum::Unit).unwrap();
-	assert_eq!(bytes.len(), 2, "Inline variant should be revision + tag only");
+	assert_eq!(
+		bytes.len(),
+		rev_header_size() + 1,
+		"Inline variant should be revision header + tag only"
+	);
 }
 
 #[test]
 fn optimised_enum_fixed_variant_has_no_length_prefix() {
 	let bytes = revision::to_vec(&OptimisedEnum::WithBytes([0xAA; 8])).unwrap();
-	// revision (1) + tag (1) + 8-byte payload = 10 bytes (no u32_le length).
-	assert_eq!(bytes.len(), 1 + 1 + 8, "Fixed variant should not carry a length prefix");
+	// revision header + tag (1) + 8-byte payload, no u32_le length.
+	assert_eq!(
+		bytes.len(),
+		rev_header_size() + 1 + 8,
+		"Fixed variant should not carry a length prefix"
+	);
 }
 
 #[test]
 fn optimised_enum_varlen_variant_has_u32_le_length() {
 	let s = "x".repeat(100);
 	let bytes = revision::to_vec(&OptimisedEnum::WithString(s.clone())).unwrap();
-	// revision (1) + tag (1) + u32_le length (4) + body.
-	let body_len = u32::from_le_bytes(bytes[2..6].try_into().unwrap()) as usize;
-	assert_eq!(bytes.len(), 1 + 1 + 4 + body_len);
+	// revision header + tag (1) + u32_le length (4) + body.
+	let rh = rev_header_size();
+	let body_len = u32::from_le_bytes(bytes[rh + 1..rh + 1 + 4].try_into().unwrap()) as usize;
+	assert_eq!(bytes.len(), rh + 1 + 4 + body_len);
 }
 
 #[test]

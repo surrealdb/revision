@@ -1,0 +1,5 @@
+error: a field can declare at most one of `indexed_map`, `indexed_seq`, `indexed_set`
+ --> tests/compile_fail/indexed_field_mutually_exclusive.rs:9:26
+  |
+9 |     #[revision(indexed_map, indexed_seq)]
+  |                             ^^^^^^^^^^^

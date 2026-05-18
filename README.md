@@ -646,14 +646,15 @@ What changes:
   `decode_bio`). Skip is O(1) on rev-2 (one `u32_le` read + advance)
   regardless of how big `bio` got.
 
-### Indexed-map / indexed-seq fields
+### Indexed-map / indexed-seq / indexed-set fields
 
-For `BTreeMap` and `Vec` fields that benefit from O(log n) key lookup
-or random-access metadata on the wire, opt the field into the indexed
-encoding with `#[revision(indexed_map)]` or `#[revision(indexed_seq)]`:
+For `BTreeMap` / `Vec` / `BTreeSet`-shaped fields that benefit from
+O(log n) key lookup or random-access metadata on the wire, opt the
+field into the indexed encoding via one of the three per-field
+attributes:
 
 ```rust,ignore
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use revision::prelude::*;
 
 #[revisioned(revision(1, encoding = "optimised"))]
@@ -664,14 +665,29 @@ struct Doc {
     summary: String,                    // default optimised serialisation
     #[revision(indexed_seq)]
     tags: Vec<String>,                  // offset-table seq
+    #[revision(indexed_set)]
+    roles: BTreeSet<String>,            // sorted-bytes set; membership via walker
 }
 ```
 
-The macro routes the field through the
-[`IndexedMapEncoded`](crate::optimised::indexed::IndexedMapEncoded) /
-[`IndexedSeqEncoded`](crate::optimised::indexed::IndexedSeqEncoded)
-traits. `BTreeMap<K, V>` and `Vec<T>` implement them out of the box;
-custom container types can implement them to participate too.
+Each per-field attribute routes through its trait:
+
+| Attribute | Trait | Implemented for |
+| --- | --- | --- |
+| `indexed_map` | [`IndexedMapEncoded`] | `BTreeMap`, `HashMap`, `imbl::OrdMap`, `imbl::HashMap` |
+| `indexed_seq` | [`IndexedSeqEncoded`] | `Vec`, `imbl::Vector` |
+| `indexed_set` | [`IndexedSetEncoded`] | `BTreeSet`, `HashSet`, `imbl::OrdSet`, `imbl::HashSet` |
+
+Custom container types can implement the relevant trait to participate.
+Hash-based containers (`HashMap`, `HashSet`) sort entries by serialised
+key bytes on encode so the wire layout is binary-searchable on read.
+
+At most one of these attributes may be set per field — the macro
+errors at compile time if you declare more than one.
+
+[`IndexedMapEncoded`]: crate::optimised::indexed::IndexedMapEncoded
+[`IndexedSeqEncoded`]: crate::optimised::indexed::IndexedSeqEncoded
+[`IndexedSetEncoded`]: crate::optimised::indexed::IndexedSetEncoded
 
 Hand-rolled `SerializeRevisioned` impls can call the free helpers
 directly:
@@ -731,29 +747,40 @@ that peek the variant before deciding whether to fully decode.
 
 ### Limitations (current iteration)
 
-- **Walker on optimised enums** exposes `discriminant()` and
-  `is_<variant>()` correctly — the walker construction reads the
-  1-byte optimised tag and routes through the materialised path. The
-  consuming `into_<variant>` accessor errors with
-  `Error::Conversion` and redirects callers to
-  `DeserializeRevisioned::deserialize_revisioned` for the full inner
-  value; threading the inner walker's lifetime through a slurped
-  payload buffer is a self-contained follow-up. Optimised **structs**
-  are fully walkable today: the walker advances past the `u32_le
-  payload_length` (and prologue, if any) before reading fields.
-- The type-level `map = "indexed"` / `seq = "indexed"` history-entry
-  attributes parse but don't drive codegen — they're forward
-  compatibility hints. Per-field opt-in via
-  `#[revision(indexed_map)]` / `#[revision(indexed_seq)]` is the
-  recommended way to route specific fields through indexed encoding,
-  and it works today. The per-field form sidesteps the "macro can't
-  tell a `BTreeMap` from any other type" problem that would block
-  type-level automatic routing.
-- **Variants removed across an optimised history boundary** (using
-  `#[revision(end = N, convert_fn = "...")]` where the boundary is at
-  an optimised revision) fail to compile with a clear error. The
-  field-removal counterpart works correctly.
+- **Walker on optimised enums** exposes `discriminant()`,
+  `is_<variant>()`, and `decode_<variant>(self)` directly. The
+  consuming `into_<variant>` accessor (returning a borrowed
+  sub-walker) still errors on the materialised path — that's the
+  `Walker<'r, R>` GAT lifetime trap; use
+  `<variant>_view(self) -> OwnedVariantView<T>` to get the variant
+  payload bytes as an owned handle, then construct your own walker
+  from `view.as_bytes()` if needed.
+- The type-level `map = "indexed"` / `seq = "indexed"` attributes are
+  rejected at parse time — they're impossible to implement soundly
+  without specialisation (the macro can't tell `BTreeMap` from any
+  other field type). Use the per-field `#[revision(indexed_map)]` /
+  `#[revision(indexed_seq)]` / `#[revision(indexed_set)]` attributes
+  instead. They work today.
 - `fixed(N)` requires the variant body to serialise to exactly `N`
   bytes under `SerializeRevisioned`. Use `[u8; N]`, `Uuid`, fixed-
   width primitives under `fixed-width-encoding`, etc. — varint-encoded
-  primitives have variable length and won't match.
+  primitives have variable length and won't match. The macro emits a
+  `debug_assert_eq!` in the encode arm to catch declared-vs-actual
+  size mismatches.
+
+### Attribute spelling convention
+
+The optimised wire format adds several attributes; they follow two
+shapes depending on what they declare:
+
+- **Type-level configuration** uses `key = "value"` pairs because the
+  value comes from a finite-but-extensible set: `encoding =
+  "optimised"`, `struct = "indexed"`, `size = "inline" | "fixed(N)" |
+  "varlen"`. Future encodings (e.g. `encoding = "tagged"`) slot in
+  without breaking existing callers.
+- **Field-level flags** use bare keywords (`indexed_map`,
+  `indexed_seq`, `indexed_set`) because they're booleans —
+  presence means "yes". Mixing two for one field is a compile error.
+
+This split mirrors how Rust's own `#[cfg(...)]` works: `cfg(test)`
+is a flag, `cfg(target_os = "linux")` is a configuration value.

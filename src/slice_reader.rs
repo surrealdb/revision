@@ -117,8 +117,8 @@ pub trait BorrowedReader: Read {
 	/// Borrow the next `n` bytes without advancing the cursor.
 	///
 	/// Returns the slice on success. The slice is valid until the next
-	/// call that mutably borrows the reader (typically [`advance`]
-	/// (Self::advance) or any `Read`-trait method).
+	/// call that mutably borrows the reader (typically
+	/// [`advance`](Self::advance) or any `Read`-trait method).
 	fn peek_bytes(&self, n: usize) -> Result<&[u8], Error>;
 
 	/// Advance the cursor past `n` bytes without copying them.

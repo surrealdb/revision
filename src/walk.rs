@@ -713,7 +713,8 @@ where
 	/// the matching entry or `None` if no entry passes `predicate`.
 	///
 	/// Inherits the **sorted-map** requirement from [`find`](Self::find): wire
-	/// visit order must match the predicate's assumed ordering (see [`find`]).
+	/// visit order must match the predicate's assumed ordering (see
+	/// [`find`](Self::find)).
 	///
 	/// Sibling of [`find`](Self::find) for keys whose wire format is
 	/// exactly `usize len || raw bytes` ([`LengthPrefixedBytes`]). Each
