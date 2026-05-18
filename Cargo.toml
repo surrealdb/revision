@@ -199,3 +199,11 @@ harness = false
 [[bench]]
 name = "optimised_vs_legacy"
 harness = false
+
+[[bench]]
+name = "optimised_nested"
+harness = false
+
+[[bench]]
+name = "optimised_walker"
+harness = false
