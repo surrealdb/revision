@@ -13,10 +13,14 @@
 //! User code reaches the walker types and the `Tag` / `SizeClass` pair; the rest
 //! is `#[doc(hidden)]` plumbing reached only by the macro's expansion.
 
+#[doc(hidden)]
 pub mod envelope;
 pub mod indexed;
+#[doc(hidden)]
 pub mod size_table;
+#[doc(hidden)]
 pub mod tag;
+#[doc(hidden)]
 pub mod validation;
 
 pub use indexed::{IndexedMapWalker, IndexedSeqWalker, IndexedStructWalker, OFFSET_TABLE_MIN_LEN};

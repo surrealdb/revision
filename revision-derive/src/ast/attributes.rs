@@ -9,9 +9,7 @@ use syn::{
 	token,
 };
 
-use super::history::{
-	Encoding, HistoryEntry, LengthEncoding, MapEncoding, SeqEncoding, StructEncoding,
-};
+use super::history::{Encoding, HistoryEntry, MapEncoding, SeqEncoding, StructEncoding};
 
 mod kw {
 	syn::custom_keyword!(start);
@@ -31,7 +29,6 @@ mod kw {
 	syn::custom_keyword!(encoding);
 	syn::custom_keyword!(map);
 	syn::custom_keyword!(seq);
-	syn::custom_keyword!(length);
 	syn::custom_keyword!(size);
 	// Per-field encoding flags for optimised revisions.
 	syn::custom_keyword!(indexed_map);
@@ -338,7 +335,7 @@ pub enum ItemOption {
 	Walk(ValueOption<kw::walk, LitBool>),
 }
 
-/// Parsed `revision(N, encoding = "...", map = "...", seq = "...", struct = "...", length = "...")`.
+/// Parsed `revision(N, encoding = "...", map = "...", seq = "...", struct = "...")`.
 pub struct RevisionEntryGroup {
 	pub kw: kw::revision,
 	pub _paren: token::Paren,
@@ -351,7 +348,6 @@ pub enum RevisionEntryOption {
 	Map(ValueOption<kw::map, LitStr>),
 	Seq(ValueOption<kw::seq, LitStr>),
 	Struct(ValueOption<Token![struct], LitStr>),
-	Length(ValueOption<kw::length, LitStr>),
 }
 
 impl Parse for RevisionEntryGroup {
@@ -391,11 +387,8 @@ impl Parse for RevisionEntryOption {
 		if input.peek(Token![struct]) {
 			return Ok(RevisionEntryOption::Struct(input.parse()?));
 		}
-		if input.peek(kw::length) {
-			return Ok(RevisionEntryOption::Length(input.parse()?));
-		}
 		Err(input.error(
-			"invalid `revision(...)` option (expected `encoding`, `map`, `seq`, `struct`, or `length`)",
+			"invalid `revision(...)` option (expected `encoding`, `map`, `seq`, or `struct`)",
 		))
 	}
 }
@@ -490,30 +483,17 @@ fn build_history_entry(group: RevisionEntryGroup) -> syn::Result<HistoryEntry> {
 					));
 				}
 			},
-			RevisionEntryOption::Length(v) => match v.value.value().as_str() {
-				"varint" => entry.length = LengthEncoding::Varint,
-				"u32_le" => entry.length = LengthEncoding::U32Le,
-				other => {
-					return Err(Error::new(
-						v.value.span(),
-						format!(
-							"unknown length encoding `{other}` (expected `varint` or `u32_le`)"
-						),
-					));
-				}
-			},
 		}
 	}
 	// Reject per-encoding attrs on a legacy entry — keeps the AST clean.
 	if (!saw_encoding || entry.encoding == Encoding::Legacy)
 		&& (entry.map != MapEncoding::Default
 			|| entry.seq != SeqEncoding::Default
-			|| entry.struct_kind != StructEncoding::Default
-			|| entry.length != LengthEncoding::Varint)
+			|| entry.struct_kind != StructEncoding::Default)
 	{
 		return Err(Error::new(
 			entry.span,
-			"encoding-specific attributes (`map`, `seq`, `struct`, `length`) require `encoding = \"optimised\"` on the same revision entry",
+			"encoding-specific attributes (`map`, `seq`, `struct`) require `encoding = \"optimised\"` on the same revision entry",
 		));
 	}
 	Ok(entry)

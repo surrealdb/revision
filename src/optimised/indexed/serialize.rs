@@ -310,13 +310,38 @@ where
 /// an [`IndexedMapWalker`] from it for binary-search lookups.
 ///
 /// Lifetimes: the walker borrows from the view, so the view must outlive the
-/// walker. Typical usage:
+/// walker.
 ///
-/// ```rust,ignore
-/// let view = parent_walker.walk_fields()?;
-/// let map_walker = view.walker()?;
-/// let value_bytes = map_walker.find_value_bytes(|k| k.cmp(b"target"))?;
-/// // value_bytes is valid until `view` is dropped.
+/// ```
+/// use std::collections::BTreeMap;
+/// use revision::prelude::*;
+///
+/// #[revisioned(revision(1, encoding = "optimised"))]
+/// struct Doc {
+///     #[revision(indexed_map)]
+///     fields: BTreeMap<String, u32>,
+/// }
+///
+/// let mut fields = BTreeMap::new();
+/// for (i, s) in ["alpha", "bravo", "charlie", "delta", "echo",
+///                "foxtrot", "golf", "hotel"].iter().enumerate() {
+///     fields.insert(s.to_string(), i as u32);
+/// }
+/// let bytes = revision::to_vec(&Doc { fields }).unwrap();
+///
+/// let mut r: &[u8] = &bytes;
+/// let mut w = Doc::walk_revisioned(&mut r).unwrap();
+/// let view = w.walk_fields().unwrap();
+/// let map_walker = view.walker().unwrap();
+///
+/// // Pre-serialise the key bytes for byte-compare.
+/// let mut key = Vec::new();
+/// <String as SerializeRevisioned>::serialize_revisioned(&"delta".to_string(), &mut key).unwrap();
+/// let value_bytes = map_walker.find_value_bytes(|k| k.cmp(key.as_slice())).unwrap().unwrap();
+///
+/// let mut vr: &[u8] = value_bytes;
+/// let v = <u32 as DeserializeRevisioned>::deserialize_revisioned(&mut vr).unwrap();
+/// assert_eq!(v, 3);
 /// ```
 ///
 /// [`IndexedMapWalker`]: crate::optimised::IndexedMapWalker
@@ -429,6 +454,31 @@ impl<T> OwnedIndexedSetView<T> {
 
 /// Owned wire-bytes handle for an indexed sequence field. Mirror of
 /// [`OwnedIndexedMapView`] for the sequence case.
+///
+/// ```
+/// use revision::prelude::*;
+///
+/// #[revisioned(revision(1, encoding = "optimised"))]
+/// struct Doc {
+///     #[revision(indexed_seq)]
+///     tags: Vec<String>,
+/// }
+///
+/// // 8+ elements trigger the indexed prologue.
+/// let tags: Vec<String> = (0..10).map(|i| format!("tag-{i}")).collect();
+/// let bytes = revision::to_vec(&Doc { tags }).unwrap();
+///
+/// let mut r: &[u8] = &bytes;
+/// let mut w = Doc::walk_revisioned(&mut r).unwrap();
+/// let view = w.walk_tags().unwrap();
+/// let seq = view.walker().unwrap();
+/// assert!(seq.is_indexed());
+///
+/// // O(1) random access to element 5.
+/// let mut elt: &[u8] = seq.element_bytes(5).unwrap();
+/// let s = <String as DeserializeRevisioned>::deserialize_revisioned(&mut elt).unwrap();
+/// assert_eq!(s, "tag-5");
+/// ```
 pub struct OwnedIndexedSeqView<T> {
 	bytes: Vec<u8>,
 	_marker: PhantomData<fn() -> T>,

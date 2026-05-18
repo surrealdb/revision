@@ -47,13 +47,6 @@ pub enum StructEncoding {
 	Indexed,
 }
 
-/// Per-entry length encoding choice.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum LengthEncoding {
-	Varint,
-	U32Le,
-}
-
 /// One revision in a type's history. Encodes both the revision number and the
 /// wire-format choices that revision uses.
 #[allow(dead_code)]
@@ -64,7 +57,6 @@ pub struct HistoryEntry {
 	pub map: MapEncoding,
 	pub seq: SeqEncoding,
 	pub struct_kind: StructEncoding,
-	pub length: LengthEncoding,
 	/// `true` when this entry was synthesised from a legacy `revision = N`
 	/// attribute. Diagnostics use this to point the user at the right syntax.
 	pub from_legacy: bool,
@@ -83,7 +75,6 @@ impl HistoryEntry {
 			map: MapEncoding::Default,
 			seq: SeqEncoding::Default,
 			struct_kind: StructEncoding::Default,
-			length: LengthEncoding::Varint,
 			from_legacy,
 			span,
 		}

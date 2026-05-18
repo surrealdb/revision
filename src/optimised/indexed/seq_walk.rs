@@ -20,6 +20,7 @@ use std::marker::PhantomData;
 use crate::Error;
 use crate::optimised::validation::validate_seq_prologue;
 
+#[doc(hidden)]
 pub const FLAG_INDEXED: u8 = 0b0000_0001;
 
 /// Walker over an indexed-seq body.

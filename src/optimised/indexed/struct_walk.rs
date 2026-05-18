@@ -21,6 +21,40 @@ use crate::optimised::validation::validate_struct_prologue;
 use crate::slice_reader::SliceReader;
 
 /// Walker over an indexed-struct payload borrowed from `&'p [u8]`.
+///
+/// Constructed by the derive macro when a type opts into
+/// `#[revisioned(revision(N, encoding = "optimised", struct = "indexed"))]`.
+/// Hand-constructed use is supported for testing and surrealdb-style
+/// pre-decode filters.
+///
+/// ```
+/// use revision::optimised::IndexedStructWalker;
+/// use revision::prelude::*;
+///
+/// #[revisioned(revision(1, encoding = "optimised", struct = "indexed"))]
+/// #[derive(PartialEq, Debug)]
+/// struct Doc {
+///     id: u32,
+///     name: String,
+///     value: u64,
+/// }
+///
+/// let doc = Doc { id: 42, name: "answer".into(), value: 9001 };
+/// let bytes = revision::to_vec(&doc).unwrap();
+///
+/// // Strip the outer envelope: u16 revision + u32_le payload length.
+/// // u16 width depends on the `fixed-width-encoding` cargo feature, so probe at runtime.
+/// let rev_len = {
+///     let mut buf = Vec::new();
+///     <u16 as SerializeRevisioned>::serialize_revisioned(&1u16, &mut buf).unwrap();
+///     buf.len()
+/// };
+/// let payload = &bytes[rev_len + 4..];
+///
+/// let w = IndexedStructWalker::<&[u8]>::from_payload(payload, 1, 3).unwrap();
+/// assert_eq!(w.decode_field::<u32>(0).unwrap(), 42);
+/// assert_eq!(w.decode_field::<String>(1).unwrap(), "answer");
+/// ```
 #[derive(Debug)]
 pub struct IndexedStructWalker<'p, R: ?Sized = SliceReader<'p>> {
 	payload: &'p [u8],

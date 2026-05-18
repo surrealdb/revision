@@ -530,8 +530,7 @@ form).
 - Mixing `revision = N` with `revision(N)` on the same type is a
   compile error.
 - Encoding-specific attributes (`map = "..."`, `seq = "..."`,
-  `struct = "..."`, `length = "..."`) require `encoding = "optimised"`
-  on the same entry.
+  `struct = "..."`) require `encoding = "optimised"` on the same entry.
 
 ### Wire layout (per-entry)
 

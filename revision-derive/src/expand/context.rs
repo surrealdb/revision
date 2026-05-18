@@ -1,13 +1,11 @@
 //! Per-revision encoding context threaded through codegen visitors.
 //!
 //! Each `HistoryEntry` in a type's revision history carries its own encoding
-//! choices (legacy vs optimised, indexed prologues, length width). The visitors
-//! receive these choices as an [`EncodingContext`] so they can dispatch to the
-//! right codegen path.
+//! choices (legacy vs optimised, indexed prologues). The visitors receive
+//! these choices as an [`EncodingContext`] so they can dispatch to the right
+//! codegen path.
 
-use crate::ast::history::{
-	Encoding, HistoryEntry, LengthEncoding, MapEncoding, SeqEncoding, StructEncoding,
-};
+use crate::ast::history::{Encoding, HistoryEntry, MapEncoding, SeqEncoding, StructEncoding};
 
 /// Snapshot of one history entry's encoding choices, plus the revision number.
 ///
@@ -20,7 +18,6 @@ pub struct EncodingContext {
 	pub map: MapEncoding,
 	pub seq: SeqEncoding,
 	pub struct_kind: StructEncoding,
-	pub length: LengthEncoding,
 }
 
 #[allow(dead_code)]
@@ -32,7 +29,6 @@ impl EncodingContext {
 			map: entry.map,
 			seq: entry.seq,
 			struct_kind: entry.struct_kind,
-			length: entry.length,
 		}
 	}
 
@@ -44,7 +40,6 @@ impl EncodingContext {
 			map: MapEncoding::Default,
 			seq: SeqEncoding::Default,
 			struct_kind: StructEncoding::Default,
-			length: LengthEncoding::Varint,
 		}
 	}
 
