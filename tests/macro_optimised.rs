@@ -110,3 +110,74 @@ fn optimised_struct_preserves_field_values_across_a_few_sizes() {
 		assert_eq!(decoded, v);
 	}
 }
+
+// `[u8; N]` serialises as exactly N raw bytes under SerializeRevisioned,
+// which makes it a clean fit for `fixed(N)`. Primitive integer types use
+// varint encoding so they don't have a statically-known byte length and
+// shouldn't be used inside a fixed-size variant directly.
+#[revisioned(revision(1, encoding = "optimised"))]
+#[derive(Debug, Clone, PartialEq)]
+enum OptimisedEnum {
+	#[revision(size = "inline")]
+	Unit,
+	#[revision(size = "fixed(8)")]
+	WithBytes([u8; 8]),
+	#[revision(size = "varlen")]
+	WithString(String),
+	#[revision(size = "varlen")]
+	WithPair { a: u32, b: u32 },
+}
+
+#[test]
+fn optimised_enum_round_trips_all_size_classes() {
+	let cases = vec![
+		OptimisedEnum::Unit,
+		OptimisedEnum::WithBytes([1, 2, 3, 4, 5, 6, 7, 8]),
+		OptimisedEnum::WithString("hello, optimised world".to_string()),
+		OptimisedEnum::WithPair {
+			a: 1,
+			b: 2,
+		},
+	];
+	for original in cases {
+		let bytes = revision::to_vec(&original).unwrap();
+		let decoded: OptimisedEnum = revision::from_slice(&bytes).unwrap();
+		assert_eq!(original, decoded);
+	}
+}
+
+#[test]
+fn optimised_enum_inline_variant_is_two_bytes() {
+	// u16 revision varint (1 byte for 1) + u8 tag = 2 bytes total.
+	let bytes = revision::to_vec(&OptimisedEnum::Unit).unwrap();
+	assert_eq!(bytes.len(), 2, "Inline variant should be revision + tag only");
+}
+
+#[test]
+fn optimised_enum_fixed_variant_has_no_length_prefix() {
+	let bytes = revision::to_vec(&OptimisedEnum::WithBytes([0xAA; 8])).unwrap();
+	// revision (1) + tag (1) + 8-byte payload = 10 bytes (no u32_le length).
+	assert_eq!(bytes.len(), 1 + 1 + 8, "Fixed variant should not carry a length prefix");
+}
+
+#[test]
+fn optimised_enum_varlen_variant_has_u32_le_length() {
+	let s = "x".repeat(100);
+	let bytes = revision::to_vec(&OptimisedEnum::WithString(s.clone())).unwrap();
+	// revision (1) + tag (1) + u32_le length (4) + body.
+	let body_len = u32::from_le_bytes(bytes[2..6].try_into().unwrap()) as usize;
+	assert_eq!(bytes.len(), 1 + 1 + 4 + body_len);
+}
+
+#[test]
+fn optimised_enum_skip_advances_past_record() {
+	// Encode an enum, then a sentinel; skip the enum and verify sentinel reads back.
+	let v = OptimisedEnum::WithString("payload".to_string());
+	let mut bytes = revision::to_vec(&v).unwrap();
+	let sentinel: u32 = 0xDEADBEEF;
+	bytes.extend_from_slice(&revision::to_vec(&sentinel).unwrap());
+	let mut cursor: &[u8] = &bytes;
+	<OptimisedEnum as SkipRevisioned>::skip_revisioned(&mut cursor).unwrap();
+	let remaining: u32 = revision::from_slice(cursor).unwrap();
+	assert_eq!(remaining, sentinel);
+}

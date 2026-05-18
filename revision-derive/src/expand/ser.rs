@@ -74,6 +74,11 @@ impl<'ast> Visit<'ast> for SerializeVisitor<'_> {
 	}
 
 	fn visit_enum(&mut self, i: &'ast Enum) -> syn::Result<()> {
+		if self.ctx.is_optimised() {
+			let body = optimised::emit_enum_serialize(i, self.ctx)?;
+			self.stream.append_all(body);
+			return Ok(());
+		}
 		let mut discriminants = HashMap::new();
 		CalcDiscriminant::new(self.revision, &mut discriminants).visit_enum(i)?;
 

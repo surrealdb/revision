@@ -21,6 +21,11 @@ pub struct SkipVisitor<'a> {
 
 impl<'ast> Visit<'ast> for SkipVisitor<'_> {
 	fn visit_enum(&mut self, i: &'ast Enum) -> syn::Result<()> {
+		if self.ctx.is_optimised() {
+			let body = optimised::emit_enum_skip(i, self.ctx, self.slice_mode)?;
+			self.stream.append_all(body);
+			return Ok(());
+		}
 		let mut discriminants = HashMap::new();
 		CalcDiscriminant::new(self.current, &mut discriminants).visit_enum(i)?;
 
