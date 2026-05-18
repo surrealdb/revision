@@ -11,6 +11,7 @@
 
 pub mod error;
 pub mod implementations;
+pub mod optimised;
 
 pub mod slice_reader;
 pub mod walk;
@@ -82,6 +83,9 @@ pub fn skip_check_slice<T: SkipCheckRevisioned>(bytes: &[u8]) -> Result<usize, E
 }
 
 pub mod prelude {
+	pub use crate::optimised::{
+		IndexedMapWalker, IndexedSeqWalker, IndexedStructWalker, SizeClass, Tag,
+	};
 	pub use crate::{
 		BorrowedReader, EnumWalker, LeafWalker, LengthPrefixedBytes, MapEntry, MapWalker,
 		OptionWalker, ResultWalker, SeqItem, SeqWalker, StructWalker, WalkRevisioned,
