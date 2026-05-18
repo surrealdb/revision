@@ -605,6 +605,81 @@ that allocates.
 | old code reads new rev-M optimised data | ✗ fails on unknown revision (forward-only, accepted) |
 | in-memory shape across revisions | ✓ every decoder for every revision produces the same shape |
 
+### Worked example: migrating a struct from legacy to optimised
+
+A type that started life as a single legacy revision and is now being
+opted into the optimised encoding for new writes:
+
+```rust,ignore
+// Before — single legacy revision:
+#[revisioned(revision = 1)]
+struct Profile {
+    id: u32,
+    handle: String,
+    bio: String,
+}
+
+// After — two revisions, the new one uses optimised:
+#[revisioned(
+    revision(1),                                        // existing on-disk data
+    revision(2, encoding = "optimised", struct = "indexed"),
+)]
+struct Profile {
+    id: u32,
+    handle: String,
+    bio: String,
+}
+```
+
+What changes:
+
+- Existing rev-1 bytes on disk continue to decode through the
+  `revision(1)` arm — the macro normalises both the legacy
+  `revision = 1` form and the explicit `revision(1)` form to the same
+  internal legacy entry, so no on-disk migration is needed.
+- All new writes serialise at rev 2: `u16 2 | u32_le payload_length |
+  [u32_le; 3] offset prologue | id | handle | bio`. Reading those new
+  bytes is automatic — the macro emits one decode arm per history
+  entry.
+- A walker constructed from any rev-1 or rev-2 byte stream exposes
+  the same per-field methods (`decode_id`, `decode_handle`,
+  `decode_bio`). Skip is O(1) on rev-2 (one `u32_le` read + advance)
+  regardless of how big `bio` got.
+
+### Worked example: an enum under the optimised tag
+
+Tag size class tells the codec how to read each variant's payload.
+Inline variants are one byte total on the wire; varlen variants
+carry a `u32_le` length so skip is O(1).
+
+```rust,ignore
+#[revisioned(revision(1, encoding = "optimised"))]
+enum Event {
+    #[revision(size = "inline")]
+    Heartbeat,
+    #[revision(size = "fixed(16)")]
+    Uuid(uuid::Uuid),                 // exactly 16 bytes on the wire
+    #[revision(size = "varlen")]
+    Message(String),                  // u32_le length + bytes
+}
+
+// Skim variants without materialising the payload:
+let bytes = revision::to_vec(&event).unwrap();
+let mut r: &[u8] = &bytes;
+let walker = Event::walk_revisioned(&mut r)?;
+
+if walker.is_heartbeat() {
+    // No-op; the tag was 1 byte total.
+} else if walker.is_message() {
+    let text = walker.decode_message()?;   // reads u32_le len, slurps body
+    // ...
+}
+```
+
+The `decode_<variant>` accessor works on Wire and Materialised
+walkers alike — the recommended path for surrealdb-style filters
+that peek the variant before deciding whether to fully decode.
+
 ### Limitations (current iteration)
 
 - **Walker on optimised enums** exposes `discriminant()` and
