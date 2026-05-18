@@ -81,10 +81,28 @@ pub fn emit_struct_serialize(s: &Struct, ctx: EncodingContext) -> TokenStream {
 				__scratch[__off_pos..__off_pos + 4].copy_from_slice(&__off_bytes);
 			});
 		}
-		out.append_all(quote! {
-			::revision::SerializeRevisioned::serialize_revisioned(#binding, &mut __scratch)?;
-		});
-		let _ = f; // satisfy clippy when binding is unused (e.g. unit struct edge case)
+		// Route through the indexed-encoded traits when the field opted in;
+		// otherwise emit the default `SerializeRevisioned` call.
+		let ty = &f.ty;
+		if f.attrs.options.indexed_map {
+			out.append_all(quote! {
+				<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::serialize_indexed_map(
+					#binding,
+					&mut __scratch,
+				)?;
+			});
+		} else if f.attrs.options.indexed_seq {
+			out.append_all(quote! {
+				<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::serialize_indexed_seq(
+					#binding,
+					&mut __scratch,
+				)?;
+			});
+		} else {
+			out.append_all(quote! {
+				::revision::SerializeRevisioned::serialize_revisioned(#binding, &mut __scratch)?;
+			});
+		}
 	}
 
 	out.append_all(quote! {
@@ -132,9 +150,22 @@ pub fn emit_struct_deserialize(s: &Struct, ctx: EncodingContext, target: usize) 
 		let ty = &f.ty;
 
 		if exists_current && exists_target {
-			decode_each.append_all(quote! {
-				let #binding = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(&mut __payload)?;
-			});
+			let decode = if f.attrs.options.indexed_map {
+				quote! {
+					let #binding: #ty =
+						<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::deserialize_indexed_map(&mut __payload)?;
+				}
+			} else if f.attrs.options.indexed_seq {
+				quote! {
+					let #binding: #ty =
+						<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::deserialize_indexed_seq(&mut __payload)?;
+				}
+			} else {
+				quote! {
+					let #binding = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(&mut __payload)?;
+				}
+			};
+			decode_each.append_all(decode);
 			bindings_for_construction.push(quote! { #binding });
 		} else if !exists_current && exists_target {
 			// Field added later — synthesize.

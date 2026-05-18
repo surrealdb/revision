@@ -418,9 +418,40 @@ fn emit_struct_methods(
 		// `Default::default`. Only emitted into the codegen when the field
 		// could actually be absent (`start > 0`); otherwise `Default` would
 		// be required even for types that never need it.
+		// Pick the decode / skip call for this field. Fields with
+		// `#[revision(indexed_map)]` / `#[revision(indexed_seq)]` route through
+		// the runtime indexed helpers; everything else uses the type's own
+		// `DeserializeRevisioned` / `SkipRevisioned` impl.
+		let field_decode_call = if f.attrs.options.indexed_map {
+			quote! {
+				<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::deserialize_indexed_map(reader)?
+			}
+		} else if f.attrs.options.indexed_seq {
+			quote! {
+				<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::deserialize_indexed_seq(reader)?
+			}
+		} else {
+			quote! {
+				<#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?
+			}
+		};
+		let field_skip_call = if f.attrs.options.indexed_map {
+			quote! {
+				<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::skip_indexed_map(reader)?;
+			}
+		} else if f.attrs.options.indexed_seq {
+			quote! {
+				<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::skip_indexed_seq(reader)?;
+			}
+		} else {
+			quote! {
+				<#ty as ::revision::SkipRevisioned>::skip_revisioned(reader)?;
+			}
+		};
+
 		let decode_wire_body = if always_present {
 			quote! {
-				let __v = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
+				let __v = #field_decode_call;
 			}
 		} else {
 			let default_expr = if let Some(default) = f.attrs.options.default.as_ref() {
@@ -431,7 +462,7 @@ fn emit_struct_methods(
 			};
 			quote! {
 				let __v = if *wire_rev >= #start_val {
-					<#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?
+					#field_decode_call
 				} else {
 					#default_expr
 				};
@@ -439,13 +470,11 @@ fn emit_struct_methods(
 		};
 
 		let skip_wire_body = if always_present {
-			quote! {
-				<#ty as ::revision::SkipRevisioned>::skip_revisioned(reader)?;
-			}
+			field_skip_call.clone()
 		} else {
 			quote! {
 				if *wire_rev >= #start_val {
-					<#ty as ::revision::SkipRevisioned>::skip_revisioned(reader)?;
+					#field_skip_call
 				}
 			}
 		};

@@ -15,7 +15,10 @@ pub mod struct_walk;
 
 pub use map_walk::IndexedMapWalker;
 pub use seq_walk::IndexedSeqWalker;
-pub use serialize::{serialize_indexed_map, serialize_indexed_seq};
+pub use serialize::{
+	IndexedMapEncoded, IndexedSeqEncoded, deserialize_indexed_map, deserialize_indexed_seq,
+	serialize_indexed_map, serialize_indexed_seq, skip_indexed_map, skip_indexed_seq,
+};
 pub use struct_walk::IndexedStructWalker;
 
 /// Minimum entry count that triggers the indexed prologue.

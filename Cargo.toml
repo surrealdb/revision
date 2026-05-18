@@ -93,6 +93,10 @@ path = "tests/walker_optimised.rs"
 name = "property"
 path = "tests/property.rs"
 
+[[test]]
+name = "indexed_fields"
+path = "tests/indexed_fields.rs"
+
 [[bench]]
 name = "roaring"
 harness = false
