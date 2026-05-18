@@ -85,6 +85,10 @@ path = "tests/macro_optimised.rs"
 name = "migration"
 path = "tests/migration.rs"
 
+[[test]]
+name = "walker_optimised"
+path = "tests/walker_optimised.rs"
+
 [[bench]]
 name = "roaring"
 harness = false
@@ -186,4 +190,8 @@ required-features = ["uuid"]
 
 [[bench]]
 name = "vec_bool_comparison"
+harness = false
+
+[[bench]]
+name = "optimised_vs_legacy"
 harness = false
