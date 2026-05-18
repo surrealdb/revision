@@ -89,6 +89,10 @@ path = "tests/migration.rs"
 name = "walker_optimised"
 path = "tests/walker_optimised.rs"
 
+[[test]]
+name = "property"
+path = "tests/property.rs"
+
 [[bench]]
 name = "roaring"
 harness = false
