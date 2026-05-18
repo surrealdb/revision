@@ -6,16 +6,20 @@ use syn::Ident;
 use crate::ast::{Enum, Field, Fields, Struct, Variant, Visit};
 
 use super::common::CalcDiscriminant;
+use super::context::EncodingContext;
+use super::optimised;
 
 pub struct SerializeVisitor<'a> {
 	pub revision: usize,
+	pub ctx: EncodingContext,
 	pub stream: &'a mut TokenStream,
 }
 
 impl<'a> SerializeVisitor<'a> {
-	pub fn new(revision: usize, stream: &'a mut TokenStream) -> Self {
+	pub fn new(revision: usize, ctx: EncodingContext, stream: &'a mut TokenStream) -> Self {
 		Self {
 			revision,
+			ctx,
 			stream,
 		}
 	}
@@ -23,6 +27,11 @@ impl<'a> SerializeVisitor<'a> {
 
 impl<'ast> Visit<'ast> for SerializeVisitor<'_> {
 	fn visit_struct(&mut self, i: &'ast Struct) -> syn::Result<()> {
+		if self.ctx.is_optimised() {
+			let body = optimised::emit_struct_serialize(i, self.ctx);
+			self.stream.append_all(body);
+			return Ok(());
+		}
 		let mut ser_fields = TokenStream::new();
 		SerializeFields {
 			revision: self.revision,

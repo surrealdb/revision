@@ -1,11 +1,14 @@
 mod common;
+mod context;
 mod de;
+mod optimised;
 mod reexport;
 mod ser;
 mod skip;
 mod validate_version;
 mod walk;
 
+use context::EncodingContext;
 use de::{DeserializeVisitor, EnumStructsVisitor};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
@@ -70,9 +73,14 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 	.visit_item(&ast)
 	.unwrap();
 
+	// The latest history entry drives the serialize impl. Every prior entry has
+	// its own decode arm below.
+	let latest_entry = history.last().expect("history non-empty");
+	let serialize_ctx = EncodingContext::from_entry(latest_entry);
+
 	// serialize implementation
 	let mut serialize = TokenStream::new();
-	SerializeVisitor::new(revision, &mut serialize).visit_item(&ast).unwrap();
+	SerializeVisitor::new(revision, serialize_ctx, &mut serialize).visit_item(&ast).unwrap();
 
 	let mut deserialize_structs = TokenStream::new();
 	EnumStructsVisitor::new(revision, &mut deserialize_structs).visit_item(&ast).unwrap();
@@ -82,10 +90,12 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 		.iter()
 		.map(|entry| {
 			let x = entry.revision.value;
+			let ctx = EncodingContext::from_entry(entry);
 			let mut deserialize = TokenStream::new();
 			DeserializeVisitor {
 				target: revision,
 				current: x,
+				ctx,
 				stream: &mut deserialize,
 			}
 			.visit_item(&ast)
@@ -117,10 +127,12 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 	if skip_derive_enabled {
 		for entry in history.iter() {
 			let x = entry.revision.value;
+			let ctx = EncodingContext::from_entry(entry);
 			let mut skip_body = TokenStream::new();
 			SkipVisitor {
 				target: schema_revision,
 				current: x,
+				ctx,
 				stream: &mut skip_body,
 				slice_mode: false,
 			}
@@ -136,6 +148,7 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 			SkipVisitor {
 				target: schema_revision,
 				current: x,
+				ctx,
 				stream: &mut skip_slice_body,
 				slice_mode: true,
 			}

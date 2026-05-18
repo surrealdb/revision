@@ -77,6 +77,10 @@ path = "tests/corruption.rs"
 name = "syntax_legacy_vs_new"
 path = "tests/syntax_legacy_vs_new.rs"
 
+[[test]]
+name = "macro_optimised"
+path = "tests/macro_optimised.rs"
+
 [[bench]]
 name = "roaring"
 harness = false

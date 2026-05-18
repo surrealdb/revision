@@ -7,6 +7,8 @@ use syn::{Ident, Index};
 use crate::ast::{Enum, Fields, Struct, Variant, Visit};
 
 use super::common::CalcDiscriminant;
+use super::context::EncodingContext;
+use super::optimised;
 
 /// Visitor which creates structs for fields in a an enum variant.
 pub struct EnumStructsVisitor<'a> {
@@ -75,6 +77,7 @@ impl<'ast> Visit<'ast> for EnumStructsVisitor<'_> {
 pub struct DeserializeVisitor<'a> {
 	pub target: usize,
 	pub current: usize,
+	pub ctx: EncodingContext,
 	pub stream: &'a mut TokenStream,
 }
 
@@ -112,6 +115,11 @@ impl<'ast> Visit<'ast> for DeserializeVisitor<'_> {
 	}
 
 	fn visit_struct(&mut self, i: &'ast Struct) -> syn::Result<()> {
+		if self.ctx.is_optimised() {
+			let body = optimised::emit_struct_deserialize(i, self.ctx, self.target);
+			self.stream.append_all(body);
+			return Ok(());
+		}
 		let mut fields_binding = TokenStream::new();
 		DeserializeFields {
 			target: self.target,
