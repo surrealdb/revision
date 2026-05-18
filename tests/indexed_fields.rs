@@ -74,11 +74,15 @@ fn indexed_field_walker_can_binary_search_keys() {
 
 #[test]
 fn indexed_seq_walker_can_random_access_elements() {
+	// 8+ elements to engage the indexed path (OFFSET_TABLE_MIN_LEN = 8).
+	// Below that threshold the encoder emits a legacy `(elem)*` body that
+	// the walker can still iterate but not random-access.
+	let tags: Vec<String> = (0..10).map(|i| format!("tag-{i}")).collect();
 	let doc = Doc {
 		id: 0,
 		fields: BTreeMap::new(),
 		summary: String::new(),
-		tags: vec!["one".into(), "two".into(), "three".into()],
+		tags: tags.clone(),
 	};
 	let bytes = revision::to_vec(&doc).unwrap();
 	let mut r: &[u8] = &bytes;
@@ -89,13 +93,14 @@ fn indexed_seq_walker_can_random_access_elements() {
 
 	let view = w.walk_tags().unwrap();
 	let seq_walker = view.walker().unwrap();
-	assert_eq!(seq_walker.len(), 3);
-	// Read element 1 ("two").
-	let bytes = seq_walker.element_bytes(1).unwrap();
+	assert_eq!(seq_walker.len(), 10);
+	assert!(seq_walker.is_indexed(), "10 >= threshold: should be indexed");
+	// Read element 5 — random access by index, O(1).
+	let bytes = seq_walker.element_bytes(5).unwrap();
 	let mut r: &[u8] = bytes;
 	let v: String =
 		<String as revision::DeserializeRevisioned>::deserialize_revisioned(&mut r).unwrap();
-	assert_eq!(v, "two");
+	assert_eq!(v, "tag-5");
 }
 
 #[test]
@@ -184,6 +189,94 @@ fn indexed_map_works_for_imbl_hashmap() {
 	let bytes = revision::to_vec(&v).unwrap();
 	let decoded: WithHashMap = revision::from_slice(&bytes).unwrap();
 	assert_eq!(decoded.fields, fields);
+}
+
+#[test]
+fn indexed_set_works_for_btreeset() {
+	use std::collections::BTreeSet;
+
+	#[revisioned(revision(1, encoding = "optimised"))]
+	#[derive(Debug, Clone, PartialEq)]
+	struct WithSet {
+		#[revision(indexed_set)]
+		tags: BTreeSet<String>,
+	}
+
+	let mut tags = BTreeSet::new();
+	for s in &["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel"] {
+		tags.insert(s.to_string());
+	}
+	let v = WithSet {
+		tags: tags.clone(),
+	};
+	let bytes = revision::to_vec(&v).unwrap();
+	let decoded: WithSet = revision::from_slice(&bytes).unwrap();
+	assert_eq!(decoded.tags, tags);
+}
+
+#[test]
+fn indexed_set_works_for_hashset() {
+	use std::collections::HashSet;
+
+	#[revisioned(revision(1, encoding = "optimised"))]
+	#[derive(Debug, Clone, PartialEq)]
+	struct WithSet {
+		#[revision(indexed_set)]
+		ids: HashSet<u64>,
+	}
+
+	let ids: HashSet<u64> = (0u64..10).collect();
+	let v = WithSet {
+		ids: ids.clone(),
+	};
+	let bytes = revision::to_vec(&v).unwrap();
+	let decoded: WithSet = revision::from_slice(&bytes).unwrap();
+	assert_eq!(decoded.ids, ids);
+}
+
+#[test]
+fn indexed_set_walker_can_find_membership() {
+	use revision::optimised::IndexedSeqWalker;
+	use std::collections::BTreeSet;
+
+	let set: BTreeSet<String> =
+		["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel"]
+			.iter()
+			.map(|s| s.to_string())
+			.collect();
+	let mut bytes = Vec::new();
+	revision::optimised::indexed::serialize_indexed_set_iter(set.iter(), &mut bytes).unwrap();
+
+	let walker: IndexedSeqWalker<String> = IndexedSeqWalker::from_payload(&bytes).unwrap();
+	assert!(walker.is_indexed());
+	assert_eq!(walker.len(), 8);
+	// Verify the bytes are byte-sorted: iterating element_bytes(i) gives
+	// ascending sequences.
+	let mut prev: &[u8] = &[];
+	for i in 0..8 {
+		let b = walker.element_bytes(i).unwrap();
+		assert!(b > prev, "element bytes must be strictly ascending");
+		prev = b;
+	}
+}
+
+#[cfg(feature = "imbl")]
+#[test]
+fn indexed_set_works_for_imbl_ordset() {
+	#[revisioned(revision(1, encoding = "optimised"))]
+	#[derive(Debug, Clone, PartialEq)]
+	struct WithSet {
+		#[revision(indexed_set)]
+		tags: imbl::OrdSet<String>,
+	}
+	let tags: imbl::OrdSet<String> =
+		["alpha", "bravo", "charlie", "delta"].iter().map(|s| s.to_string()).collect();
+	let v = WithSet {
+		tags: tags.clone(),
+	};
+	let bytes = revision::to_vec(&v).unwrap();
+	let decoded: WithSet = revision::from_slice(&bytes).unwrap();
+	assert_eq!(decoded.tags, tags);
 }
 
 #[cfg(feature = "imbl")]

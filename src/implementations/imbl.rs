@@ -2,8 +2,9 @@
 
 use super::super::Error;
 use super::super::optimised::indexed::{
-	IndexedMapEncoded, IndexedSeqEncoded, deserialize_indexed_map, deserialize_indexed_seq,
-	serialize_indexed_entries, serialize_indexed_seq_iter, skip_indexed_map, skip_indexed_seq,
+	IndexedMapEncoded, IndexedSeqEncoded, IndexedSetEncoded, deserialize_indexed_map,
+	deserialize_indexed_seq, serialize_indexed_entries, serialize_indexed_seq_iter,
+	serialize_indexed_set_iter, skip_indexed_map, skip_indexed_seq, skip_indexed_set,
 };
 use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned, SkipRevisioned};
 use imbl::{HashMap, HashSet, OrdMap, OrdSet, Vector};
@@ -69,6 +70,40 @@ where
 	}
 	fn skip_indexed_seq<R: std::io::Read>(r: &mut R) -> Result<(), Error> {
 		skip_indexed_seq::<T, R>(r)
+	}
+}
+
+impl<T> IndexedSetEncoded for OrdSet<T>
+where
+	T: SerializeRevisioned + DeserializeRevisioned + SkipRevisioned + Ord + Clone,
+{
+	type Item = T;
+	fn serialize_indexed_set<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
+		serialize_indexed_set_iter(self.iter(), w)
+	}
+	fn deserialize_indexed_set<R: std::io::Read>(r: &mut R) -> Result<Self, Error> {
+		let v: Vec<T> = deserialize_indexed_seq(r)?;
+		Ok(v.into_iter().collect())
+	}
+	fn skip_indexed_set<R: std::io::Read>(r: &mut R) -> Result<(), Error> {
+		skip_indexed_set::<T, R>(r)
+	}
+}
+
+impl<T> IndexedSetEncoded for HashSet<T>
+where
+	T: SerializeRevisioned + DeserializeRevisioned + SkipRevisioned + Hash + Eq + Clone,
+{
+	type Item = T;
+	fn serialize_indexed_set<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
+		serialize_indexed_set_iter(self.iter(), w)
+	}
+	fn deserialize_indexed_set<R: std::io::Read>(r: &mut R) -> Result<Self, Error> {
+		let v: Vec<T> = deserialize_indexed_seq(r)?;
+		Ok(v.into_iter().collect())
+	}
+	fn skip_indexed_set<R: std::io::Read>(r: &mut R) -> Result<(), Error> {
+		skip_indexed_set::<T, R>(r)
 	}
 }
 

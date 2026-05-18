@@ -1,5 +1,131 @@
 # Changelog
 
+## 0.23.0 (unreleased)
+
+The headline of this release is the optimised wire format — an opt-in
+encoding that gives O(1) skip, optional offset-table prologues for
+O(1)/O(log n) random access, and a tagged-value envelope for enums.
+Existing types using `#[revisioned(revision = N)]` continue to work
+unchanged on the wire; the new behaviour is opt-in per revision.
+
+### Added
+
+#### New `#[revisioned(...)]` history syntax
+
+- `#[revisioned(revision(N, encoding = "optimised", struct = "indexed"))]`
+  declares one revision's encoding choices. Multiple `revision(...)`
+  entries on the same type spell a contiguous history; the parser
+  rejects gaps, duplicates, and mixing legacy `revision = N` with the
+  new form. See [README §Optimised wire format] for a walkthrough.
+- Legacy `#[revisioned(revision = N)]` syntax is unchanged — it
+  normalises internally to N legacy entries and emits byte-identical
+  wire output.
+- Type-level `map = "indexed"` / `seq = "indexed"` are rejected at
+  parse time; use the per-field attributes below instead.
+
+#### Per-field encoding attributes
+
+Inside an optimised revision, individual fields opt into specialised
+encodings via `#[revision(…)]`:
+
+- `indexed_map` — `BTreeMap` / `HashMap` / `imbl::OrdMap` /
+  `imbl::HashMap` get a sorted offset-table layout for `O(log n)`
+  binary-search lookup via `IndexedMapWalker`.
+- `indexed_seq` — `Vec` / `imbl::Vector` get an offset table for
+  `O(1)` random access via `IndexedSeqWalker`.
+- `indexed_set` — `BTreeSet` / `HashSet` / `imbl::OrdSet` /
+  `imbl::HashSet` get an indexed-seq layout with elements
+  byte-sorted, enabling membership-by-bytes via the same walker.
+
+The encoders fall back to a legacy `(K, V)*` / `(elem)*` body when
+the collection has fewer than `OFFSET_TABLE_MIN_LEN` (= 8) entries —
+the offset table would be pure overhead at those sizes.
+
+#### Per-variant size class for optimised enums
+
+Variants of an `encoding = "optimised"` enum declare a tag class:
+
+- `#[revision(size = "inline")]` — unit variants, 1 byte total on
+  the wire (just the tag).
+- `#[revision(size = "fixed(N)")]` — body serialises to exactly N
+  bytes (verified via `debug_assert_eq!`).
+- `#[revision(size = "varlen")]` — body preceded by a `u32_le`
+  length prefix, O(1) skip.
+
+5 bits of the tag byte hold the variant id (max 32 variants per
+optimised enum); the remaining 2 hold the size class.
+
+#### Walker additions
+
+- `decode_<variant>(self) -> Result<InnerT, Error>` on enum walkers
+  — works for both Wire and Materialised paths (including the
+  optimised enum's tag-byte slurp), unlike `into_<variant>` which
+  is Wire-only.
+- `<variant>_view(self) -> Result<OwnedVariantView<T>, Error>` —
+  returns an owned wrapper around the variant payload bytes;
+  callers construct their own walker / decoder against it.
+- `walk_<field>` / `into_walk_<field>` for `indexed_map` /
+  `indexed_seq` / `indexed_set` fields return
+  `OwnedIndexedMapView<K, V>` / `OwnedIndexedSeqView<T>` /
+  `OwnedIndexedSetView<T>` — each owns the field's canonical wire
+  bytes and exposes `.walker()` to borrow the appropriate
+  indexed walker.
+- The macro-generated walker for `struct = "indexed"` types now
+  reads any field in O(1) via the offset table (previously it walked
+  fields sequentially after advancing past the prologue). 5× faster
+  for late-field access; see `benches/late_field_access.rs`.
+
+#### Runtime modules
+
+A new top-level `revision::optimised` module exposes the wire-format
+primitives directly:
+
+- `tag::{Tag, SizeClass}`, `envelope::{encode_inline, encode_fixed,
+  encode_varlen, read_optimised_tag, read_varlen_slice,
+  skip_varlen}` — the tagged-value envelope used by enum codegen.
+- `indexed::{IndexedStructWalker, IndexedMapWalker,
+  IndexedSeqWalker}` — random-access walkers over indexed payloads.
+- `indexed::{IndexedMapEncoded, IndexedSeqEncoded,
+  IndexedSetEncoded}` — traits the per-field attributes route
+  through.
+- `indexed::{serialize_indexed_map, serialize_indexed_seq,
+  serialize_indexed_set_iter, serialize_indexed_entries,
+  deserialize_indexed_map, deserialize_indexed_seq,
+  deserialize_indexed_set, skip_indexed_map, skip_indexed_seq,
+  skip_indexed_set}` — free helpers for hand-written impls.
+
+### Changed
+
+- `Error` is now `#[non_exhaustive]`. Five new variants for
+  optimised-format errors: `InvalidOptimisedTag`,
+  `OptimisedOffsetOutOfRange`, `OptimisedOffsetsNonMonotonic`,
+  `OptimisedKeyRegionNotAscending`, `OptimisedSubReaderOverrun`.
+  Downstream `match Error { ... }` code needs a wildcard arm.
+
+### Migration
+
+For most users the upgrade is **no change** — legacy
+`#[revisioned(revision = N)]` continues to produce byte-identical
+output. To opt in to the optimised format for new revisions, add a
+history entry:
+
+```rust,ignore
+#[revisioned(
+    revision(1),                                           // existing on-disk data
+    revision(2, encoding = "optimised", struct = "indexed"),
+)]
+struct Wide {
+    id: u32,
+    #[revision(indexed_map)] tags: BTreeMap<String, Value>,
+    /* ... */
+}
+```
+
+Bytes from rev 1 (already on disk) keep decoding through the rev-1
+arm; all new writes serialise at rev 2 with the optimised envelope
+and indexed prologue. Walker code that read rev-1 records continues
+to work — the walker accepts both shapes.
+
 ## 0.18.0
 
 ### Added

@@ -150,6 +150,25 @@ fn walker_decode_variant_works_on_legacy_enum() {
 }
 
 #[test]
+fn walker_variant_view_works_on_optimised_enum() {
+	// `<variant>_view` returns an OwnedVariantView holding the variant body
+	// bytes. Works on both Wire (legacy) and Materialised (optimised)
+	// walkers.
+	let v = OptEnum::Varlen("hello".into());
+	let bytes = revision::to_vec(&v).unwrap();
+	let mut r: &[u8] = &bytes;
+	let w = OptEnum::walk_revisioned(&mut r).unwrap();
+	let view = w.varlen_view().unwrap();
+	// The view owns the variant's body bytes — caller can construct their
+	// own walker / decoder from them.
+	let body = view.as_bytes();
+	let mut br: &[u8] = body;
+	let inner: String =
+		<String as revision::DeserializeRevisioned>::deserialize_revisioned(&mut br).unwrap();
+	assert_eq!(inner, "hello");
+}
+
+#[test]
 fn walker_decode_variant_errors_on_wrong_variant() {
 	let v = OptEnum::Unit;
 	let bytes = revision::to_vec(&v).unwrap();

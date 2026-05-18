@@ -98,6 +98,13 @@ pub fn emit_struct_serialize(s: &Struct, ctx: EncodingContext) -> TokenStream {
 					&mut __scratch,
 				)?;
 			});
+		} else if f.attrs.options.indexed_set {
+			out.append_all(quote! {
+				<#ty as ::revision::optimised::indexed::IndexedSetEncoded>::serialize_indexed_set(
+					#binding,
+					&mut __scratch,
+				)?;
+			});
 		} else {
 			out.append_all(quote! {
 				::revision::SerializeRevisioned::serialize_revisioned(#binding, &mut __scratch)?;
@@ -160,6 +167,11 @@ pub fn emit_struct_deserialize(s: &Struct, ctx: EncodingContext, target: usize) 
 					let #binding: #ty =
 						<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::deserialize_indexed_seq(&mut __payload)?;
 				}
+			} else if f.attrs.options.indexed_set {
+				quote! {
+					let #binding: #ty =
+						<#ty as ::revision::optimised::indexed::IndexedSetEncoded>::deserialize_indexed_set(&mut __payload)?;
+				}
 			} else {
 				quote! {
 					let #binding = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(&mut __payload)?;
@@ -216,7 +228,12 @@ pub fn emit_struct_deserialize(s: &Struct, ctx: EncodingContext, target: usize) 
 		let exists_target = f.attrs.options.exists_at(target);
 		if exists_current && !exists_target {
 			let binding = f.name.to_binding();
-			let convert = f.attrs.options.convert.as_ref().unwrap();
+			let convert = f
+				.attrs
+				.options
+				.convert
+				.as_ref()
+				.expect("FieldOptions::finish rejects `end` without convert_fn");
 			let convert_ident = syn::Ident::new(&convert.value(), convert.span());
 			let rev_lit = current as u16;
 			post_construct.append_all(quote! {

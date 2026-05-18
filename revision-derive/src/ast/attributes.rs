@@ -36,6 +36,7 @@ mod kw {
 	// Per-field encoding flags for optimised revisions.
 	syn::custom_keyword!(indexed_map);
 	syn::custom_keyword!(indexed_seq);
+	syn::custom_keyword!(indexed_set);
 }
 
 #[derive(Debug)]
@@ -167,6 +168,8 @@ pub struct FieldOptions {
 	pub indexed_map: bool,
 	/// `#[revision(indexed_seq)]`: same, for sequence-shaped fields.
 	pub indexed_seq: bool,
+	/// `#[revision(indexed_set)]`: same, for set-shaped fields.
+	pub indexed_set: bool,
 }
 
 impl FieldOptions {
@@ -183,6 +186,7 @@ pub enum FieldOption {
 	Default(ValueOption<kw::default_fn, LitStr>),
 	IndexedMap(kw::indexed_map),
 	IndexedSeq(kw::indexed_seq),
+	IndexedSet(kw::indexed_set),
 }
 
 impl Parse for FieldOption {
@@ -204,6 +208,9 @@ impl Parse for FieldOption {
 		}
 		if input.peek(kw::indexed_seq) {
 			return Ok(FieldOption::IndexedSeq(input.parse()?));
+		}
+		if input.peek(kw::indexed_set) {
+			return Ok(FieldOption::IndexedSet(input.parse()?));
 		}
 
 		Err(input.error("invalid field option"))
@@ -249,10 +256,10 @@ impl AttributeOptions for FieldOptions {
 					if res.indexed_map {
 						return Err(Error::new(kw.span(), "tried to set an option twice"));
 					}
-					if res.indexed_seq {
+					if res.indexed_seq || res.indexed_set {
 						return Err(Error::new(
 							kw.span(),
-							"a field can declare either `indexed_map` or `indexed_seq`, not both",
+							"a field can declare at most one of `indexed_map`, `indexed_seq`, `indexed_set`",
 						));
 					}
 					res.indexed_map = true;
@@ -261,13 +268,25 @@ impl AttributeOptions for FieldOptions {
 					if res.indexed_seq {
 						return Err(Error::new(kw.span(), "tried to set an option twice"));
 					}
-					if res.indexed_map {
+					if res.indexed_map || res.indexed_set {
 						return Err(Error::new(
 							kw.span(),
-							"a field can declare either `indexed_map` or `indexed_seq`, not both",
+							"a field can declare at most one of `indexed_map`, `indexed_seq`, `indexed_set`",
 						));
 					}
 					res.indexed_seq = true;
+				}
+				FieldOption::IndexedSet(kw) => {
+					if res.indexed_set {
+						return Err(Error::new(kw.span(), "tried to set an option twice"));
+					}
+					if res.indexed_map || res.indexed_seq {
+						return Err(Error::new(
+							kw.span(),
+							"a field can declare at most one of `indexed_map`, `indexed_seq`, `indexed_set`",
+						));
+					}
+					res.indexed_set = true;
 				}
 			}
 		}

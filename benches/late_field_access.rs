@@ -137,7 +137,7 @@ fn sample_legacy() -> Wide25Legacy {
 		flag2: false,
 		counter2: 200,
 		label2: "field-two".into(),
-		rating: 3.14,
+		rating: 3.5,
 		flag3: true,
 		inner1: nested_legacy(),
 		inner2: nested_legacy(),
@@ -167,7 +167,7 @@ fn sample_opt() -> Wide25IndexedOpt {
 		flag2: false,
 		counter2: 200,
 		label2: "field-two".into(),
-		rating: 3.14,
+		rating: 3.5,
 		flag3: true,
 		inner1: nested_opt(),
 		inner2: nested_opt(),
@@ -244,6 +244,30 @@ fn bench_alloc_legacy(c: &mut Criterion) {
 	group.finish();
 }
 
+fn bench_optimised_walker_jump(c: &mut Criterion) {
+	// (4) Macro-generated walker on the indexed-struct payload.
+	// After A (O(1) field access in the walker), the macro-emitted
+	// `decode_target` should match the hand-rolled `IndexedStructWalker`
+	// jump within noise.
+	let bytes = revision::to_vec(&sample_opt()).unwrap();
+	let expected = TARGET_VALUE.to_string();
+
+	let mut group = c.benchmark_group("late_field_access");
+	group.throughput(Throughput::Bytes(bytes.len() as u64));
+
+	group.bench_function("4_macro_walker_optimised_indexed", |b| {
+		b.iter(|| {
+			let mut r: &[u8] = black_box(&bytes);
+			let mut w = Wide25IndexedOpt::walk_revisioned(&mut r).unwrap();
+			let decoded = w.decode_target().unwrap();
+			let matches = decoded == expected;
+			black_box(matches);
+		});
+	});
+
+	group.finish();
+}
+
 fn bench_optimised_jump(c: &mut Criterion) {
 	let bytes = revision::to_vec(&sample_opt()).unwrap();
 
@@ -306,5 +330,11 @@ fn report_sizes(_c: &mut Criterion) {
 	eprintln!();
 }
 
-criterion_group!(benches, report_sizes, bench_alloc_legacy, bench_optimised_jump);
+criterion_group!(
+	benches,
+	report_sizes,
+	bench_alloc_legacy,
+	bench_optimised_walker_jump,
+	bench_optimised_jump,
+);
 criterion_main!(benches);

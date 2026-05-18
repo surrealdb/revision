@@ -37,8 +37,7 @@ impl<'ast> Visit<'ast> for SerializeVisitor<'_> {
 			revision: self.revision,
 			stream: &mut ser_fields,
 		}
-		.visit_struct(i)
-		.unwrap();
+		.visit_struct(i)?;
 
 		match i.fields {
 			Fields::Named {
@@ -88,8 +87,7 @@ impl<'ast> Visit<'ast> for SerializeVisitor<'_> {
 			discriminants,
 			stream: &mut ser_variants,
 		}
-		.visit_enum(i)
-		.unwrap();
+		.visit_enum(i)?;
 
 		self.stream.append_all(quote! {
 			match *self{
@@ -169,8 +167,7 @@ impl<'ast> Visit<'ast> for SerializeVariant<'_> {
 					revision: self.revision,
 					stream: &mut fields_ser,
 				}
-				.visit_variant(i)
-				.unwrap();
+				.visit_variant(i)?;
 
 				self.stream.append_all(quote! {
 					=> {
@@ -198,8 +195,7 @@ impl<'ast> Visit<'ast> for SerializeVariant<'_> {
 					revision: self.revision,
 					stream: &mut fields_ser,
 				}
-				.visit_variant(i)
-				.unwrap();
+				.visit_variant(i)?;
 
 				self.stream.append_all(quote! {
 					=> {

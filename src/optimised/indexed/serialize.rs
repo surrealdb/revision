@@ -8,13 +8,14 @@
 //! [`IndexedMapWalker`]: crate::optimised::IndexedMapWalker
 //! [`IndexedSeqWalker`]: crate::optimised::IndexedSeqWalker
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::{BuildHasher, Hash};
 use std::io::{Read, Write};
 use std::marker::PhantomData;
 
 use crate::Error;
 use crate::SkipRevisioned;
+use crate::optimised::indexed::OFFSET_TABLE_MIN_LEN;
 use crate::optimised::indexed::seq_walk::FLAG_INDEXED;
 use crate::{DeserializeRevisioned, SerializeRevisioned};
 
@@ -175,6 +176,128 @@ where
 	}
 }
 
+/// Set-shaped types under optimised. Wire format identical to indexed seq,
+/// but the encoder sorts elements by byte compare so the walker's element
+/// region is binary-searchable for membership tests (the same byte-order
+/// guarantee that [`IndexedMapEncoded`] documents).
+///
+/// Implemented for [`BTreeSet`], [`HashSet`], `imbl::OrdSet`, `imbl::HashSet`.
+#[doc(hidden)]
+pub trait IndexedSetEncoded: Sized {
+	type Item;
+	fn serialize_indexed_set<W: Write>(&self, w: &mut W) -> Result<(), Error>;
+	fn deserialize_indexed_set<R: Read>(r: &mut R) -> Result<Self, Error>;
+	fn skip_indexed_set<R: Read>(r: &mut R) -> Result<(), Error>;
+}
+
+/// Serialise an iterator of `&T` elements as an indexed set: identical
+/// wire format to [`serialize_indexed_seq_iter`] but with the elements
+/// pre-sorted by byte compare so a downstream [`IndexedSeqWalker`] can
+/// binary-search for membership.
+///
+/// [`IndexedSeqWalker`]: crate::optimised::IndexedSeqWalker
+#[doc(hidden)]
+pub fn serialize_indexed_set_iter<'a, I, T, W>(items: I, writer: &mut W) -> Result<(), Error>
+where
+	I: IntoIterator<Item = &'a T>,
+	T: SerializeRevisioned + 'a,
+	W: Write,
+{
+	let mut bodies: Vec<Vec<u8>> = Vec::new();
+	for item in items {
+		let mut b = Vec::new();
+		item.serialize_revisioned(&mut b)?;
+		bodies.push(b);
+	}
+	// Sort by element bytes — the byte-ascending guarantee that lets the
+	// walker binary-search membership.
+	bodies.sort();
+	let len = bodies.len();
+
+	if len < OFFSET_TABLE_MIN_LEN {
+		writer.write_all(&[0u8]).map_err(Error::Io)?;
+		write_varint(writer, len)?;
+		for b in &bodies {
+			writer.write_all(b).map_err(Error::Io)?;
+		}
+		return Ok(());
+	}
+
+	writer.write_all(&[FLAG_INDEXED]).map_err(Error::Io)?;
+	write_varint(writer, len)?;
+	let mut off = 0u32;
+	for b in &bodies {
+		writer.write_all(&off.to_le_bytes()).map_err(Error::Io)?;
+		off = off.checked_add(b.len() as u32).ok_or_else(|| {
+			Error::Serialize("indexed set element region exceeds u32::MAX".into())
+		})?;
+	}
+	for b in &bodies {
+		writer.write_all(b).map_err(Error::Io)?;
+	}
+	Ok(())
+}
+
+/// Decode an indexed set written by [`serialize_indexed_set_iter`]. Mirrors
+/// [`deserialize_indexed_seq`]; the set type is built by the caller via
+/// `FromIterator<T>`.
+#[doc(hidden)]
+pub fn deserialize_indexed_set<S, T, R>(reader: &mut R) -> Result<S, Error>
+where
+	S: FromIterator<T>,
+	T: DeserializeRevisioned,
+	R: Read,
+{
+	let v: Vec<T> = deserialize_indexed_seq(reader)?;
+	Ok(v.into_iter().collect())
+}
+
+/// Skip past an indexed set. Same wire format as indexed seq.
+#[doc(hidden)]
+pub fn skip_indexed_set<T, R>(reader: &mut R) -> Result<(), Error>
+where
+	T: SkipRevisioned,
+	R: Read,
+{
+	skip_indexed_seq::<T, R>(reader)
+}
+
+// std::collections impls
+
+impl<T> IndexedSetEncoded for BTreeSet<T>
+where
+	T: SerializeRevisioned + DeserializeRevisioned + SkipRevisioned + Ord,
+{
+	type Item = T;
+	fn serialize_indexed_set<W: Write>(&self, w: &mut W) -> Result<(), Error> {
+		serialize_indexed_set_iter(self.iter(), w)
+	}
+	fn deserialize_indexed_set<R: Read>(r: &mut R) -> Result<Self, Error> {
+		deserialize_indexed_set(r)
+	}
+	fn skip_indexed_set<R: Read>(r: &mut R) -> Result<(), Error> {
+		skip_indexed_set::<T, R>(r)
+	}
+}
+
+impl<T, S> IndexedSetEncoded for HashSet<T, S>
+where
+	T: SerializeRevisioned + DeserializeRevisioned + SkipRevisioned + Hash + Eq,
+	S: BuildHasher + Default,
+{
+	type Item = T;
+	fn serialize_indexed_set<W: Write>(&self, w: &mut W) -> Result<(), Error> {
+		serialize_indexed_set_iter(self.iter(), w)
+	}
+	fn deserialize_indexed_set<R: Read>(r: &mut R) -> Result<Self, Error> {
+		let v: Vec<T> = deserialize_indexed_seq(r)?;
+		Ok(v.into_iter().collect())
+	}
+	fn skip_indexed_set<R: Read>(r: &mut R) -> Result<(), Error> {
+		skip_indexed_seq::<T, R>(r)
+	}
+}
+
 // -----------------------------------------------------------------------------
 // Owned views (walker handles)
 // -----------------------------------------------------------------------------
@@ -224,6 +347,81 @@ impl<K, V> OwnedIndexedMapView<K, V> {
 	}
 
 	/// Consume and return the owned bytes.
+	pub fn into_bytes(self) -> Vec<u8> {
+		self.bytes
+	}
+}
+
+/// Owned wire-bytes handle for an optimised-enum variant's payload.
+///
+/// Returned by `into_<variant>` on optimised-enum walkers (for single-field
+/// tuple variants). The view owns the variant's body bytes — i.e. everything
+/// after the 1-byte tag — sized per the variant's declared size class
+/// (`inline` → empty, `fixed(N)` → N bytes, `varlen` → the `u32_le`-prefixed
+/// body).
+///
+/// The inner walker is intentionally not exposed as a returned value to
+/// avoid the `Walker<'r, R>` GAT lifetime trap (the walker borrows from a
+/// reader, the reader needs to be stored externally, and a materialised
+/// payload has no reader). Callers either:
+///
+/// - read the variant value directly with `decode_<variant>` (the simpler
+///   path), or
+/// - call [`as_bytes`](Self::as_bytes) to construct their own walker via
+///   `T::walk_revisioned(&mut &view.as_bytes()[..])` within their scope.
+///
+/// `decode_<variant>` remains the recommended path for most callers.
+pub struct OwnedVariantView<T> {
+	bytes: Vec<u8>,
+	_marker: PhantomData<fn() -> T>,
+}
+
+impl<T> OwnedVariantView<T> {
+	#[doc(hidden)]
+	pub fn new(bytes: Vec<u8>) -> Self {
+		Self {
+			bytes,
+			_marker: PhantomData,
+		}
+	}
+
+	/// Variant body bytes (everything after the 1-byte tag — for varlen
+	/// variants, after the `u32_le` length prefix).
+	pub fn as_bytes(&self) -> &[u8] {
+		&self.bytes
+	}
+
+	/// Consume and return the owned bytes.
+	pub fn into_bytes(self) -> Vec<u8> {
+		self.bytes
+	}
+}
+
+/// Owned wire-bytes handle for an indexed set field. Wire format is identical
+/// to [`OwnedIndexedSeqView`] (the set's element bytes were sorted on encode
+/// so the `IndexedSeqWalker` can be used for binary-search membership tests).
+pub struct OwnedIndexedSetView<T> {
+	bytes: Vec<u8>,
+	_marker: PhantomData<fn() -> T>,
+}
+
+impl<T> OwnedIndexedSetView<T> {
+	#[doc(hidden)]
+	pub fn new(bytes: Vec<u8>) -> Self {
+		Self {
+			bytes,
+			_marker: PhantomData,
+		}
+	}
+
+	pub fn walker(&self) -> Result<crate::optimised::IndexedSeqWalker<'_, T>, Error> {
+		crate::optimised::IndexedSeqWalker::from_payload(&self.bytes)
+	}
+
+	pub fn as_bytes(&self) -> &[u8] {
+		&self.bytes
+	}
+
 	pub fn into_bytes(self) -> Vec<u8> {
 		self.bytes
 	}
@@ -323,6 +521,21 @@ where
 	}
 	pairs.sort_by(|a, b| a.0.cmp(&b.0));
 	let len = pairs.len();
+
+	// Below the threshold the offset table is pure overhead; emit the
+	// legacy `(K, V)*` body with `flags.0 == 0` instead. The walker /
+	// deserialiser already handles both shapes — the flag bit tells them
+	// which one to expect.
+	if len < OFFSET_TABLE_MIN_LEN {
+		writer.write_all(&[0u8]).map_err(Error::Io)?; // flags = 0 (non-indexed)
+		write_varint(writer, len)?;
+		for (kb, vb) in &pairs {
+			writer.write_all(kb).map_err(Error::Io)?;
+			writer.write_all(vb).map_err(Error::Io)?;
+		}
+		return Ok(());
+	}
+
 	let (keys, vals): (Vec<_>, Vec<_>) = pairs.into_iter().unzip();
 
 	// Header: flags = indexed, varint length.
@@ -404,6 +617,18 @@ where
 		bodies.push(b);
 	}
 	let len = bodies.len();
+
+	// Threshold fallback: below `OFFSET_TABLE_MIN_LEN` we skip the offset
+	// table and emit the legacy `(elem)*` body. `flags.0 == 0` tells the
+	// reader to expect this shape.
+	if len < OFFSET_TABLE_MIN_LEN {
+		writer.write_all(&[0u8]).map_err(Error::Io)?;
+		write_varint(writer, len)?;
+		for b in &bodies {
+			writer.write_all(b).map_err(Error::Io)?;
+		}
+		return Ok(());
+	}
 
 	writer.write_all(&[FLAG_INDEXED]).map_err(Error::Io)?;
 	write_varint(writer, len)?;
@@ -618,7 +843,10 @@ mod tests {
 	use crate::optimised::{IndexedMapWalker, IndexedSeqWalker};
 
 	#[test]
-	fn round_trip_indexed_map_of_strings() {
+	fn round_trip_indexed_map_of_strings_below_threshold_uses_legacy_body() {
+		// 3 entries < OFFSET_TABLE_MIN_LEN(=8) so the encoder falls back to
+		// the legacy (K, V)* body with `flags.0 == 0`. The walker handles
+		// both shapes — see `is_indexed()`.
 		let mut map: BTreeMap<String, u32> = BTreeMap::new();
 		map.insert("alpha".into(), 1);
 		map.insert("bravo".into(), 2);
@@ -628,23 +856,44 @@ mod tests {
 		serialize_indexed_map(&map, &mut bytes).unwrap();
 
 		let walker: IndexedMapWalker<String, u32> = IndexedMapWalker::from_payload(&bytes).unwrap();
-		assert!(walker.is_indexed());
+		assert!(!walker.is_indexed(), "3 < threshold: should use legacy body");
 		assert_eq!(walker.len(), 3);
-
-		// Iterate in ascending order.
-		let entries: Vec<(&[u8], &[u8])> = walker.entries().unwrap().collect();
-		assert_eq!(entries.len(), 3);
 	}
 
 	#[test]
-	fn round_trip_indexed_seq() {
+	fn round_trip_indexed_map_at_threshold_emits_offset_table() {
+		// 8 entries >= OFFSET_TABLE_MIN_LEN: indexed path engages.
+		let mut map: BTreeMap<String, u32> = BTreeMap::new();
+		for (i, s) in ["a", "b", "c", "d", "e", "f", "g", "h"].iter().enumerate() {
+			map.insert(s.to_string(), i as u32);
+		}
+		let mut bytes = Vec::new();
+		serialize_indexed_map(&map, &mut bytes).unwrap();
+		let walker: IndexedMapWalker<String, u32> = IndexedMapWalker::from_payload(&bytes).unwrap();
+		assert!(walker.is_indexed());
+		assert_eq!(walker.len(), 8);
+		let entries: Vec<(&[u8], &[u8])> = walker.entries().unwrap().collect();
+		assert_eq!(entries.len(), 8);
+	}
+
+	#[test]
+	fn round_trip_indexed_seq_below_threshold_uses_legacy_body() {
 		let items: Vec<u32> = vec![10, 20, 30];
 		let mut bytes = Vec::new();
 		serialize_indexed_seq(&items, &mut bytes).unwrap();
+		let walker: IndexedSeqWalker<u32> = IndexedSeqWalker::from_payload(&bytes).unwrap();
+		assert!(!walker.is_indexed(), "3 < threshold: legacy body");
+		assert_eq!(walker.len(), 3);
+	}
 
+	#[test]
+	fn round_trip_indexed_seq_at_threshold_emits_offset_table() {
+		let items: Vec<u32> = (0u32..8).collect();
+		let mut bytes = Vec::new();
+		serialize_indexed_seq(&items, &mut bytes).unwrap();
 		let walker: IndexedSeqWalker<u32> = IndexedSeqWalker::from_payload(&bytes).unwrap();
 		assert!(walker.is_indexed());
-		assert_eq!(walker.len(), 3);
+		assert_eq!(walker.len(), 8);
 	}
 
 	#[test]

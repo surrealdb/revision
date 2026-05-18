@@ -35,13 +35,17 @@ impl<'ast> Visit<'ast> for Reexport<'_> {
 				match pairs {
 					Pair::Punctuated(v, p) => {
 						if v.attrs.options.exists_at(self.revision) {
-							this.visit_variant(v).unwrap();
+							this.visit_variant(v).expect(
+								"Reexport visitor only emits tokens; visit_variant cannot fail",
+							);
 							p.to_tokens(this.stream);
 						}
 					}
 					Pair::End(v) => {
 						if v.attrs.options.exists_at(self.revision) {
-							this.visit_variant(v).unwrap();
+							this.visit_variant(v).expect(
+								"Reexport visitor only emits tokens; visit_variant cannot fail",
+							);
 						}
 					}
 				}
@@ -94,13 +98,17 @@ impl<'ast> Visit<'ast> for Reexport<'_> {
 						match pair {
 							Pair::Punctuated(f, c) => {
 								if f.attrs.options.exists_at(self.revision) {
-									this.visit_field(f).unwrap();
+									this.visit_field(f).expect(
+										"Reexport visitor only emits tokens; visit_field cannot fail",
+									);
 									c.to_tokens(this.stream)
 								}
 							}
 							Pair::End(f) => {
 								if f.attrs.options.exists_at(self.revision) {
-									this.visit_field(f).unwrap();
+									this.visit_field(f).expect(
+										"Reexport visitor only emits tokens; visit_field cannot fail",
+									);
 								}
 							}
 						}
@@ -121,13 +129,17 @@ impl<'ast> Visit<'ast> for Reexport<'_> {
 						match pair {
 							Pair::Punctuated(f, c) => {
 								if f.attrs.options.exists_at(self.revision) {
-									this.visit_field(f).unwrap();
+									this.visit_field(f).expect(
+										"Reexport visitor only emits tokens; visit_field cannot fail",
+									);
 									c.to_tokens(this.stream)
 								}
 							}
 							Pair::End(f) => {
 								if f.attrs.options.exists_at(self.revision) {
-									this.visit_field(f).unwrap();
+									this.visit_field(f).expect(
+										"Reexport visitor only emits tokens; visit_field cannot fail",
+									);
 								}
 							}
 						}
