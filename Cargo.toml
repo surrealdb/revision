@@ -61,6 +61,18 @@ path = "tests/skip.rs"
 name = "walk"
 path = "tests/walk.rs"
 
+[[test]]
+name = "optimised"
+path = "tests/optimised.rs"
+
+[[test]]
+name = "indexed"
+path = "tests/indexed.rs"
+
+[[test]]
+name = "corruption"
+path = "tests/corruption.rs"
+
 [[bench]]
 name = "roaring"
 harness = false
