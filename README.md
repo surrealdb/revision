@@ -500,3 +500,118 @@ assert!(found);
 - [`SeqItem::walk`], [`MapEntry::walk_value`], and [`StructWalker::walk`] advance counters (`remaining`, `position`) only after `walk_revisioned` succeeds, so a failed nested walk does not desynchronise the parent walker from the byte stream.
 - A type using `convert_fn` requires both `serialize = true` and `deserialize = true` for `walk` to be derivable (the default). The derive errors at compile time if `walk = true` is combined with either disabled, since the materialised cross-revision path needs to deserialize at the wire revision and re-serialize at the current revision. Set `walk = false` on such a type if you don't need walker support.
 - `Cow<'_, T>` is treated as opaque by the walker. Its `Walker` is a `LeafWalker<T::Owned>`, so `decode()` returns `T::Owned` (e.g. `String` for `Cow<'_, str>`), not a `Cow`. Use `DeserializeRevisioned` if you need a `Cow` back, or descend through `T::Owned::walk_revisioned` directly.
+
+## Optimised wire format
+
+`revision` 0.23 introduces an opt-in **optimised** wire format that
+trades the default varint+sequential layout for a more compact tagged
+envelope with O(1) skip and optional O(1)/O(log n) random access.
+Types declare which revisions use it via the **history syntax**:
+
+```rust,ignore
+#[revisioned(
+    revision(1),                                      // legacy layout
+    revision(2, encoding = "optimised"),              // tagged envelope
+    revision(3, encoding = "optimised", struct = "indexed"),
+)]
+struct Wide { /* fields */ }
+```
+
+Legacy `#[revisioned(revision = N)]` keeps working — it is normalised
+internally to `revision(1), revision(2), ..., revision(N)` all-legacy.
+The parser distinguishes the two by peeking the next token after the
+`revision` keyword (`=` for legacy, `(` for the new function-call
+form).
+
+### History semantics
+
+- Revisions are strict-append. Numbers must run `1..=N` with no gaps
+  and no duplicates; the parser errors at the call site otherwise.
+- Mixing `revision = N` with `revision(N)` on the same type is a
+  compile error.
+- Encoding-specific attributes (`map = "..."`, `seq = "..."`,
+  `struct = "..."`, `length = "..."`) require `encoding = "optimised"`
+  on the same entry.
+
+### Wire layout (per-entry)
+
+A type's outer envelope still begins with the `u16` revision varint.
+Under `encoding = "optimised"` the body that follows is:
+
+```text
+struct:  u32_le payload_length || [optional u32_le; field_count] || fields
+enum:    u8 tag                || payload per size class
+```
+
+The 1-byte enum tag packs the variant id (bits 0..=4) with a size
+class (bits 5..=6):
+
+| size class | bits | payload format |
+| --- | --- | --- |
+| Inline   | `0b00` | (nothing — tag is the whole encoding) |
+| Fixed    | `0b01` | static byte count from `#[revision(size = "fixed(N)")]` |
+| Varlen   | `0b10` | `u32_le length || body` |
+| Reserved | `0b11` | decode error: `InvalidOptimisedTag` |
+
+Every variant of an optimised enum must declare its size class via
+`#[revision(size = "inline" | "fixed(N)" | "varlen")]`. Variant id is
+the existing `CalcDiscriminant` output validated to fit in 5 bits;
+optimised enums may have at most 32 variants alive at any revision.
+
+### Indexed prologues
+
+`struct = "indexed"` prepends `[u32_le; field_count]` to the payload
+so a walker can jump to any field in O(1). The encoder buffers fields
+into a scratch `Vec<u8>` to learn each field's offset, then emits the
+prologue and body in a single pass. (`map = "indexed"` and
+`seq = "indexed"` parse but are not yet routed through the codegen —
+they are reserved for a future iteration.)
+
+`OFFSET_TABLE_MIN_LEN = 8` is the minimum entry count that triggers
+the prologue; below it the encoder falls back to a sequential body
+and the walker falls back to a linear scan.
+
+### Validation
+
+Indexed compounds validate their prologue eagerly on walker
+construction:
+
+- Offsets are strictly monotonic
+- Every offset is in-range for the payload
+- Indexed-map keys are strictly ascending (byte compare)
+
+Corrupt payloads surface as typed `Error` variants — `InvalidOptimisedTag`,
+`OptimisedOffsetOutOfRange { offset, payload_len }`,
+`OptimisedOffsetsNonMonotonic`, `OptimisedKeyRegionNotAscending`,
+`OptimisedSubReaderOverrun` — never as panics. `Error` is
+`#[non_exhaustive]` so future variants do not break exhaustive matches.
+
+### Runtime requirement: BorrowedReader
+
+The indexed walkers (`IndexedStructWalker`, `IndexedMapWalker`,
+`IndexedSeqWalker`) borrow from a `&[u8]` payload. To carve that
+payload out of a streaming `Read` source they require
+`BorrowedReader`. `&[u8]` and `SliceReader` implement it; pure
+streaming readers (file, socket) fall through to a materialised path
+that allocates.
+
+### Backward compatibility
+
+| scenario | result |
+| --- | --- |
+| new code reads old rev-N legacy data | ✓ legacy decode arm |
+| new code reads new rev-M optimised data | ✓ optimised decode arm |
+| mixed legacy/optimised records on disk | ✓ per-record dispatch on embedded `u16` revision |
+| old code reads new rev-M optimised data | ✗ fails on unknown revision (forward-only, accepted) |
+| in-memory shape across revisions | ✓ every decoder for every revision produces the same shape |
+
+### Limitations (current iteration)
+
+- Walker codegen for optimised types still falls back to the
+  materialised path; the O(1) offset-jump walker arm is reserved for
+  a future iteration.
+- `map = "indexed"` and `seq = "indexed"` parse but do not yet emit
+  optimised codegen for `BTreeMap`/`Vec` fields.
+- `fixed(N)` requires the variant body to serialise to exactly `N`
+  bytes under `SerializeRevisioned`. Use `[u8; N]`, `Uuid`, etc. —
+  not varint-encoded primitives.
