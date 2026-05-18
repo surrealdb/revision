@@ -328,6 +328,46 @@ fn optimised_outer_with_legacy_inner_round_trips() {
 	assert_eq!(bytes[0], 2u8);
 }
 
+// -----------------------------------------------------------------------------
+// Variant lifecycle crossing the encoding boundary
+// -----------------------------------------------------------------------------
+
+#[revisioned(revision(1), revision(2, encoding = "optimised"))]
+#[derive(Debug, Clone, PartialEq)]
+enum VariantLifecycle {
+	#[revision(end = 2, convert_fn = "migrate_old", size = "fixed(8)")]
+	Old([u8; 8]),
+	#[revision(start = 1, size = "fixed(8)")]
+	New([u8; 8]),
+}
+
+impl VariantLifecycle {
+	fn migrate_old(
+		fields: VariantLifecycleOldFields,
+		_revision: u16,
+	) -> Result<Self, revision::Error> {
+		// Treat the wire `Old(bytes)` as if it were `New(bytes)` — same payload
+		// shape, just renamed.
+		Ok(VariantLifecycle::New(fields.0))
+	}
+}
+
+#[test]
+fn variant_removed_across_optimised_boundary_routes_through_convert_fn() {
+	// Encode a rev-1 (legacy) `Old` variant using a shadow type that still has it.
+	#[revisioned(revision(1))]
+	#[derive(Debug)]
+	enum Shadow {
+		Old([u8; 8]),
+		#[allow(dead_code)]
+		New([u8; 8]),
+	}
+
+	let bytes = revision::to_vec(&Shadow::Old([1, 2, 3, 4, 5, 6, 7, 8])).unwrap();
+	let decoded: VariantLifecycle = revision::from_slice(&bytes).unwrap();
+	assert_eq!(decoded, VariantLifecycle::New([1, 2, 3, 4, 5, 6, 7, 8]));
+}
+
 #[test]
 fn nested_optimised_both_levels_round_trips() {
 	#[revisioned(revision(1, encoding = "optimised"))]

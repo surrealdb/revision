@@ -197,7 +197,7 @@ pub fn emit_enum_deserialize(
 		let size = variant_size(v)?;
 		let id_lit = id as u8;
 		let exists_at_target = v.attrs.options.exists_at(target);
-		let body = decode_variant_body(name, v, size, current, target, exists_at_target)?;
+		let body = decode_variant_body(name, v, size, current, target, exists_at_target, &e.name)?;
 		let sc_match = match size {
 			VariantSize::Inline => quote! { ::revision::optimised::tag::SizeClass::Inline },
 			VariantSize::Fixed(_) => quote! { ::revision::optimised::tag::SizeClass::Fixed },
@@ -325,8 +325,9 @@ fn decode_variant_body(
 	current: usize,
 	target: usize,
 	exists_at_target: bool,
+	enum_name: &Ident,
 ) -> syn::Result<TokenStream> {
-	let _ = (current, target, &v.attrs.options); // future: convert_fn handling for renamed variants
+	let _ = target; // explicitly unused once we've decided which path to emit
 	let body_reader = match size {
 		VariantSize::Inline => quote! { let mut __body: &[u8] = &[]; let _ = &mut __body; },
 		VariantSize::Fixed(n) => {
@@ -363,11 +364,49 @@ fn decode_variant_body(
 
 	if !exists_at_target {
 		// Variant present on wire but removed at target — convert_fn required.
-		// For now, error out; a future iteration can wire convert_fn for variants.
-		return Err(Error::new(
-			name.span(),
-			"removing a variant across an optimised history boundary requires convert_fn support — not yet implemented",
-		));
+		// Decode fields into the auto-generated `<Enum><Variant>Fields` struct
+		// (emitted by `EnumStructsVisitor` for the current revision), then
+		// hand it to the user-supplied convert_fn which produces a `Self`.
+		let Some(convert) = v.attrs.options.convert.as_ref() else {
+			return Err(Error::new(
+				name.span(),
+				"removing a variant across revisions requires `#[revision(end = ..., convert_fn = \"...\")]`",
+			));
+		};
+		let convert_ident = syn::Ident::new(&convert.value(), convert.span());
+		let fields_struct_ident = v.fields_name(&enum_name.to_string());
+		let wire_rev_lit = current as u16;
+
+		let construction = match &v.fields {
+			Fields::Named {
+				fields,
+				..
+			} => {
+				let names = fields
+					.iter()
+					.filter(|f| f.attrs.options.exists_at(current))
+					.map(|f| f.name.to_binding());
+				quote! { #fields_struct_ident { #(#names),* } }
+			}
+			Fields::Unnamed {
+				fields,
+				..
+			} => {
+				let bindings = fields
+					.iter()
+					.filter(|f| f.attrs.options.exists_at(current))
+					.map(|f| f.name.to_binding());
+				quote! { #fields_struct_ident ( #(#bindings),* ) }
+			}
+			Fields::Unit => quote! { #fields_struct_ident },
+		};
+
+		return Ok(quote! {
+			#body_reader
+			#decode_fields
+			let __removed = #construction;
+			return Self::#convert_ident(__removed, #wire_rev_lit);
+		});
 	}
 
 	let construction = match &v.fields {
