@@ -1,0 +1,5 @@
+error: variant `V32` has discriminant 32 which exceeds the 5-bit limit (max 31) under `encoding = "optimised"`
+  --> tests/compile_fail/optimised_too_many_variants.rs:38:31
+   |
+38 |     #[revision(size = "inline")] V32, // 33rd variant — one too many.
+   |                                  ^^^

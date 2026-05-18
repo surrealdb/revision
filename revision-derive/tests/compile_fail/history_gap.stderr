@@ -1,0 +1,5 @@
+error: revisions must be contiguous starting from 1 (expected 2, found 3)
+ --> tests/compile_fail/history_gap.rs:4:36
+  |
+4 | #[revisioned(revision(1), revision(3))]
+  |                                    ^

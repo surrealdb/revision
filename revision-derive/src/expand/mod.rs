@@ -70,8 +70,7 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 		revision,
 		stream: &mut reexport,
 	}
-	.visit_item(&ast)
-	.unwrap();
+	.visit_item(&ast)?;
 
 	// The latest history entry drives the serialize impl. Every prior entry has
 	// its own decode arm below.
@@ -80,15 +79,15 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 
 	// serialize implementation
 	let mut serialize = TokenStream::new();
-	SerializeVisitor::new(revision, serialize_ctx, &mut serialize).visit_item(&ast).unwrap();
+	SerializeVisitor::new(revision, serialize_ctx, &mut serialize).visit_item(&ast)?;
 
 	let mut deserialize_structs = TokenStream::new();
-	EnumStructsVisitor::new(revision, &mut deserialize_structs).visit_item(&ast).unwrap();
+	EnumStructsVisitor::new(revision, &mut deserialize_structs).visit_item(&ast)?;
 
 	// deserialize implementation — one arm per history entry.
 	let deserialize = history
 		.iter()
-		.map(|entry| {
+		.map(|entry| -> syn::Result<TokenStream> {
 			let x = entry.revision.value;
 			let ctx = EncodingContext::from_entry(entry);
 			let mut deserialize = TokenStream::new();
@@ -98,18 +97,17 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 				ctx,
 				stream: &mut deserialize,
 			}
-			.visit_item(&ast)
-			.unwrap();
+			.visit_item(&ast)?;
 
 			let revision = x as u16;
 
-			quote! {
+			Ok(quote! {
 				#revision => {
 					#deserialize
 				}
-			}
+			})
 		})
-		.collect::<Vec<_>>();
+		.collect::<syn::Result<Vec<_>>>()?;
 
 	let name = match &ast.kind {
 		ast::ItemKind::Enum(x) => x.name.clone(),

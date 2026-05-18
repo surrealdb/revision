@@ -1,0 +1,5 @@
+error: variant requires `#[revision(size = "inline" | "fixed(N)" | "varlen")]` under `encoding = "optimised"`
+ --> tests/compile_fail/optimised_missing_size.rs:6:2
+  |
+6 |     WithoutSizeAttribute,
+  |     ^^^^^^^^^^^^^^^^^^^^

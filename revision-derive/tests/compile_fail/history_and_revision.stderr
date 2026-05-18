@@ -1,0 +1,5 @@
+error: cannot mix legacy `revision = N` with new-style `revision(N, ...)` entries on the same type
+ --> tests/compile_fail/history_and_revision.rs:4:28
+  |
+4 | #[revisioned(revision = 2, revision(1))]
+  |                            ^^^^^^^^
