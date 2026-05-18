@@ -272,15 +272,20 @@ fn bench_optimised_jump(c: &mut Criterion) {
 	let bytes = revision::to_vec(&sample_opt()).unwrap();
 
 	// Optimised wire layout for a `struct = "indexed"` record:
-	//   u16 revision varint (1 byte for rev=1)
-	//   u32_le payload_length
+	//   u16 revision      (1 byte under varint, 2 under fixed-width-encoding)
+	//   u32_le payload_length     (always 4 bytes by spec)
 	//   [u32_le; field_count] offset table
 	//   fields...
 	//
 	// The IndexedStructWalker expects its payload slice to begin with the
-	// offset table. Strip the 1-byte revision varint + 4-byte length prefix
-	// before constructing the walker.
-	let payload_offset = 1 + 4; // varint(rev=1) + u32_le length
+	// offset table. Strip the revision header + u32_le length prefix.
+	// Compute the revision header size at runtime so the bench works under
+	// either varint or fixed-width-encoding.
+	let payload_offset = {
+		let mut rev_buf = Vec::new();
+		<u16 as SerializeRevisioned>::serialize_revisioned(&1u16, &mut rev_buf).unwrap();
+		rev_buf.len() + 4
+	};
 
 	// Pre-serialise the expected target value so the comparison is a pure
 	// byte-slice memcmp — no decode, no allocation.
