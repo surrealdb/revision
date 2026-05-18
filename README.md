@@ -607,14 +607,16 @@ that allocates.
 
 ### Limitations (current iteration)
 
-- **Walker on optimised enums** returns a typed `Error::Deserialize`
-  pointing the caller at `DeserializeRevisioned::deserialize_revisioned`.
-  The Wire walker reads a `u32` discriminant for enums; the optimised
-  tag is a single byte with the variant id in the low 5 bits. Wiring
-  per-variant decode against the optimised tag is a self-contained
-  follow-up. Optimised **structs** are walkable today: the walker
-  advances past the `u32_le payload_length` (and prologue, if any)
-  before reading fields.
+- **Walker on optimised enums** exposes `discriminant()` and
+  `is_<variant>()` correctly — the walker construction reads the
+  1-byte optimised tag and routes through the materialised path. The
+  consuming `into_<variant>` accessor errors with
+  `Error::Conversion` and redirects callers to
+  `DeserializeRevisioned::deserialize_revisioned` for the full inner
+  value; threading the inner walker's lifetime through a slurped
+  payload buffer is a self-contained follow-up. Optimised **structs**
+  are fully walkable today: the walker advances past the `u32_le
+  payload_length` (and prologue, if any) before reading fields.
 - `map = "indexed"` and `seq = "indexed"` parse but do not yet emit
   optimised codegen for `BTreeMap` / `Vec` fields directly. The
   envelope and prologue infrastructure is in place; only the per-field

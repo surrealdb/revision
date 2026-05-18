@@ -102,18 +102,42 @@ fn walker_handles_mixed_history_legacy_rev() {
 }
 
 #[test]
-fn walker_on_optimised_enum_returns_clear_error() {
+fn walker_on_optimised_enum_decodes_unit_variant() {
+	let v = OptEnum::Unit;
+	let bytes = revision::to_vec(&v).unwrap();
+	let mut r: &[u8] = &bytes;
+	let w = OptEnum::walk_revisioned(&mut r).unwrap();
+	// Unit is the first declared variant — its discriminant is 0 by default.
+	assert_eq!(w.discriminant(), 0);
+	assert!(w.is_unit());
+	assert!(!w.is_varlen());
+}
+
+#[test]
+fn walker_on_optimised_enum_decodes_varlen_variant() {
 	let v = OptEnum::Varlen("hello".into());
 	let bytes = revision::to_vec(&v).unwrap();
 	let mut r: &[u8] = &bytes;
-	match OptEnum::walk_revisioned(&mut r) {
-		Ok(_) => panic!("expected walker construction to fail on optimised enum"),
-		Err(e) => {
-			let msg = format!("{e}");
+	let w = OptEnum::walk_revisioned(&mut r).unwrap();
+	// Varlen is the second variant — discriminant 1.
+	assert_eq!(w.discriminant(), 1);
+	assert!(w.is_varlen());
+	assert!(!w.is_unit());
+	// Drilling in via `into_<variant>` is not supported on a materialised
+	// walker (which is what the optimised enum path produces); the caller
+	// is expected to fall through to `DeserializeRevisioned` for the
+	// full value. Verify the error message points the user there.
+	let err = w
+		.into_varlen()
+		.err()
+		.expect("into_varlen on optimised enum should error pending lifetime work");
+	match err {
+		revision::Error::Conversion(msg) => {
 			assert!(
-				msg.contains("walker on optimised enum"),
-				"expected unsupported-walker error, got: {msg}"
+				msg.contains("DeserializeRevisioned"),
+				"error message should redirect to DeserializeRevisioned, got: {msg}"
 			);
 		}
+		other => panic!("expected Conversion error, got {other:?}"),
 	}
 }

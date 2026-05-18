@@ -31,6 +31,9 @@ use proc_macro2::TokenStream;
 use quote::{TokenStreamExt, format_ident, quote};
 use syn::Ident;
 
+use std::collections::HashMap;
+
+use crate::ast::attributes::VariantSize;
 use crate::ast::history::{HistoryEntry, StructEncoding};
 use crate::ast::{Enum, Field, FieldName, Fields, Item, ItemKind, Struct, Variant, Visit};
 
@@ -136,12 +139,16 @@ pub fn emit_walk_impl(
 		}
 	};
 
-	// For each optimised history entry, emit an arm that advances the reader
-	// past the `u32_le payload_length` (and any `[u32_le; field_count]` prologue
-	// for `struct = "indexed"`) so the subsequent Wire walker reads field bytes
-	// directly. Enums under optimised use a different on-wire shape (1-byte tag
-	// instead of u32 discriminant); we error on enum walkers for now since the
-	// Wire walker reads u32 — the user must use DeserializeRevisioned directly.
+	// For each optimised history entry, emit an arm that prepares the walker
+	// for the optimised wire format:
+	//
+	// - For structs: advance past the `u32_le payload_length` (and any
+	//   `[u32_le; field_count]` prologue for `struct = "indexed"`) so the
+	//   subsequent Wire walker reads field bytes directly.
+	// - For enums: read the 1-byte tag, slurp the payload per the variant's
+	//   declared size class, and return a Materialised walker with
+	//   `discriminant = variant_id` (the existing per-variant decode code on
+	//   the Materialised arm reads the slurped payload directly).
 	let optimised_struct_field_count = match &item.kind {
 		ItemKind::Struct(s) => Some(alive_field_count(s, revision) as u32),
 		ItemKind::Enum(_) => None,
@@ -149,17 +156,16 @@ pub fn emit_walk_impl(
 	let optimised_skip_arms: Vec<TokenStream> = history
 		.iter()
 		.filter(|h| h.is_optimised())
-		.map(|h| {
+		.map(|h| -> syn::Result<TokenStream> {
 			let rev_lit = h.revision.value as u16;
 			match &item.kind {
 				ItemKind::Struct(_) => {
-					let prologue_bytes: u32 =
-						if matches!(h.struct_kind, StructEncoding::Indexed) {
-							optimised_struct_field_count.unwrap_or(0) * 4
-						} else {
-							0
-						};
-					quote! {
+					let prologue_bytes: u32 = if matches!(h.struct_kind, StructEncoding::Indexed) {
+						optimised_struct_field_count.unwrap_or(0) * 4
+					} else {
+						0
+					};
+					Ok(quote! {
 						#rev_lit => {
 							let mut __len_buf = [0u8; 4];
 							::std::io::Read::read_exact(reader, &mut __len_buf)
@@ -172,23 +178,14 @@ pub fn emit_walk_impl(
 									.map_err(::revision::Error::Io)?;
 							}
 						}
-					}
+					})
 				}
-				ItemKind::Enum(_) => quote! {
-					#rev_lit => {
-						return ::std::result::Result::Err(
-							::revision::Error::Deserialize(
-								::std::format!(
-									"walker on optimised enum revision {} is not supported; use `DeserializeRevisioned::deserialize_revisioned` instead",
-									#rev_lit,
-								)
-							)
-						);
-					}
-				},
+				ItemKind::Enum(e) => {
+					emit_optimised_enum_walker_arm(e, h, rev_lit, &walker_name, &walker_repr_name)
+				}
 			}
 		})
-		.collect();
+		.collect::<syn::Result<Vec<_>>>()?;
 
 	let optimised_skip_dispatch = if optimised_skip_arms.is_empty() {
 		quote! {}
@@ -760,7 +757,7 @@ fn emit_enum_methods(
 							}
 							#walker_repr_name::Materialised { .. } => {
 								::std::result::Result::Err(::revision::Error::Conversion(
-									"into_<variant> is not supported on materialised walkers".into(),
+									"into_<variant> is not supported on materialised walkers (including optimised enums); use `DeserializeRevisioned::deserialize_revisioned` to fully decode the value".into(),
 								))
 							}
 						}
@@ -919,4 +916,100 @@ fn alive_field_count(s: &Struct, revision: usize) -> usize {
 		} => fields.iter().filter(|f| f.attrs.options.exists_at(revision)).count(),
 		Fields::Unit => 0,
 	}
+}
+
+/// Emit the walker-construction arm for an optimised enum revision.
+///
+/// Reads the 1-byte tag, slurps the variant payload per the declared size
+/// class, and returns a `Materialised` walker whose `discriminant` field holds
+/// the variant id from the tag. The existing per-variant `decode_<v>` /
+/// `is_<v>` / `into_<v>` methods on the `Materialised` arm then read fields
+/// directly from the slurped payload.
+fn emit_optimised_enum_walker_arm(
+	e: &Enum,
+	entry: &HistoryEntry,
+	rev_lit: u16,
+	walker_name: &Ident,
+	walker_repr_name: &Ident,
+) -> syn::Result<TokenStream> {
+	// Compute the variant_id -> declared SizeClass map for this entry.
+	let mut discriminants = HashMap::new();
+	CalcDiscriminant::new(entry.revision.value, &mut discriminants).visit_enum(e)?;
+	let mut sizes: HashMap<u32, VariantSize> = HashMap::new();
+	for v in e.variants.iter().filter(|v| v.attrs.options.exists_at(entry.revision.value)) {
+		let id = *discriminants.get(&v.ident).expect("alive variant has discriminant");
+		let Some(spanned_size) = v.attrs.options.size.as_ref() else {
+			return Err(syn::Error::new(
+				v.ident.span(),
+				"variant requires `#[revision(size = \"inline\" | \"fixed(N)\" | \"varlen\")]` under `encoding = \"optimised\"`",
+			));
+		};
+		sizes.insert(id, spanned_size.size);
+	}
+
+	// Build the (variant_id, size_class) → slurp body match arms.
+	let mut arms = TokenStream::new();
+	for (id, size) in sizes.iter() {
+		let id_lit = *id as u8;
+		let arm = match size {
+			VariantSize::Inline => quote! {
+				(#id_lit, ::revision::optimised::tag::SizeClass::Inline) => {
+					::std::vec::Vec::new()
+				}
+			},
+			VariantSize::Fixed(n) => {
+				let n_lit = *n as usize;
+				quote! {
+					(#id_lit, ::revision::optimised::tag::SizeClass::Fixed) => {
+						let mut __buf = ::std::vec![0u8; #n_lit];
+						::std::io::Read::read_exact(reader, &mut __buf)
+							.map_err(::revision::Error::Io)?;
+						__buf
+					}
+				}
+			}
+			VariantSize::Varlen => quote! {
+				(#id_lit, ::revision::optimised::tag::SizeClass::Varlen) => {
+					let mut __len_buf = [0u8; 4];
+					::std::io::Read::read_exact(reader, &mut __len_buf)
+						.map_err(::revision::Error::Io)?;
+					let __len = u32::from_le_bytes(__len_buf) as usize;
+					let mut __buf = ::std::vec![0u8; __len];
+					::std::io::Read::read_exact(reader, &mut __buf)
+						.map_err(::revision::Error::Io)?;
+					__buf
+				}
+			},
+		};
+		arms.append_all(arm);
+	}
+
+	let bad_arm_msg = format!(
+		"unknown variant tag for optimised enum at revision {rev_lit}: variant_id={{}} size_class={{:?}}",
+	);
+
+	Ok(quote! {
+		#rev_lit => {
+			let __tag = ::revision::optimised::tag::read_tag(reader)?;
+			let __sc = __tag.size_class()?;
+			let __variant_id = __tag.variant_id();
+			let __payload: ::std::vec::Vec<u8> = match (__variant_id, __sc) {
+				#arms
+				_ => {
+					return ::std::result::Result::Err(::revision::Error::Deserialize(
+						::std::format!(#bad_arm_msg, __variant_id, __sc),
+					));
+				}
+			};
+			return ::std::result::Result::Ok(#walker_name {
+				repr: #walker_repr_name::Materialised {
+					bytes: __payload,
+					cursor: 0,
+					discriminant: __variant_id as u32,
+					pos: 0,
+					_marker: ::std::marker::PhantomData,
+				},
+			});
+		}
+	})
 }
