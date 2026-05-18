@@ -73,6 +73,10 @@ path = "tests/indexed.rs"
 name = "corruption"
 path = "tests/corruption.rs"
 
+[[test]]
+name = "syntax_legacy_vs_new"
+path = "tests/syntax_legacy_vs_new.rs"
+
 [[bench]]
 name = "roaring"
 harness = false

@@ -6,9 +6,14 @@ use syn::{
 	token::{self, Brace, Paren},
 };
 
-mod attributes;
+pub mod attributes;
+pub mod history;
 mod visit;
 pub use attributes::{Direct, FieldOptions, FilteredAttributes, ItemOptions, VariantOptions};
+#[allow(unused_imports)]
+pub use history::{
+	Encoding, HistoryEntry, LengthEncoding, MapEncoding, SeqEncoding, StructEncoding,
+};
 pub use visit::*;
 
 #[derive(Debug)]
