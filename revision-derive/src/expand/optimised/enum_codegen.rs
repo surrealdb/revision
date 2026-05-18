@@ -19,7 +19,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{TokenStreamExt, quote};
 use syn::{Error, Ident};
 
-use crate::ast::attributes::{VariantSize, VariantOptions};
+use crate::ast::attributes::{VariantOptions, VariantSize};
 use crate::ast::{Enum, Field, Fields, Variant, Visit};
 
 use super::super::common::CalcDiscriminant;
@@ -51,9 +51,7 @@ fn size_class_path(size: &VariantSize) -> TokenStream {
 	}
 }
 
-fn validate_discriminants(
-	discriminants: &HashMap<Ident, u32>,
-) -> syn::Result<()> {
+fn validate_discriminants(discriminants: &HashMap<Ident, u32>) -> syn::Result<()> {
 	for (name, d) in discriminants {
 		if *d >= 32 {
 			return Err(Error::new(
@@ -92,9 +90,14 @@ pub fn emit_enum_serialize(e: &Enum, ctx: EncodingContext) -> syn::Result<TokenS
 		let sc_path = size_class_path(size);
 		let id_lit = id as u8;
 		let alive_field_count = match &v.fields {
-			Fields::Named { fields, .. } | Fields::Unnamed { fields, .. } => {
-				fields.iter().filter(|f| f.attrs.options.exists_at(revision)).count()
+			Fields::Named {
+				fields,
+				..
 			}
+			| Fields::Unnamed {
+				fields,
+				..
+			} => fields.iter().filter(|f| f.attrs.options.exists_at(revision)).count(),
 			Fields::Unit => 0,
 		};
 
@@ -293,14 +296,18 @@ pub fn emit_enum_skip(
 
 fn variant_pattern(name: &Ident, v: &Variant, revision: usize) -> TokenStream {
 	match &v.fields {
-		Fields::Named { fields, .. } => {
-			let bindings = fields
-				.iter()
-				.filter(|f| f.attrs.options.exists_at(revision))
-				.map(|f| &f.name);
+		Fields::Named {
+			fields,
+			..
+		} => {
+			let bindings =
+				fields.iter().filter(|f| f.attrs.options.exists_at(revision)).map(|f| &f.name);
 			quote! { Self::#name { #(ref #bindings),* } }
 		}
-		Fields::Unnamed { fields, .. } => {
+		Fields::Unnamed {
+			fields,
+			..
+		} => {
 			let bindings = fields
 				.iter()
 				.filter(|f| f.attrs.options.exists_at(revision))
@@ -364,14 +371,20 @@ fn decode_variant_body(
 	}
 
 	let construction = match &v.fields {
-		Fields::Named { fields, .. } => {
+		Fields::Named {
+			fields,
+			..
+		} => {
 			let bindings = fields
 				.iter()
 				.filter(|f| f.attrs.options.exists_at(current))
 				.map(|f| f.name.to_binding());
 			quote! { Self::#name { #(#bindings),* } }
 		}
-		Fields::Unnamed { fields, .. } => {
+		Fields::Unnamed {
+			fields,
+			..
+		} => {
 			let bindings = fields
 				.iter()
 				.filter(|f| f.attrs.options.exists_at(current))
@@ -390,9 +403,14 @@ fn decode_variant_body(
 
 fn alive_fields(v: &Variant, revision: usize) -> Vec<&Field> {
 	match &v.fields {
-		Fields::Named { fields, .. } | Fields::Unnamed { fields, .. } => {
-			fields.iter().filter(|f| f.attrs.options.exists_at(revision)).collect()
+		Fields::Named {
+			fields,
+			..
 		}
+		| Fields::Unnamed {
+			fields,
+			..
+		} => fields.iter().filter(|f| f.attrs.options.exists_at(revision)).collect(),
 		Fields::Unit => Vec::new(),
 	}
 }

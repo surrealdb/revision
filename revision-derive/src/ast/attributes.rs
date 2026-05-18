@@ -334,7 +334,9 @@ impl Parse for RevisionEntryOption {
 		if input.peek(kw::length) {
 			return Ok(RevisionEntryOption::Length(input.parse()?));
 		}
-		Err(input.error("invalid `revision(...)` option (expected `encoding`, `map`, `seq`, `struct`, or `length`)"))
+		Err(input.error(
+			"invalid `revision(...)` option (expected `encoding`, `map`, `seq`, `struct`, or `length`)",
+		))
 	}
 }
 
@@ -379,7 +381,9 @@ fn build_history_entry(group: RevisionEntryGroup) -> syn::Result<HistoryEntry> {
 					other => {
 						return Err(Error::new(
 							v.value.span(),
-							format!("unknown encoding `{other}` (expected `legacy` or `optimised`)"),
+							format!(
+								"unknown encoding `{other}` (expected `legacy` or `optimised`)"
+							),
 						));
 					}
 				}
@@ -706,9 +710,8 @@ impl AttributeOptions for VariantOptions {
 						return Err(Error::new(x.key.span(), "tried to set an option twice"));
 					}
 					let span = x.value.span();
-					let parsed = parse_variant_size(&x.value).map_err(|msg| {
-						Error::new(span, msg)
-					})?;
+					let parsed =
+						parse_variant_size(&x.value).map_err(|msg| Error::new(span, msg))?;
 					res.size = Some(SpannedSize {
 						size: parsed,
 						span,

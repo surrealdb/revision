@@ -50,7 +50,11 @@ pub fn emit_struct_serialize(s: &Struct, ctx: EncodingContext) -> TokenStream {
 
 	let indexed = ctx.struct_is_indexed();
 	let field_count = alive_fields.len();
-	let prologue_bytes = if indexed { field_count * 4 } else { 0 };
+	let prologue_bytes = if indexed {
+		field_count * 4
+	} else {
+		0
+	};
 
 	// Sequential or indexed: build into a scratch buffer and flush.
 	out.append_all(quote! {
@@ -108,7 +112,11 @@ pub fn emit_struct_deserialize(s: &Struct, ctx: EncodingContext, target: usize) 
 	let indexed = ctx.struct_is_indexed();
 	let alive_at_current = alive_fields(s, current);
 	let field_count = alive_at_current.len();
-	let prologue_bytes = if indexed { field_count * 4 } else { 0 };
+	let prologue_bytes = if indexed {
+		field_count * 4
+	} else {
+		0
+	};
 
 	let mut decode_each = TokenStream::new();
 	let mut bindings_for_construction: Vec<proc_macro2::TokenStream> = Vec::new();
@@ -143,9 +151,12 @@ pub fn emit_struct_deserialize(s: &Struct, ctx: EncodingContext, target: usize) 
 			bindings_for_construction.push(quote! { #binding });
 		} else if exists_current && !exists_target {
 			// Field on wire but removed in current type — decode and pass to convert_fn.
-			let convert = f.attrs.options.convert.as_ref().expect(
-				"convert_fn required when `end` is set; checked by AST validation",
-			);
+			let convert = f
+				.attrs
+				.options
+				.convert
+				.as_ref()
+				.expect("convert_fn required when `end` is set; checked by AST validation");
 			let convert_ident = syn::Ident::new(&convert.value(), convert.span());
 			let rev_lit = current as u16;
 			decode_each.append_all(quote! {
@@ -158,8 +169,12 @@ pub fn emit_struct_deserialize(s: &Struct, ctx: EncodingContext, target: usize) 
 	}
 
 	let construct = match s.fields {
-		Fields::Named { .. } => quote! { let mut __this = Self { #(#bindings_for_construction),* }; },
-		Fields::Unnamed { .. } => quote! { let mut __this = Self ( #(#bindings_for_construction),* ); },
+		Fields::Named {
+			..
+		} => quote! { let mut __this = Self { #(#bindings_for_construction),* }; },
+		Fields::Unnamed {
+			..
+		} => quote! { let mut __this = Self ( #(#bindings_for_construction),* ); },
 		Fields::Unit => quote! { let __this = Self; },
 	};
 
@@ -233,14 +248,18 @@ pub fn emit_struct_skip(_s: &Struct, _ctx: EncodingContext, slice_mode: bool) ->
 
 fn collect_fields(s: &Struct) -> Vec<&Field> {
 	match &s.fields {
-		Fields::Named { fields, .. } | Fields::Unnamed { fields, .. } => fields.iter().collect(),
+		Fields::Named {
+			fields,
+			..
+		}
+		| Fields::Unnamed {
+			fields,
+			..
+		} => fields.iter().collect(),
 		Fields::Unit => Vec::new(),
 	}
 }
 
 fn alive_fields(s: &Struct, revision: usize) -> Vec<&Field> {
-	collect_fields(s)
-		.into_iter()
-		.filter(|f| f.attrs.options.exists_at(revision))
-		.collect()
+	collect_fields(s).into_iter().filter(|f| f.attrs.options.exists_at(revision)).collect()
 }

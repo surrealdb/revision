@@ -166,18 +166,27 @@ fn three_revision_history_decodes_each_arm() {
 	let d2: ThreeRevisions = revision::from_slice(&bytes2).unwrap();
 	let d3: ThreeRevisions = revision::from_slice(&bytes3).unwrap();
 
-	assert_eq!(d1, ThreeRevisions {
-		a: 7,
-		b: 8,
-	});
-	assert_eq!(d2, ThreeRevisions {
-		a: 9,
-		b: 10,
-	});
-	assert_eq!(d3, ThreeRevisions {
-		a: 11,
-		b: 12,
-	});
+	assert_eq!(
+		d1,
+		ThreeRevisions {
+			a: 7,
+			b: 8,
+		}
+	);
+	assert_eq!(
+		d2,
+		ThreeRevisions {
+			a: 9,
+			b: 10,
+		}
+	);
+	assert_eq!(
+		d3,
+		ThreeRevisions {
+			a: 11,
+			b: 12,
+		}
+	);
 
 	// Encoding always emits rev 3.
 	assert_eq!(bytes3[0], 3u8);
@@ -242,7 +251,7 @@ fn pin_optimised_rev1_struct_layout() {
 	// Payload is 2 bytes (one varint each), so length = 2.
 	let pinned: &[u8] = &[
 		1, // u16 revision varint = 1
-		2, 0, 0, 0, // u32_le payload length = 2
+		2, 0, 0, 0,  // u32_le payload length = 2
 		7,  // varint a
 		11, // varint b
 	];

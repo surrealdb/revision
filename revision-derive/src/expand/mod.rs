@@ -26,10 +26,7 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 	// Two sources of history: `#[revisioned(...)]` on the macro invocation
 	// (`attrs.0.history`), and `#[revision(...)]` separate attributes on the
 	// item (`ast.attrs.options.history`). Exactly one of them must be non-empty.
-	let history = match (
-		ast.attrs.options.history.is_empty(),
-		attrs.0.history.is_empty(),
-	) {
+	let history = match (ast.attrs.options.history.is_empty(), attrs.0.history.is_empty()) {
 		(false, true) => ast.attrs.options.history.clone(),
 		(true, false) => attrs.0.history.clone(),
 		(true, true) => {
@@ -39,17 +36,12 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 			));
 		}
 		(false, false) => {
-			return Err(syn::Error::new(
-				Span::call_site(),
-				"Current revision specified twice",
-			));
+			return Err(syn::Error::new(Span::call_site(), "Current revision specified twice"));
 		}
 	};
 
-	let revision = history
-		.last()
-		.map(|h| h.revision.value)
-		.expect("history non-empty at this point");
+	let revision =
+		history.last().map(|h| h.revision.value).expect("history non-empty at this point");
 
 	if revision > u16::MAX as usize {
 		return Err(syn::Error::new(

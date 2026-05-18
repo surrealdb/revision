@@ -42,11 +42,7 @@ fn optimised_struct_wire_starts_with_revision_then_length() {
 	assert_eq!(bytes[0], 1u8, "revision varint should be 1");
 	// Next 4 bytes: u32_le payload length.
 	let payload_len = u32::from_le_bytes(bytes[1..5].try_into().unwrap()) as usize;
-	assert_eq!(
-		bytes.len(),
-		1 + 4 + payload_len,
-		"total bytes = revision + length + payload"
-	);
+	assert_eq!(bytes.len(), 1 + 4 + payload_len, "total bytes = revision + length + payload");
 }
 
 #[test]
@@ -125,7 +121,10 @@ enum OptimisedEnum {
 	#[revision(size = "varlen")]
 	WithString(String),
 	#[revision(size = "varlen")]
-	WithPair { a: u32, b: u32 },
+	WithPair {
+		a: u32,
+		b: u32,
+	},
 }
 
 #[test]
