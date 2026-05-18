@@ -15,7 +15,7 @@ use quote::quote;
 use reexport::Reexport;
 use ser::SerializeVisitor;
 use skip::SkipVisitor;
-use validate_version::ValidateRevision;
+use validate_version::{ValidateOptimised, ValidateRevision};
 
 use crate::ast::{self, Direct, ItemOptions, Visit};
 
@@ -55,6 +55,10 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 
 	// Make sure that all used revisions are less or equal to the current revision.
 	ValidateRevision(revision).visit_item(&ast)?;
+
+	// Validate optimised-encoding invariants once, up front, so the per-visitor
+	// codegen modules can assume they hold.
+	ValidateOptimised(&history).check(&ast)?;
 
 	// Recreate the item.
 	let mut reexport = TokenStream::new();

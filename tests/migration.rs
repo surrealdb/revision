@@ -259,3 +259,97 @@ fn pin_optimised_rev1_struct_layout() {
 	assert_eq!(decoded.a, 7);
 	assert_eq!(decoded.b, 11);
 }
+
+// -----------------------------------------------------------------------------
+// Mixed-history nested-type tests
+// -----------------------------------------------------------------------------
+//
+// Each nested type dispatches on its own history independently of the outer
+// type's history. An outer type with a single legacy revision can transparently
+// hold an inner type whose latest revision is optimised, and vice versa.
+
+#[revisioned(revision(1))]
+#[derive(Debug, Clone, PartialEq)]
+struct InnerLegacy {
+	x: u32,
+	y: u32,
+}
+
+#[revisioned(revision(1), revision(2, encoding = "optimised"))]
+#[derive(Debug, Clone, PartialEq)]
+struct InnerOptimised {
+	x: u32,
+	y: u32,
+}
+
+#[revisioned(revision(1))]
+#[derive(Debug, Clone, PartialEq)]
+struct OuterLegacy {
+	tag: u32,
+	inner: InnerOptimised,
+}
+
+#[revisioned(revision(1), revision(2, encoding = "optimised"))]
+#[derive(Debug, Clone, PartialEq)]
+struct OuterOptimised {
+	tag: u32,
+	inner: InnerLegacy,
+}
+
+#[test]
+fn legacy_outer_with_optimised_inner_round_trips() {
+	let v = OuterLegacy {
+		tag: 0xAA,
+		inner: InnerOptimised {
+			x: 1,
+			y: 2,
+		},
+	};
+	let bytes = revision::to_vec(&v).unwrap();
+	let decoded: OuterLegacy = revision::from_slice(&bytes).unwrap();
+	assert_eq!(decoded, v);
+	// Outer carries rev 1 (legacy single revision).
+	assert_eq!(bytes[0], 1u8);
+}
+
+#[test]
+fn optimised_outer_with_legacy_inner_round_trips() {
+	let v = OuterOptimised {
+		tag: 0xBB,
+		inner: InnerLegacy {
+			x: 3,
+			y: 4,
+		},
+	};
+	let bytes = revision::to_vec(&v).unwrap();
+	let decoded: OuterOptimised = revision::from_slice(&bytes).unwrap();
+	assert_eq!(decoded, v);
+	// Outer carries rev 2 (latest optimised revision).
+	assert_eq!(bytes[0], 2u8);
+}
+
+#[test]
+fn nested_optimised_both_levels_round_trips() {
+	#[revisioned(revision(1, encoding = "optimised"))]
+	#[derive(Debug, Clone, PartialEq)]
+	struct Inner2 {
+		a: u32,
+	}
+
+	#[revisioned(revision(1, encoding = "optimised"))]
+	#[derive(Debug, Clone, PartialEq)]
+	struct Outer2 {
+		tag: u32,
+		inner: Inner2,
+	}
+
+	let v = Outer2 {
+		tag: 7,
+		inner: Inner2 {
+			a: 42,
+		},
+	};
+	let bytes = revision::to_vec(&v).unwrap();
+	let decoded: Outer2 = revision::from_slice(&bytes).unwrap();
+	assert_eq!(decoded, v);
+}
