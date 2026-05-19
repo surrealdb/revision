@@ -46,6 +46,27 @@ struct MapPrologue<'p> {
 
 impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 	pub fn from_payload(payload: &'p [u8]) -> Result<Self, Error> {
+		Self::from_payload_inner(payload, true)
+	}
+
+	/// Open a walker **without** validating the prologue (monotonic offsets,
+	/// ascending key region).
+	///
+	/// Skips the O(len) validation that [`from_payload`] runs. Use only when
+	/// the bytes are trusted (e.g. freshly written by the same process). On
+	/// untrusted input a malformed prologue produces silent wrong-key /
+	/// wrong-value bytes rather than a clean
+	/// [`Error::OptimisedOffsetsNonMonotonic`] /
+	/// [`Error::OptimisedKeyRegionNotAscending`].
+	///
+	/// [`from_payload`]: Self::from_payload
+	/// [`Error::OptimisedOffsetsNonMonotonic`]: crate::Error::OptimisedOffsetsNonMonotonic
+	/// [`Error::OptimisedKeyRegionNotAscending`]: crate::Error::OptimisedKeyRegionNotAscending
+	pub fn from_payload_unvalidated(payload: &'p [u8]) -> Result<Self, Error> {
+		Self::from_payload_inner(payload, false)
+	}
+
+	fn from_payload_inner(payload: &'p [u8], validate: bool) -> Result<Self, Error> {
 		if payload.is_empty() {
 			return Err(Error::OptimisedSubReaderOverrun);
 		}
@@ -105,13 +126,15 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 		cursor += keys_region_len;
 		let vals_region = &payload[cursor..cursor + vals_region_len];
 
-		validate_map_prologue(
-			&key_offsets,
-			&val_offsets,
-			keys_region_len as u32,
-			vals_region_len as u32,
-		)?;
-		validate_key_region_ascending(keys_region, &key_offsets)?;
+		if validate {
+			validate_map_prologue(
+				&key_offsets,
+				&val_offsets,
+				keys_region_len as u32,
+				vals_region_len as u32,
+			)?;
+			validate_key_region_ascending(keys_region, &key_offsets)?;
+		}
 
 		Ok(Self {
 			body: &payload[1 + varint_bytes..],

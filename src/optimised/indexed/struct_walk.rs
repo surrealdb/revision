@@ -63,7 +63,11 @@ impl<'p> IndexedStructWalker<'p> {
 	/// Open an indexed-struct walker over an already-extracted payload slice.
 	///
 	/// `field_count` comes from the type definition (the macro emits the literal).
-	/// Performs eager prologue validation.
+	/// Performs eager prologue validation — monotonic offsets, last offset
+	/// within payload, first offset past the prologue. Use
+	/// [`from_payload_unvalidated`](Self::from_payload_unvalidated) when the
+	/// payload is trusted (e.g. freshly written by the same process) and the
+	/// O(field_count) validation cost is measurable on the hot path.
 	pub fn from_payload(payload: &'p [u8], revision: u16, field_count: u16) -> Result<Self, Error> {
 		let prologue_bytes = (field_count as usize) * 4;
 		if payload.len() < prologue_bytes {
@@ -79,6 +83,39 @@ impl<'p> IndexedStructWalker<'p> {
 				offset: first,
 				payload_len: prologue_bytes as u32,
 			});
+		}
+		Ok(Self {
+			payload,
+			field_count,
+			revision,
+		})
+	}
+
+	/// Open an indexed-struct walker **without** validating the prologue.
+	///
+	/// Skips the O(field_count) offset-table check that [`from_payload`] runs.
+	/// Use only when the bytes are trusted — typically when they were
+	/// produced by `to_vec` or another in-process serialiser in the same
+	/// run. On untrusted input this trades a clean
+	/// [`Error::OptimisedOffsetsNonMonotonic`] / [`Error::OptimisedOffsetOutOfRange`]
+	/// for silent wrong-field-bytes on access (the offset lookup still
+	/// bounds-checks, but malformed offset tables can return overlapping or
+	/// out-of-order slices for adjacent fields).
+	///
+	/// Returns `Error::OptimisedSubReaderOverrun` only when the payload is
+	/// too short to hold the offset table itself.
+	///
+	/// [`from_payload`]: Self::from_payload
+	/// [`Error::OptimisedOffsetsNonMonotonic`]: crate::Error::OptimisedOffsetsNonMonotonic
+	/// [`Error::OptimisedOffsetOutOfRange`]: crate::Error::OptimisedOffsetOutOfRange
+	pub fn from_payload_unvalidated(
+		payload: &'p [u8],
+		revision: u16,
+		field_count: u16,
+	) -> Result<Self, Error> {
+		let prologue_bytes = (field_count as usize) * 4;
+		if payload.len() < prologue_bytes {
+			return Err(Error::OptimisedSubReaderOverrun);
 		}
 		Ok(Self {
 			payload,
