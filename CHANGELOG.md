@@ -101,6 +101,24 @@ primitives directly:
   `OptimisedOffsetOutOfRange`, `OptimisedOffsetsNonMonotonic`,
   `OptimisedKeyRegionNotAscending`, `OptimisedSubReaderOverrun`.
   Downstream `match Error { ... }` code needs a wildcard arm.
+- **`WalkRevisioned` now requires `BorrowedReader` instead of
+  `Read`.** Callers passing `&[u8]` are unaffected (`&[u8]`
+  implements `BorrowedReader`). Callers passing `File`,
+  `TcpStream`, or other non-slice sources need to buffer first:
+  ```rust,ignore
+  let mut buf = Vec::new();
+  source.read_to_end(&mut buf)?;
+  let walker = MyType::walk_revisioned(&mut buf.as_slice())?;
+  ```
+  This is a one-line adjustment per call site. The motivation:
+  revisioned compounds always carry their byte-length up front, so
+  the full payload has to be buffered before a walk can begin
+  anyway — this just makes the buffering explicit at the call
+  site. In return, the walker can borrow variant bodies and
+  indexed payloads directly from the source slice instead of
+  copying them into per-walk `Vec<u8>` allocations.
+  `SerializeRevisioned` and `DeserializeRevisioned` keep their
+  `Read` / `Write` bounds unchanged.
 
 ### Migration
 

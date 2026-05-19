@@ -7,13 +7,13 @@ use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::hash::{BuildHasher, Hash};
-use std::io::Read;
 use std::num::Wrapping;
 use std::ops::{Bound, Range};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use crate::slice_reader::BorrowedReader;
 use crate::walk::{LeafWalker, MapWalker, OptionWalker, ResultWalker, SeqWalker};
 use crate::{Error, Revisioned, WalkRevisioned};
 
@@ -58,10 +58,10 @@ fn vec_uses_bulk_encoding<T: 'static>() -> bool {
 macro_rules! leaf_walk {
 	($($t:ty),* $(,)?) => {$(
 		impl WalkRevisioned for $t {
-			type Walker<'r, R: Read + 'r> = LeafWalker<'r, $t, R>;
+			type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, $t, R>;
 
 			#[inline]
-			fn walk_revisioned<'r, R: Read>(
+			fn walk_revisioned<'r, R: BorrowedReader>(
 				reader: &'r mut R,
 			) -> Result<Self::Walker<'r, R>, Error> {
 				Ok(LeafWalker::new(reader))
@@ -93,10 +93,10 @@ leaf_walk!(
 );
 
 impl WalkRevisioned for SystemTime {
-	type Walker<'r, R: Read + 'r> = LeafWalker<'r, SystemTime, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, SystemTime, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		Ok(LeafWalker::new(reader))
 	}
 }
@@ -106,10 +106,10 @@ impl WalkRevisioned for SystemTime {
 // -----------------------------------------------------------------------------
 
 impl<T: WalkRevisioned> WalkRevisioned for Range<T> {
-	type Walker<'r, R: Read + 'r> = LeafWalker<'r, Range<T>, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, Range<T>, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		Ok(LeafWalker::new(reader))
 	}
 }
@@ -124,10 +124,10 @@ macro_rules! tuple_walk_impl {
 		impl<$($n,)*> WalkRevisioned for ($($n,)*)
 		where $($n: Revisioned,)*
 		{
-			type Walker<'r, R: Read + 'r> = LeafWalker<'r, Self, R>;
+			type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, Self, R>;
 
 			#[inline]
-			fn walk_revisioned<'r, R: Read>(
+			fn walk_revisioned<'r, R: BorrowedReader>(
 				reader: &'r mut R,
 			) -> Result<Self::Walker<'r, R>, Error> {
 				Ok(LeafWalker::new(reader))
@@ -149,10 +149,10 @@ macro_rules! array_walk_sizes {
 		where
 			T: Revisioned + Copy + Default,
 		{
-			type Walker<'r, R: Read + 'r> = LeafWalker<'r, Self, R>;
+			type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, Self, R>;
 
 			#[inline]
-			fn walk_revisioned<'r, R: Read>(
+			fn walk_revisioned<'r, R: BorrowedReader>(
 				reader: &'r mut R,
 			) -> Result<Self::Walker<'r, R>, Error> {
 				Ok(LeafWalker::new(reader))
@@ -176,10 +176,10 @@ impl<T> WalkRevisioned for Option<T>
 where
 	T: Revisioned,
 {
-	type Walker<'r, R: Read + 'r> = OptionWalker<'r, T, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = OptionWalker<'r, T, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		OptionWalker::new(reader)
 	}
 }
@@ -193,10 +193,10 @@ where
 	T: Revisioned,
 	E: Revisioned,
 {
-	type Walker<'r, R: Read + 'r> = ResultWalker<'r, T, E, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = ResultWalker<'r, T, E, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		ResultWalker::new(reader)
 	}
 }
@@ -210,10 +210,10 @@ impl<T> WalkRevisioned for Bound<T>
 where
 	T: Revisioned,
 {
-	type Walker<'r, R: Read + 'r> = LeafWalker<'r, Bound<T>, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, Bound<T>, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		Ok(LeafWalker::new(reader))
 	}
 }
@@ -226,10 +226,10 @@ impl<T> WalkRevisioned for Vec<T>
 where
 	T: Revisioned + 'static,
 {
-	type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = SeqWalker<'r, T, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		if vec_uses_bulk_encoding::<T>() {
 			return Err(Error::Deserialize(
 				"Vec<T>: cannot walk Vec whose element type uses specialised bulk encoding \
@@ -251,10 +251,10 @@ where
 	T: Revisioned + Eq + Hash,
 	S: BuildHasher + Default,
 {
-	type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = SeqWalker<'r, T, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		SeqWalker::new(reader)
 	}
 }
@@ -263,10 +263,10 @@ impl<T> WalkRevisioned for BTreeSet<T>
 where
 	T: Revisioned + Ord,
 {
-	type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = SeqWalker<'r, T, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		SeqWalker::new(reader)
 	}
 }
@@ -275,10 +275,10 @@ impl<T> WalkRevisioned for BinaryHeap<T>
 where
 	T: Revisioned + Ord,
 {
-	type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = SeqWalker<'r, T, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		SeqWalker::new(reader)
 	}
 }
@@ -293,10 +293,10 @@ where
 	V: Revisioned,
 	S: BuildHasher + Default,
 {
-	type Walker<'r, R: Read + 'r> = MapWalker<'r, K, V, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = MapWalker<'r, K, V, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		MapWalker::new(reader)
 	}
 }
@@ -306,10 +306,10 @@ where
 	K: Revisioned + Ord,
 	V: Revisioned,
 {
-	type Walker<'r, R: Read + 'r> = MapWalker<'r, K, V, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = MapWalker<'r, K, V, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		MapWalker::new(reader)
 	}
 }
@@ -322,10 +322,10 @@ impl<T> WalkRevisioned for Box<T>
 where
 	T: WalkRevisioned,
 {
-	type Walker<'r, R: Read + 'r> = T::Walker<'r, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = T::Walker<'r, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		T::walk_revisioned(reader)
 	}
 }
@@ -334,28 +334,28 @@ impl<T> WalkRevisioned for Arc<T>
 where
 	T: WalkRevisioned,
 {
-	type Walker<'r, R: Read + 'r> = T::Walker<'r, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = T::Walker<'r, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		T::walk_revisioned(reader)
 	}
 }
 
 impl WalkRevisioned for Arc<str> {
-	type Walker<'r, R: Read + 'r> = LeafWalker<'r, Arc<str>, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, Arc<str>, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		Ok(LeafWalker::new(reader))
 	}
 }
 
 impl WalkRevisioned for Box<str> {
-	type Walker<'r, R: Read + 'r> = LeafWalker<'r, Box<str>, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, Box<str>, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		Ok(LeafWalker::new(reader))
 	}
 }
@@ -364,10 +364,10 @@ impl<T> WalkRevisioned for Wrapping<T>
 where
 	T: WalkRevisioned,
 {
-	type Walker<'r, R: Read + 'r> = T::Walker<'r, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = T::Walker<'r, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		T::walk_revisioned(reader)
 	}
 }
@@ -376,10 +376,10 @@ impl<T> WalkRevisioned for Reverse<T>
 where
 	T: WalkRevisioned,
 {
-	type Walker<'r, R: Read + 'r> = T::Walker<'r, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = T::Walker<'r, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		T::walk_revisioned(reader)
 	}
 }
@@ -397,10 +397,10 @@ where
 	T: ToOwned + Revisioned,
 	T::Owned: WalkRevisioned,
 {
-	type Walker<'r, R: Read + 'r> = LeafWalker<'r, T::Owned, R>;
+	type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, T::Owned, R>;
 
 	#[inline]
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+	fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 		Ok(LeafWalker::new(reader))
 	}
 }
@@ -418,10 +418,10 @@ mod notnan_walk {
 	where
 		T: WalkRevisioned + FloatCore,
 	{
-		type Walker<'r, R: Read + 'r> = T::Walker<'r, R>;
+		type Walker<'r, R: BorrowedReader + 'r> = T::Walker<'r, R>;
 
 		#[inline]
-		fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 			T::walk_revisioned(reader)
 		}
 	}
@@ -433,10 +433,10 @@ mod decimal_walk {
 	use rust_decimal::Decimal;
 
 	impl WalkRevisioned for Decimal {
-		type Walker<'r, R: Read + 'r> = LeafWalker<'r, Decimal, R>;
+		type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, Decimal, R>;
 
 		#[inline]
-		fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 			Ok(LeafWalker::new(reader))
 		}
 	}
@@ -448,10 +448,10 @@ mod uuid_walk {
 	use uuid::Uuid;
 
 	impl WalkRevisioned for Uuid {
-		type Walker<'r, R: Read + 'r> = LeafWalker<'r, Uuid, R>;
+		type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, Uuid, R>;
 
 		#[inline]
-		fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 			Ok(LeafWalker::new(reader))
 		}
 	}
@@ -463,10 +463,10 @@ mod regex_walk {
 	use regex::Regex;
 
 	impl WalkRevisioned for Regex {
-		type Walker<'r, R: Read + 'r> = LeafWalker<'r, Regex, R>;
+		type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, Regex, R>;
 
 		#[inline]
-		fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 			Ok(LeafWalker::new(reader))
 		}
 	}
@@ -478,10 +478,10 @@ mod bytes_walk {
 	use bytes::Bytes;
 
 	impl WalkRevisioned for Bytes {
-		type Walker<'r, R: Read + 'r> = LeafWalker<'r, Bytes, R>;
+		type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, Bytes, R>;
 
 		#[inline]
-		fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 			Ok(LeafWalker::new(reader))
 		}
 	}
@@ -493,19 +493,19 @@ mod roaring_walk {
 	use roaring::{RoaringBitmap, RoaringTreemap};
 
 	impl WalkRevisioned for RoaringBitmap {
-		type Walker<'r, R: Read + 'r> = LeafWalker<'r, RoaringBitmap, R>;
+		type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, RoaringBitmap, R>;
 
 		#[inline]
-		fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 			Ok(LeafWalker::new(reader))
 		}
 	}
 
 	impl WalkRevisioned for RoaringTreemap {
-		type Walker<'r, R: Read + 'r> = LeafWalker<'r, RoaringTreemap, R>;
+		type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, RoaringTreemap, R>;
 
 		#[inline]
-		fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 			Ok(LeafWalker::new(reader))
 		}
 	}
@@ -517,37 +517,37 @@ mod chrono_walk {
 	use chrono::{DateTime, Duration as ChronoDuration, NaiveDate, NaiveTime, Utc};
 
 	impl WalkRevisioned for DateTime<Utc> {
-		type Walker<'r, R: Read + 'r> = LeafWalker<'r, DateTime<Utc>, R>;
+		type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, DateTime<Utc>, R>;
 
 		#[inline]
-		fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 			Ok(LeafWalker::new(reader))
 		}
 	}
 
 	impl WalkRevisioned for NaiveDate {
-		type Walker<'r, R: Read + 'r> = LeafWalker<'r, NaiveDate, R>;
+		type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, NaiveDate, R>;
 
 		#[inline]
-		fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 			Ok(LeafWalker::new(reader))
 		}
 	}
 
 	impl WalkRevisioned for NaiveTime {
-		type Walker<'r, R: Read + 'r> = LeafWalker<'r, NaiveTime, R>;
+		type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, NaiveTime, R>;
 
 		#[inline]
-		fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 			Ok(LeafWalker::new(reader))
 		}
 	}
 
 	impl WalkRevisioned for ChronoDuration {
-		type Walker<'r, R: Read + 'r> = LeafWalker<'r, ChronoDuration, R>;
+		type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, ChronoDuration, R>;
 
 		#[inline]
-		fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 			Ok(LeafWalker::new(reader))
 		}
 	}
@@ -561,10 +561,10 @@ mod geo_walk {
 	macro_rules! geo_leaf {
 		($($t:ty),* $(,)?) => {$(
 			impl WalkRevisioned for $t {
-				type Walker<'r, R: Read + 'r> = LeafWalker<'r, $t, R>;
+				type Walker<'r, R: BorrowedReader + 'r> = LeafWalker<'r, $t, R>;
 
 				#[inline]
-				fn walk_revisioned<'r, R: Read>(
+				fn walk_revisioned<'r, R: BorrowedReader>(
 					reader: &'r mut R,
 				) -> Result<Self::Walker<'r, R>, Error> {
 					Ok(LeafWalker::new(reader))
@@ -585,10 +585,10 @@ mod imbl_walk {
 	where
 		T: Revisioned + Clone,
 	{
-		type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
+		type Walker<'r, R: BorrowedReader + 'r> = SeqWalker<'r, T, R>;
 
 		#[inline]
-		fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 			SeqWalker::new(reader)
 		}
 	}
@@ -598,10 +598,10 @@ mod imbl_walk {
 		K: Revisioned + Clone + Ord,
 		V: Revisioned + Clone,
 	{
-		type Walker<'r, R: Read + 'r> = MapWalker<'r, K, V, R>;
+		type Walker<'r, R: BorrowedReader + 'r> = MapWalker<'r, K, V, R>;
 
 		#[inline]
-		fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 			MapWalker::new(reader)
 		}
 	}
@@ -610,10 +610,10 @@ mod imbl_walk {
 	where
 		T: Revisioned + Clone + Ord,
 	{
-		type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
+		type Walker<'r, R: BorrowedReader + 'r> = SeqWalker<'r, T, R>;
 
 		#[inline]
-		fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 			SeqWalker::new(reader)
 		}
 	}
@@ -623,10 +623,10 @@ mod imbl_walk {
 		K: Revisioned + Clone + Eq + Hash,
 		V: Revisioned + Clone,
 	{
-		type Walker<'r, R: Read + 'r> = MapWalker<'r, K, V, R>;
+		type Walker<'r, R: BorrowedReader + 'r> = MapWalker<'r, K, V, R>;
 
 		#[inline]
-		fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 			MapWalker::new(reader)
 		}
 	}
@@ -635,10 +635,10 @@ mod imbl_walk {
 	where
 		T: Revisioned + Clone + Eq + Hash,
 	{
-		type Walker<'r, R: Read + 'r> = SeqWalker<'r, T, R>;
+		type Walker<'r, R: BorrowedReader + 'r> = SeqWalker<'r, T, R>;
 
 		#[inline]
-		fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
+		fn walk_revisioned<'r, R: BorrowedReader>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error> {
 			SeqWalker::new(reader)
 		}
 	}
