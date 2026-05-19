@@ -36,7 +36,7 @@ fn indexed_field_round_trips() {
 
 #[test]
 fn indexed_field_walker_can_binary_search_keys() {
-	// `walk_fields` returns an OwnedIndexedMapView; the caller borrows an
+	// `walk_fields` returns an IndexedMapView; the caller borrows an
 	// IndexedMapWalker from it and can binary-search keys directly without
 	// fully materialising the map.
 	let mut fields = BTreeMap::new();

@@ -57,9 +57,6 @@ pub struct HistoryEntry {
 	pub map: MapEncoding,
 	pub seq: SeqEncoding,
 	pub struct_kind: StructEncoding,
-	/// `true` when this entry was synthesised from a legacy `revision = N`
-	/// attribute. Diagnostics use this to point the user at the right syntax.
-	pub from_legacy: bool,
 	pub span: Span,
 }
 
@@ -67,7 +64,7 @@ pub struct HistoryEntry {
 impl HistoryEntry {
 	/// Build a legacy entry — used both during synthesis from `revision = N`
 	/// and when explicit `revision(N)` (no `encoding`) appears in the new syntax.
-	pub fn legacy(revision: SpannedLit<usize>, from_legacy: bool) -> Self {
+	pub fn legacy(revision: SpannedLit<usize>) -> Self {
 		let span = revision.span;
 		Self {
 			revision,
@@ -75,7 +72,6 @@ impl HistoryEntry {
 			map: MapEncoding::Default,
 			seq: SeqEncoding::Default,
 			struct_kind: StructEncoding::Default,
-			from_legacy,
 			span,
 		}
 	}

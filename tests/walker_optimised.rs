@@ -151,7 +151,7 @@ fn walker_decode_variant_works_on_legacy_enum() {
 
 #[test]
 fn walker_variant_view_works_on_optimised_enum() {
-	// `<variant>_view` returns an OwnedVariantView holding the variant body
+	// `<variant>_view` returns an VariantView holding the variant body
 	// bytes. Works on both Wire (legacy) and Materialised (optimised)
 	// walkers.
 	let v = OptEnum::Varlen("hello".into());

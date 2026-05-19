@@ -579,7 +579,7 @@ fn emit_struct_methods(
 		// the inner walker is `IndexedMapWalker` / `IndexedSeqWalker` rather
 		// than the field type's own `WalkRevisioned::Walker`. These walkers
 		// borrow from a payload slice, so we return an owned-bytes wrapper
-		// (`OwnedIndexedMapView` / `OwnedIndexedSeqView`) that the caller
+		// (`IndexedMapView` / `IndexedSeqView`) that the caller
 		// keeps alive while borrowing the walker from it.
 		//
 		// Implementation strategy: decode the field via the indexed
@@ -595,7 +595,7 @@ fn emit_struct_methods(
 		let into_walk_body;
 		if f.attrs.options.indexed_map {
 			walk_return_ty = quote! {
-				::revision::optimised::indexed::OwnedIndexedMapView<
+				::revision::optimised::indexed::IndexedMapView<
 					'r,
 					<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::Key,
 					<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::Value,
@@ -608,7 +608,7 @@ fn emit_struct_methods(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedMapView::new(
+					::revision::optimised::indexed::IndexedMapView::new(
 					::std::borrow::Cow::Owned(__bytes),
 				),
 				)
@@ -622,14 +622,14 @@ fn emit_struct_methods(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedMapView::new(
+					::revision::optimised::indexed::IndexedMapView::new(
 					::std::borrow::Cow::Owned(__bytes),
 				),
 				)
 			};
 		} else if f.attrs.options.indexed_seq {
 			walk_return_ty = quote! {
-				::revision::optimised::indexed::OwnedIndexedSeqView<
+				::revision::optimised::indexed::IndexedSeqView<
 					'r,
 					<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::Item,
 				>
@@ -641,7 +641,7 @@ fn emit_struct_methods(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedSeqView::new(
+					::revision::optimised::indexed::IndexedSeqView::new(
 					::std::borrow::Cow::Owned(__bytes),
 				),
 				)
@@ -655,14 +655,14 @@ fn emit_struct_methods(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedSeqView::new(
+					::revision::optimised::indexed::IndexedSeqView::new(
 					::std::borrow::Cow::Owned(__bytes),
 				),
 				)
 			};
 		} else if f.attrs.options.indexed_set {
 			walk_return_ty = quote! {
-				::revision::optimised::indexed::OwnedIndexedSetView<
+				::revision::optimised::indexed::IndexedSetView<
 					'r,
 					<#ty as ::revision::optimised::indexed::IndexedSetEncoded>::Item,
 				>
@@ -674,7 +674,7 @@ fn emit_struct_methods(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedSetView::new(
+					::revision::optimised::indexed::IndexedSetView::new(
 					::std::borrow::Cow::Owned(__bytes),
 				),
 				)
@@ -688,7 +688,7 @@ fn emit_struct_methods(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedSetView::new(
+					::revision::optimised::indexed::IndexedSetView::new(
 					::std::borrow::Cow::Owned(__bytes),
 				),
 				)
@@ -806,7 +806,7 @@ fn emit_struct_methods(
 
 			/// Walk into this field. For fields tagged
 			/// `#[revision(indexed_map)]` / `#[revision(indexed_seq)]`,
-			/// returns an [`OwnedIndexedMapView`] / [`OwnedIndexedSeqView`]
+			/// returns an [`IndexedMapView`] / [`IndexedSeqView`]
 			/// the caller can borrow an [`IndexedMapWalker`] /
 			/// [`IndexedSeqWalker`] from. For all other fields, returns the
 			/// inner type's `WalkRevisioned::Walker` as usual (borrowing
@@ -816,8 +816,8 @@ fn emit_struct_methods(
 			/// [`revision::Error::Conversion`] for the legacy path; the
 			/// indexed branches re-serialise from the materialised value.
 			///
-			/// [`OwnedIndexedMapView`]: revision::optimised::indexed::OwnedIndexedMapView
-			/// [`OwnedIndexedSeqView`]: revision::optimised::indexed::OwnedIndexedSeqView
+			/// [`IndexedMapView`]: revision::optimised::indexed::IndexedMapView
+			/// [`IndexedSeqView`]: revision::optimised::indexed::IndexedSeqView
 			/// [`IndexedMapWalker`]: revision::optimised::IndexedMapWalker
 			/// [`IndexedSeqWalker`]: revision::optimised::IndexedSeqWalker
 			#[inline]
@@ -1046,7 +1046,7 @@ fn emit_enum_methods(
 						}
 					}
 
-					/// Return the variant payload as an [`OwnedVariantView`].
+					/// Return the variant payload as an [`VariantView`].
 					///
 					/// Works on both Wire and Materialised walkers (including
 					/// optimised enums). When the walker's bytes were borrowed
@@ -1059,12 +1059,12 @@ fn emit_enum_methods(
 					/// Use [`decode_<variant>`](Self::#decode_name) when you
 					/// want the inner type by value directly.
 					///
-					/// [`OwnedVariantView`]: revision::optimised::indexed::OwnedVariantView
+					/// [`VariantView`]: revision::optimised::indexed::VariantView
 					#[inline]
 					pub fn #view_name(
 						self,
 					) -> ::std::result::Result<
-						::revision::optimised::indexed::OwnedVariantView<'r, #inner_ty>,
+						::revision::optimised::indexed::VariantView<'r, #inner_ty>,
 						::revision::Error,
 					> {
 						if !self.#is_name() {
@@ -1101,7 +1101,7 @@ fn emit_enum_methods(
 							}
 						};
 						::std::result::Result::Ok(
-							::revision::optimised::indexed::OwnedVariantView::new(__bytes),
+							::revision::optimised::indexed::VariantView::new(__bytes),
 						)
 					}
 				});

@@ -421,7 +421,7 @@ impl Parse for ItemOption {
 
 fn build_history_entry(group: RevisionEntryGroup) -> syn::Result<HistoryEntry> {
 	let span = group.kw.span();
-	let mut entry = HistoryEntry::legacy(group.revision, false);
+	let mut entry = HistoryEntry::legacy(group.revision);
 	entry.span = span;
 	let mut saw_encoding = false;
 	for opt in group.options {
@@ -587,7 +587,7 @@ fn resolve_history(
 					value: i,
 					span: path,
 				};
-				history.push(HistoryEntry::legacy(lit, true));
+				history.push(HistoryEntry::legacy(lit));
 			}
 			Ok(history)
 		}
