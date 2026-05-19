@@ -123,9 +123,9 @@ fn walker_on_optimised_enum_decodes_varlen_variant() {
 	assert_eq!(w.discriminant(), 1);
 	assert!(w.is_varlen());
 	assert!(!w.is_unit());
-	// `decode_<variant>` works on both Wire and Materialised walkers, so
-	// it's the right way to extract the inner value from an optimised
-	// enum walker.
+	// `decode_<variant>` works on every walker repr (Wire,
+	// OptimisedBorrowed, ConvertedOwned), so it's the right way to
+	// extract the inner value from an optimised enum walker.
 	let inner = w.decode_varlen().unwrap();
 	assert_eq!(inner, "hello");
 }
@@ -151,9 +151,10 @@ fn walker_decode_variant_works_on_legacy_enum() {
 
 #[test]
 fn walker_variant_view_works_on_optimised_enum() {
-	// `<variant>_view` returns an VariantView holding the variant body
-	// bytes. Works on both Wire (legacy) and Materialised (optimised)
-	// walkers.
+	// `<variant>_view` returns a VariantView holding the variant body
+	// bytes. Works on every walker repr — Wire (legacy enums),
+	// OptimisedBorrowed (optimised enums), and ConvertedOwned
+	// (cross-rev `convert_fn`).
 	let v = OptEnum::Varlen("hello".into());
 	let bytes = revision::to_vec(&v).unwrap();
 	let mut r: &[u8] = &bytes;

@@ -30,7 +30,7 @@
 //!   `walk_revisioned_variant_name(wire_rev, disc)` lookup table.
 //! - `walk_revisioned_field_names(wire_rev)` lookup for structs.
 //!
-//! The Wire and Materialised arms share an identical surface API; only the
+//! All repr arms share an identical surface API; only the
 //! byte source differs. For purely additive types the materialised arm is
 //! effectively unreachable but is still emitted (to keep the walker shape
 //! uniform); compilers eliminate the unused arm.
@@ -87,7 +87,7 @@ pub fn emit_walk_impl(
 	let walker_name = format_ident!("{}Walker", name);
 	let walker_repr_name = format_ident!("{}WalkerRepr", name);
 
-	// Materialised path is only emitted when the type actually has at least
+	// ConvertedOwned path is only emitted when the type actually has at least
 	// one `convert_fn` annotation AND can both serialize and deserialize.
 	let materialise_supported = has_convert_fn && serialize_enabled && deserialize_enabled;
 
@@ -153,10 +153,10 @@ pub fn emit_walk_impl(
 	// - For structs: advance past the `u32_le payload_length` (and any
 	//   `[u32_le; field_count]` prologue for `struct = "indexed"`) so the
 	//   subsequent Wire walker reads field bytes directly.
-	// - For enums: read the 1-byte tag, slurp the payload per the variant's
-	//   declared size class, and return a Materialised walker with
+	// - For enums: read the 1-byte tag, borrow the payload per the variant's
+	//   declared size class, and return an OptimisedBorrowed walker with
 	//   `discriminant = variant_id` (the existing per-variant decode code on
-	//   the Materialised arm reads the slurped payload directly).
+	//   the OptimisedBorrowed arm reads the borrowed payload directly).
 	let optimised_struct_field_count = match &item.kind {
 		ItemKind::Struct(s) => Some(alive_field_count(s, revision) as u32),
 		ItemKind::Enum(_) => None,
@@ -977,9 +977,9 @@ fn emit_struct_methods(
 			/// inner type's `WalkRevisioned::Walker` as usual (borrowing
 			/// the parent walker for the duration of the sub-walk).
 			///
-			/// Materialised walkers (older-rev `convert_fn` types) return
+			/// `ConvertedOwned` walkers (older-rev `convert_fn` types) return
 			/// [`revision::Error::Conversion`] for the legacy path; the
-			/// indexed branches re-serialise from the materialised value.
+			/// indexed branches re-serialise from the owned value.
 			///
 			/// [`IndexedMapView`]: revision::optimised::indexed::IndexedMapView
 			/// [`IndexedSeqView`]: revision::optimised::indexed::IndexedSeqView
