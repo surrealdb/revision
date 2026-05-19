@@ -512,7 +512,7 @@ Types declare which revisions use it via the **history syntax**:
 #[revisioned(
     revision(1),                                      // legacy layout
     revision(2, encoding = "optimised"),              // tagged envelope
-    revision(3, encoding = "optimised", struct = "indexed"),
+    revision(3, encoding = "optimised", indexed_struct),
 )]
 struct Wide { /* fields */ }
 ```
@@ -559,12 +559,15 @@ optimised enums may have at most 32 variants alive at any revision.
 
 ### Indexed prologues
 
-`struct = "indexed"` prepends `[u32_le; field_count]` to the payload
+`indexed_struct` prepends `[u32_le; field_count]` to the payload
 so a walker can jump to any field in O(1). The encoder buffers fields
 into a scratch `Vec<u8>` to learn each field's offset, then emits the
-prologue and body in a single pass. (`map = "indexed"` and
-`seq = "indexed"` parse but are not yet routed through the codegen —
-they are reserved for a future iteration.)
+prologue and body in a single pass. Indexed encoding for individual
+map/seq/set fields uses the per-field attributes
+`#[revision(indexed_map)]` / `#[revision(indexed_seq)]` /
+`#[revision(indexed_set)]` instead — the type-level `map = "indexed"`
+and `seq = "indexed"` forms are rejected at parse time with a
+diagnostic pointing at the per-field variant.
 
 `OFFSET_TABLE_MIN_LEN = 8` is the minimum entry count that triggers
 the prologue; below it the encoder falls back to a sequential body
@@ -621,7 +624,7 @@ struct Profile {
 // After — two revisions, the new one uses optimised:
 #[revisioned(
     revision(1),                                        // existing on-disk data
-    revision(2, encoding = "optimised", struct = "indexed"),
+    revision(2, encoding = "optimised", indexed_struct),
 )]
 struct Profile {
     id: u32,
@@ -774,7 +777,7 @@ shapes depending on what they declare:
 
 - **Type-level configuration** uses `key = "value"` pairs because the
   value comes from a finite-but-extensible set: `encoding =
-  "optimised"`, `struct = "indexed"`, `size = "inline" | "fixed(N)" |
+  "optimised"`, `indexed_struct`, `size = "inline" | "fixed(N)" |
   "varlen"`. Future encodings (e.g. `encoding = "tagged"`) slot in
   without breaking existing callers.
 - **Field-level flags** use bare keywords (`indexed_map`,

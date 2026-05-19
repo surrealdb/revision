@@ -31,7 +31,7 @@ struct OptStruct {
 	d: i32,
 }
 
-#[revisioned(revision(1, encoding = "optimised", struct = "indexed"))]
+#[revisioned(revision(1, encoding = "optimised", indexed_struct))]
 #[derive(Debug, Clone, PartialEq)]
 struct IndexedStruct {
 	first: u32,

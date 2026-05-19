@@ -270,7 +270,7 @@ fn pin_optimised_rev1_struct_layout() {
 }
 
 #[cfg(not(feature = "fixed-width-encoding"))]
-#[revisioned(revision(1, encoding = "optimised", struct = "indexed"))]
+#[revisioned(revision(1, encoding = "optimised", indexed_struct))]
 #[derive(Debug, PartialEq)]
 struct PinIndexedStruct {
 	a: u32,

@@ -11,7 +11,7 @@
 //!     sequential structs also land here after advancing past their u32_le
 //!     length prefix.
 //!   - **IndexedBorrowed** (struct walker only): holds `&'r [u8]` pointing
-//!     at an optimised + `struct = "indexed"` payload borrowed from the
+//!     at an optimised + `indexed_struct` payload borrowed from the
 //!     parent reader. Per-field methods jump via the offset table in O(1).
 //!   - **OptimisedBorrowed** (enum walker only): holds `&'r [u8]` pointing
 //!     at an optimised enum's variant body, borrowed from the parent
@@ -151,7 +151,7 @@ pub fn emit_walk_impl(
 	// for the optimised wire format:
 	//
 	// - For structs: advance past the `u32_le payload_length` (and any
-	//   `[u32_le; field_count]` prologue for `struct = "indexed"`) so the
+	//   `[u32_le; field_count]` prologue for `indexed_struct`) so the
 	//   subsequent Wire walker reads field bytes directly.
 	// - For enums: read the 1-byte tag, borrow the payload per the variant's
 	//   declared size class, and return an OptimisedBorrowed walker with
@@ -366,7 +366,7 @@ fn emit_struct_walker_struct(walker_name: &Ident, walker_repr_name: &Ident) -> T
 				wire_rev: u16,
 				pos: u32,
 			},
-			/// Optimised + `struct = "indexed"` payload borrowed directly
+			/// Optimised + `indexed_struct` payload borrowed directly
 			/// from the parent reader's buffer (no allocation). The offset
 			/// table sits at the start of `bytes`; offsets are read on
 			/// demand from `bytes[i*4..i*4+4]` for O(1) random access.
@@ -610,7 +610,7 @@ fn emit_struct_methods(
 		//
 		// Three paths, in order of preference (most-borrowed → most-allocating):
 		//
-		// 1. `IndexedBorrowed` parent (optimised + `struct = "indexed"`): the
+		// 1. `IndexedBorrowed` parent (optimised + `indexed_struct`): the
 		//    field's canonical bytes already live at `parent.bytes[offsets[i]
 		//    ..offsets[i+1]]`. Extract directly via `Cow::Borrowed` with the
 		//    parent's `'r` lifetime. Zero allocation, O(1) lookup.
@@ -893,7 +893,7 @@ fn emit_struct_methods(
 		out.append_all(quote! {
 			/// Decode this field, advancing the walker.
 			///
-			/// For `IndexedBorrowed` walkers (optimised + `struct = "indexed"`),
+			/// For `IndexedBorrowed` walkers (optimised + `indexed_struct`),
 			/// the offset table is consulted to jump directly to this field's
 			/// bytes in O(1) — reading any field is independent of how many
 			/// fields precede it on the wire.

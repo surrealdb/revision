@@ -5,7 +5,7 @@
 //! ```text
 //! u16 revision                            (written by the outer impl)
 //! u32_le payload_length                   (this module)
-//! [optional indexed prologue]             when `struct = "indexed"`
+//! [optional indexed prologue]             when `indexed_struct`
 //! field_0 || field_1 || ... || field_{n-1}
 //! ```
 //!

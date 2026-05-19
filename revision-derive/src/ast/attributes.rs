@@ -30,6 +30,8 @@ mod kw {
 	syn::custom_keyword!(map);
 	syn::custom_keyword!(seq);
 	syn::custom_keyword!(size);
+	// Per-revision struct-layout flag (sibling of `encoding = "optimised"`).
+	syn::custom_keyword!(indexed_struct);
 	// Per-field encoding flags for optimised revisions.
 	syn::custom_keyword!(indexed_map);
 	syn::custom_keyword!(indexed_seq);
@@ -368,7 +370,7 @@ pub enum ItemOption {
 	Walk(ValueOption<kw::walk, LitBool>),
 }
 
-/// Parsed `revision(N, encoding = "...", map = "...", seq = "...", struct = "...")`.
+/// Parsed `revision(N, encoding = "...", map = "...", seq = "...", indexed_struct)`.
 pub struct RevisionEntryGroup {
 	pub kw: kw::revision,
 	pub _paren: token::Paren,
@@ -380,7 +382,7 @@ pub enum RevisionEntryOption {
 	Encoding(ValueOption<kw::encoding, LitStr>),
 	Map(ValueOption<kw::map, LitStr>),
 	Seq(ValueOption<kw::seq, LitStr>),
-	Struct(ValueOption<Token![struct], LitStr>),
+	IndexedStruct(kw::indexed_struct),
 }
 
 impl Parse for RevisionEntryGroup {
@@ -417,11 +419,11 @@ impl Parse for RevisionEntryOption {
 		if input.peek(kw::seq) {
 			return Ok(RevisionEntryOption::Seq(input.parse()?));
 		}
-		if input.peek(Token![struct]) {
-			return Ok(RevisionEntryOption::Struct(input.parse()?));
+		if input.peek(kw::indexed_struct) {
+			return Ok(RevisionEntryOption::IndexedStruct(input.parse()?));
 		}
 		Err(input.error(
-			"invalid `revision(...)` option (expected `encoding`, `map`, `seq`, or `struct`)",
+			"invalid `revision(...)` option (expected `encoding`, `map`, `seq`, or `indexed_struct`)",
 		))
 	}
 }
@@ -504,18 +506,9 @@ fn build_history_entry(group: RevisionEntryGroup) -> syn::Result<HistoryEntry> {
 					));
 				}
 			},
-			RevisionEntryOption::Struct(v) => match v.value.value().as_str() {
-				"default" => entry.struct_kind = StructEncoding::Default,
-				"indexed" => entry.struct_kind = StructEncoding::Indexed,
-				other => {
-					return Err(Error::new(
-						v.value.span(),
-						format!(
-							"unknown struct encoding `{other}` (expected `default` or `indexed`)"
-						),
-					));
-				}
-			},
+			RevisionEntryOption::IndexedStruct(_kw) => {
+				entry.struct_kind = StructEncoding::Indexed;
+			}
 		}
 	}
 	// Reject per-encoding attrs on a legacy entry — keeps the AST clean.
@@ -526,7 +519,7 @@ fn build_history_entry(group: RevisionEntryGroup) -> syn::Result<HistoryEntry> {
 	{
 		return Err(Error::new(
 			entry.span,
-			"encoding-specific attributes (`map`, `seq`, `struct`) require `encoding = \"optimised\"` on the same revision entry",
+			"encoding-specific attributes (`map`, `seq`, `indexed_struct`) require `encoding = \"optimised\"` on the same revision entry",
 		));
 	}
 	Ok(entry)

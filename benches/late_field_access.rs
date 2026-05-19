@@ -12,7 +12,7 @@
 //! 2. **Skip** — walker over the legacy bytes, calling `skip_<field>` 22
 //!    times to advance through preceding fields, then `decode_target`.
 //! 3. **Zero-copy jump** — same logical value encoded under optimised +
-//!    `struct = "indexed"`, then `IndexedStructWalker::field_bytes(22)` to
+//!    `indexed_struct`, then `IndexedStructWalker::field_bytes(22)` to
 //!    pull the target's raw bytes via the offset table (O(1)), and a
 //!    `memcmp` to a pre-serialised target value.
 //!
@@ -78,7 +78,7 @@ struct Wide25Legacy {
 	final_label: String,
 }
 
-#[revisioned(revision(1, encoding = "optimised", struct = "indexed"))]
+#[revisioned(revision(1, encoding = "optimised", indexed_struct))]
 #[derive(Clone)]
 struct Wide25IndexedOpt {
 	id: u32,
@@ -271,7 +271,7 @@ fn bench_optimised_walker_jump(c: &mut Criterion) {
 fn bench_optimised_jump(c: &mut Criterion) {
 	let bytes = revision::to_vec(&sample_opt()).unwrap();
 
-	// Optimised wire layout for a `struct = "indexed"` record:
+	// Optimised wire layout for a `indexed_struct` record:
 	//   u16 revision      (1 byte under varint, 2 under fixed-width-encoding)
 	//   u32_le payload_length     (always 4 bytes by spec)
 	//   [u32_le; field_count] offset table

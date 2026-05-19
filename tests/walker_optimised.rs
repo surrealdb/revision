@@ -13,7 +13,7 @@ struct OptStruct {
 	b: u32,
 }
 
-#[revisioned(revision(1, encoding = "optimised", struct = "indexed"))]
+#[revisioned(revision(1, encoding = "optimised", indexed_struct))]
 struct IndexedStruct {
 	a: u32,
 	b: u32,

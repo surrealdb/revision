@@ -1,6 +1,6 @@
 //! `walk_<field>` on `indexed_map` / `indexed_seq` / `indexed_set` fields takes
 //! a zero-copy path even when the parent walker is `Wire` repr (i.e. an
-//! optimised struct **without** `struct = "indexed"`).
+//! optimised struct **without** `indexed_struct`).
 //!
 //! Mechanism: the macro emits a `skip_indexed_*` call bracketed by
 //! `BorrowedReader::remaining()` snapshots, then derives the field's exact

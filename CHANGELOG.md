@@ -100,7 +100,7 @@ unchanged on the wire; the new behaviour is opt-in per revision.
 
 #### New `#[revisioned(...)]` history syntax
 
-- `#[revisioned(revision(N, encoding = "optimised", struct = "indexed"))]`
+- `#[revisioned(revision(N, encoding = "optimised", indexed_struct))]`
   declares one revision's encoding choices. Multiple `revision(...)`
   entries on the same type spell a contiguous history; the parser
   rejects gaps, duplicates, and mixing legacy `revision = N` with the
@@ -158,7 +158,7 @@ optimised enum); the remaining 2 hold the size class.
   `OwnedIndexedSetView<T>` — each owns the field's canonical wire
   bytes and exposes `.walker()` to borrow the appropriate
   indexed walker.
-- The macro-generated walker for `struct = "indexed"` types now
+- The macro-generated walker for `indexed_struct` types now
   reads any field in O(1) via the offset table (previously it walked
   fields sequentially after advancing past the prologue). 5× faster
   for late-field access; see `benches/late_field_access.rs`.
@@ -233,7 +233,7 @@ history entry:
 ```rust,ignore
 #[revisioned(
     revision(1),                                           // existing on-disk data
-    revision(2, encoding = "optimised", struct = "indexed"),
+    revision(2, encoding = "optimised", indexed_struct),
 )]
 struct Wide {
     id: u32,

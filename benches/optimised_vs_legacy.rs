@@ -40,7 +40,7 @@ struct WideOptimised {
 	h: u32,
 }
 
-#[revisioned(revision(1, encoding = "optimised", struct = "indexed"))]
+#[revisioned(revision(1, encoding = "optimised", indexed_struct))]
 #[derive(Clone)]
 struct WideIndexed {
 	a: u32,
