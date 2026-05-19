@@ -1192,7 +1192,68 @@ fn emit_enum_methods(
 				});
 			}
 			_ => {
-				// Skip emission for multi-field variants in v1.
+				// Multi-field tuple variants and struct variants: emit
+				// `<variant>_view` returning a typed-only-by-phantom
+				// [`VariantView<'r, ()>`] that hands the caller the variant
+				// body bytes. Multi-field variants don't have a single inner
+				// type to descend into via `into_<variant>` (their body is a
+				// sequence of fields, not a single value), so the caller
+				// decodes the bytes themselves.
+				out.append_all(quote! {
+					/// Return the variant payload bytes as a
+					/// [`VariantView`].
+					///
+					/// Multi-field tuple and struct variants have no single
+					/// inner type, so `into_<variant>` is not available;
+					/// this `_view` hands you the body bytes and you can
+					/// decode the variant's fields sequentially (or feed
+					/// the bytes into another walker).
+					///
+					/// [`VariantView`]: revision::optimised::indexed::VariantView
+					#[inline]
+					pub fn #view_name(
+						self,
+					) -> ::std::result::Result<
+						::revision::optimised::indexed::VariantView<'r, ()>,
+						::revision::Error,
+					> {
+						if !self.#is_name() {
+							return ::std::result::Result::Err(::revision::Error::Deserialize(
+								::std::format!(
+									"walker variant mismatch: expected `{}` (rev {}), got discriminant {}",
+									stringify!(#variant_ident),
+									self.revision(),
+									self.discriminant(),
+								),
+							));
+						}
+						let __bytes: ::std::borrow::Cow<'r, [u8]> = match self.repr {
+							#walker_repr_name::Wire { .. } => {
+								// Wire mode for multi-field variants on legacy
+								// enums: the body is a sequence of fields with
+								// no length prefix, so we can't slurp without
+								// reading the synthetic Fields struct. Errors
+								// here; the optimised wire format gives every
+								// variant a length-prefixed body so this works
+								// for optimised enums.
+								return ::std::result::Result::Err(::revision::Error::Conversion(
+									"<variant>_view on a Wire-mode multi-field variant is not supported; encode the type under `encoding = \"optimised\"` to enable variant-body extraction".into(),
+								));
+							}
+							#walker_repr_name::OptimisedBorrowed { bytes, .. } => {
+								::std::borrow::Cow::Borrowed(bytes)
+							}
+							#walker_repr_name::ConvertedOwned { bytes, cursor, .. } => {
+								let mut v = bytes;
+								v.drain(..cursor);
+								::std::borrow::Cow::Owned(v)
+							}
+						};
+						::std::result::Result::Ok(
+							::revision::optimised::indexed::VariantView::new(__bytes),
+						)
+					}
+				});
 			}
 		}
 	}
