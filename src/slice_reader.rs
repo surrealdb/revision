@@ -113,12 +113,44 @@ impl Read for SliceReader<'_> {
 /// `File` or a network socket whose bytes don't sit in an addressable
 /// buffer. `BorrowedReader` is the explicit "I am slice-backed" contract;
 /// methods that want zero-copy access opt into it via a trait bound.
-pub trait BorrowedReader: Read {
+///
+/// # Safety
+///
+/// This trait is `unsafe` to implement because the crate's unsafe code
+/// (in particular [`crate::optimised::envelope::read_varlen_slice`] and the
+/// macro-generated optimised walkers) relies on a stronger contract than
+/// could be expressed in safe Rust:
+///
+/// 1. **`peek_bytes(n)` must return a slice that points into stable,
+///    addressable memory** — not a transient buffer that could be moved,
+///    reallocated, or overwritten by a subsequent call.
+///
+/// 2. **`advance(n)` must only move the cursor; it must not invalidate,
+///    move, or mutate the bytes already peeked.** In particular, an impl
+///    that holds bytes in an internal `Vec<u8>` and refills the `Vec` on
+///    `advance` (e.g. a buffered file reader) does **not** satisfy this
+///    contract, because the peeked slice's pointer would dangle after the
+///    refill.
+///
+/// 3. **Peeked bytes must remain valid for the reader's lifetime** (i.e.
+///    for `'r` where the reader is borrowed as `&'r mut R`), regardless of
+///    how many `advance` calls happen in between, so the unsafe code
+///    extending peek lifetimes via [`unsafe_extend_peek_lifetime`] does not
+///    create dangling pointers.
+///
+/// The two impls in this crate — `&[u8]` and [`SliceReader`] — both
+/// trivially satisfy this contract: their `peek_bytes` returns a slice
+/// into a caller-owned buffer that the reader never mutates, and `advance`
+/// is a pure cursor bump.
+///
+/// Violating any of these is **undefined behaviour**, not just a logic
+/// bug; the crate's unsafe code is correct only under this contract.
+pub unsafe trait BorrowedReader: Read {
 	/// Borrow the next `n` bytes without advancing the cursor.
 	///
-	/// Returns the slice on success. The slice is valid until the next
-	/// call that mutably borrows the reader (typically
-	/// [`advance`](Self::advance) or any `Read`-trait method).
+	/// Returns the slice on success. The slice must point into stable
+	/// memory that survives subsequent `advance` calls — see the trait's
+	/// safety contract.
 	fn peek_bytes(&self, n: usize) -> Result<&[u8], Error>;
 
 	/// Advance the cursor past `n` bytes without copying them.
@@ -126,6 +158,9 @@ pub trait BorrowedReader: Read {
 	/// Equivalent to reading `n` bytes and discarding them, but cheaper
 	/// (the bytes are never touched). Returns an error if fewer than
 	/// `n` bytes remain.
+	///
+	/// **Safety**: must not invalidate or move bytes returned by previous
+	/// `peek_bytes` calls — see the trait's safety contract.
 	fn advance(&mut self, n: usize) -> Result<(), Error>;
 
 	/// Bytes consumed since the reader was constructed.
@@ -135,7 +170,11 @@ pub trait BorrowedReader: Read {
 	fn position(&self) -> usize;
 }
 
-impl BorrowedReader for &[u8] {
+// SAFETY: `&[u8]::peek_bytes` returns a slice into the caller-owned buffer the
+// reference points at; `advance` only updates the slice reference (cursor),
+// never touching the underlying bytes. Both invariants hold for any caller-
+// provided buffer.
+unsafe impl BorrowedReader for &[u8] {
 	#[inline]
 	fn peek_bytes(&self, n: usize) -> Result<&[u8], Error> {
 		self.get(..n).ok_or_else(|| {
@@ -166,7 +205,10 @@ impl BorrowedReader for &[u8] {
 	}
 }
 
-impl<'a> BorrowedReader for SliceReader<'a> {
+// SAFETY: `SliceReader<'a>` borrows an external `&'a [u8]` it never modifies.
+// `peek_bytes` returns slices into that external buffer; `advance` only updates
+// the internal cursor (`inner`), never the buffer. Both invariants hold.
+unsafe impl<'a> BorrowedReader for SliceReader<'a> {
 	#[inline]
 	fn peek_bytes(&self, n: usize) -> Result<&[u8], Error> {
 		self.inner.get(..n).ok_or_else(|| {
@@ -186,6 +228,38 @@ impl<'a> BorrowedReader for SliceReader<'a> {
 	fn position(&self) -> usize {
 		self.consumed_len()
 	}
+}
+
+/// Peek `n` bytes from `reader`, advance past them, and return the peeked
+/// slice with the reader's full `'r` lifetime.
+///
+/// This is the canonical "borrow body bytes from a slice-backed reader" helper
+/// used by the optimised wire format's runtime and macro-emitted walkers. It
+/// replaces 4 copies of the same `peek_bytes + advance + slice::from_raw_parts`
+/// dance and is the single audit point for the unsafe lifetime extension.
+///
+/// The unsafe block is sound because [`BorrowedReader`] is itself an `unsafe
+/// trait`: every conforming impl guarantees that the bytes returned by
+/// `peek_bytes` remain valid for the reader's lifetime regardless of how many
+/// `advance` calls happen in between. See the [`BorrowedReader`] safety
+/// contract for the full requirements.
+#[inline]
+pub fn read_borrowed_bytes<'r, R: BorrowedReader + ?Sized>(
+	reader: &'r mut R,
+	n: usize,
+) -> Result<&'r [u8], Error> {
+	let peeked = reader.peek_bytes(n)?;
+	let ptr = peeked.as_ptr();
+	reader.advance(n)?;
+	// SAFETY: `peek_bytes(n)` returned a slice of length `n` from `reader`'s
+	// underlying buffer. By the `unsafe trait BorrowedReader` contract,
+	// `advance(n)` only moves the cursor and must not invalidate or move the
+	// peeked bytes. Therefore the slice [ptr, ptr+n) remains valid for the
+	// reader's lifetime `'r`. Reconstructing the slice with the extended
+	// lifetime is sound because nothing between here and `'r`'s end can move
+	// or free the underlying buffer.
+	let slice: &'r [u8] = unsafe { std::slice::from_raw_parts(ptr, n) };
+	Ok(slice)
 }
 
 /// Borrow `n` bytes and advance past them in one step.

@@ -79,18 +79,7 @@ pub fn read_varlen_len<R: Read>(r: &mut R) -> Result<u32, Error> {
 #[inline]
 pub fn read_varlen_slice<'r, R: BorrowedReader>(r: &'r mut R) -> Result<&'r [u8], Error> {
 	let len = read_varlen_len(r)? as usize;
-	let bytes = r.peek_bytes(len)?;
-	let ptr = bytes.as_ptr();
-	// Lifetime gymnastics: `peek_bytes` borrows `r` immutably, but `advance`
-	// borrows `r` mutably, so the immutable borrow must end before we advance.
-	// Re-derive the slice from the raw pointer with the explicit `'r` lifetime
-	// after the advance call.
-	r.advance(len)?;
-	// Safety: the slice we returned was peeked from `r`'s buffer. `advance(len)`
-	// moves the cursor past `len` bytes — by `BorrowedReader`'s contract the
-	// underlying buffer is unchanged, so the bytes remain valid for `'r`.
-	let slice: &'r [u8] = unsafe { std::slice::from_raw_parts(ptr, len) };
-	Ok(slice)
+	crate::slice_reader::read_borrowed_bytes(r, len)
 }
 
 /// Skip past a varlen value's payload (tag already consumed). Streaming-reader friendly.

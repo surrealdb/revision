@@ -174,21 +174,11 @@ pub fn emit_walk_impl(
 								::std::io::Read::read_exact(reader, &mut __len_buf)
 									.map_err(::revision::Error::Io)?;
 								let __payload_len = u32::from_le_bytes(__len_buf) as usize;
-								// Borrow the payload from the reader's buffer.
-								// `BorrowedReader` contract guarantees the bytes
-								// stay valid for `'r` after `advance`.
-								let __peeked = ::revision::BorrowedReader::peek_bytes(
-									reader, __payload_len,
-								)?;
-								let __ptr = __peeked.as_ptr();
-								::revision::BorrowedReader::advance(reader, __payload_len)?;
-								// SAFETY: `peek_bytes` returned a slice from
-								// `reader`'s buffer; `advance` only moves the
-								// cursor, leaving the underlying bytes valid for
-								// the reader's lifetime `'r`.
-								let __payload: &'r [u8] = unsafe {
-									::std::slice::from_raw_parts(__ptr, __payload_len)
-								};
+								// Borrow the payload from the reader's buffer
+								// via the canonical safe wrapper around the
+								// unsafe lifetime-extension dance.
+								let __payload: &'r [u8] =
+									::revision::read_borrowed_bytes(reader, __payload_len)?;
 								return ::std::result::Result::Ok(#walker_name {
 									repr: #walker_repr_name::Materialised {
 										bytes: ::std::borrow::Cow::Borrowed(__payload),
@@ -1317,14 +1307,7 @@ fn emit_optimised_enum_walker_arm(
 				let n_lit = *n as usize;
 				quote! {
 					(#id_lit, ::revision::optimised::tag::SizeClass::Fixed) => {
-						let __peeked = ::revision::BorrowedReader::peek_bytes(
-							reader, #n_lit,
-						)?;
-						let __ptr = __peeked.as_ptr();
-						::revision::BorrowedReader::advance(reader, #n_lit)?;
-						// SAFETY: bytes peeked from reader's buffer; `advance`
-						// keeps them valid for `'r`.
-						unsafe { ::std::slice::from_raw_parts(__ptr, #n_lit) }
+						::revision::read_borrowed_bytes(reader, #n_lit)?
 					}
 				}
 			}
@@ -1334,13 +1317,7 @@ fn emit_optimised_enum_walker_arm(
 					::std::io::Read::read_exact(reader, &mut __len_buf)
 						.map_err(::revision::Error::Io)?;
 					let __len = u32::from_le_bytes(__len_buf) as usize;
-					let __peeked = ::revision::BorrowedReader::peek_bytes(
-						reader, __len,
-					)?;
-					let __ptr = __peeked.as_ptr();
-					::revision::BorrowedReader::advance(reader, __len)?;
-					// SAFETY: as above.
-					unsafe { ::std::slice::from_raw_parts(__ptr, __len) }
+					::revision::read_borrowed_bytes(reader, __len)?
 				}
 			},
 		};

@@ -23,7 +23,7 @@ pub use revision_derive::revisioned;
 use std::any::TypeId;
 use std::io::{Read, Write};
 
-pub use slice_reader::{BorrowedReader, SliceReader, advance_read};
+pub use slice_reader::{BorrowedReader, SliceReader, advance_read, read_borrowed_bytes};
 pub use walk::{
 	EnumWalker, LeafWalker, LengthPrefixedBytes, MapEntry, MapWalker, OptionWalker, ResultWalker,
 	SeqItem, SeqWalker, StructWalker, WalkRevisioned, read_enum_discriminant,
