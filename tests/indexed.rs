@@ -8,7 +8,6 @@ use std::cmp::Ordering;
 
 use revision::optimised::indexed::seq_walk::FLAG_INDEXED;
 use revision::optimised::{IndexedMapWalker, IndexedSeqWalker, IndexedStructWalker};
-use revision::slice_reader::SliceReader;
 
 fn varint(v: usize) -> Vec<u8> {
 	match v {
@@ -104,7 +103,7 @@ fn build_indexed_map(entries: &[(&[u8], &[u8])]) -> Vec<u8> {
 #[test]
 fn struct_walker_accesses_all_fields_in_order() {
 	let payload = build_struct_payload(&[b"alpha", b"bravo", b"charlie", b"delta"]);
-	let w = IndexedStructWalker::<SliceReader>::from_payload(&payload, 2, 4).unwrap();
+	let w = IndexedStructWalker::from_payload(&payload, 2, 4).unwrap();
 	for (i, expected) in [b"alpha".as_slice(), b"bravo", b"charlie", b"delta"].iter().enumerate() {
 		assert_eq!(w.field_bytes(i as u16).unwrap(), *expected);
 	}
@@ -113,7 +112,7 @@ fn struct_walker_accesses_all_fields_in_order() {
 #[test]
 fn struct_walker_skip_is_free_constant_time() {
 	let payload = build_struct_payload(&[b"a", b"b", b"c"]);
-	let w = IndexedStructWalker::<SliceReader>::from_payload(&payload, 1, 3).unwrap();
+	let w = IndexedStructWalker::from_payload(&payload, 1, 3).unwrap();
 	for i in 0..3 {
 		w.skip_field(i).unwrap();
 	}
@@ -124,8 +123,7 @@ fn struct_walker_handles_field_count_at_threshold_boundary() {
 	let fields: Vec<&[u8]> =
 		(0..revision::optimised::OFFSET_TABLE_MIN_LEN).map(|_| b"x".as_slice()).collect();
 	let payload = build_struct_payload(&fields);
-	let w =
-		IndexedStructWalker::<SliceReader>::from_payload(&payload, 2, fields.len() as u16).unwrap();
+	let w = IndexedStructWalker::from_payload(&payload, 2, fields.len() as u16).unwrap();
 	assert_eq!(w.field_count() as usize, revision::optimised::OFFSET_TABLE_MIN_LEN);
 	assert_eq!(w.field_bytes(0).unwrap(), b"x");
 	assert_eq!(

@@ -77,7 +77,7 @@ pub fn read_varlen_len<R: Read>(r: &mut R) -> Result<u32, Error> {
 /// reader past them. The returned slice's lifetime is tied to the reader's input.
 #[doc(hidden)]
 #[inline]
-pub fn read_varlen_slice<'r, R: BorrowedReader>(r: &'r mut R) -> Result<&'r [u8], Error> {
+pub fn read_varlen_slice<R: BorrowedReader>(r: &mut R) -> Result<&[u8], Error> {
 	let len = read_varlen_len(r)? as usize;
 	crate::slice_reader::read_borrowed_bytes(r, len)
 }

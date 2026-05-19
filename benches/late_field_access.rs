@@ -304,7 +304,7 @@ fn bench_optimised_jump(c: &mut Criterion) {
 			let payload: &[u8] = black_box(&bytes[payload_offset..]);
 			// Construct the indexed walker over the payload slice. Validates
 			// the prologue once; subsequent field_bytes() calls are O(1).
-			let w = IndexedStructWalker::<&[u8]>::from_payload(payload, 1, 25).unwrap();
+			let w = IndexedStructWalker::from_payload(payload, 1, 25).unwrap();
 			let field_bytes = w.field_bytes(22).unwrap();
 			// Zero-copy comparison: raw byte equality between the field's
 			// encoded slice and the pre-serialised target. No allocation,

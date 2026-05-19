@@ -37,7 +37,7 @@ fn indexed_struct_with_offset_past_payload_errors() {
 	// field_count = 1, prologue is 4 bytes, but offset = 999.
 	let mut payload = vec![0u8; 8];
 	payload[0..4].copy_from_slice(&999u32.to_le_bytes());
-	let err = IndexedStructWalker::<SliceReader>::from_payload(&payload, 1, 1).unwrap_err();
+	let err = IndexedStructWalker::from_payload(&payload, 1, 1).unwrap_err();
 	assert!(matches!(err, Error::OptimisedOffsetOutOfRange { .. }), "got {err:?}");
 }
 
@@ -47,7 +47,7 @@ fn indexed_struct_with_non_monotonic_offsets_errors() {
 	let mut payload = vec![0u8; 8 + 16];
 	payload[0..4].copy_from_slice(&20u32.to_le_bytes());
 	payload[4..8].copy_from_slice(&10u32.to_le_bytes());
-	let err = IndexedStructWalker::<SliceReader>::from_payload(&payload, 1, 2).unwrap_err();
+	let err = IndexedStructWalker::from_payload(&payload, 1, 2).unwrap_err();
 	assert!(matches!(err, Error::OptimisedOffsetsNonMonotonic), "got {err:?}");
 }
 
@@ -55,7 +55,7 @@ fn indexed_struct_with_non_monotonic_offsets_errors() {
 fn indexed_struct_with_short_prologue_errors() {
 	// field_count = 4 → expects 16 bytes prologue, supplies 3.
 	let payload = vec![0u8; 3];
-	let err = IndexedStructWalker::<SliceReader>::from_payload(&payload, 1, 4).unwrap_err();
+	let err = IndexedStructWalker::from_payload(&payload, 1, 4).unwrap_err();
 	assert!(matches!(err, Error::OptimisedSubReaderOverrun), "got {err:?}");
 }
 

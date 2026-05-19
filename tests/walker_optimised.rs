@@ -194,12 +194,33 @@ fn walker_variant_view_borrows_from_source_for_optimised_enum() {
 	let view = w.array_view().unwrap();
 
 	// `as_bytes` returns a slice into the source `bytes` — same buffer, no
-	// copy. We verify the pointer to prove the no-alloc property.
+	// copy. Verify three properties that together prove the no-alloc claim:
+	//
+	// 1. The body pointer lies inside the source buffer (not in a fresh allocation).
+	// 2. The body length is strictly less than the source length (the source
+	//    has at least the tag + length prefix on top of the body).
+	// 3. The body bytes match the corresponding sub-slice of the source (would
+	//    fail if the bytes were copied through a buffer that mangled them).
 	let body: &[u8] = view.as_bytes();
+	let src_start = bytes.as_ptr() as usize;
+	let src_end = src_start + bytes.len();
+	let body_start = body.as_ptr() as usize;
+	let body_end = body_start + body.len();
 	assert!(
-		body.as_ptr() >= bytes.as_ptr()
-			&& body.as_ptr() <= unsafe { bytes.as_ptr().add(bytes.len()) },
-		"view's bytes should point inside the source buffer (got a copy, alloc happened)"
+		body_start >= src_start && body_end <= src_end,
+		"view's bytes should lie inside the source buffer; got body={body_start:#x}..{body_end:#x}, source={src_start:#x}..{src_end:#x} (an alloc would land in a different range)"
+	);
+	assert!(
+		body.len() < bytes.len(),
+		"body ({}) must be strictly shorter than the full envelope ({}) — the envelope carries the tag + length prefix on top",
+		body.len(),
+		bytes.len()
+	);
+	let offset = body_start - src_start;
+	assert_eq!(
+		body,
+		&bytes[offset..offset + body.len()],
+		"body slice should equal the corresponding range of the source verbatim"
 	);
 
 	// Construct an inner walker over the borrowed body. Streaming descent.

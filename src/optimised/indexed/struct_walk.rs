@@ -13,12 +13,9 @@
 //! always `field_count * 4` (just past the prologue). Walker construction
 //! validates monotonicity once; per-field access is then O(1).
 
-use std::marker::PhantomData;
-
 use crate::DeserializeRevisioned;
 use crate::Error;
 use crate::optimised::validation::validate_struct_prologue;
-use crate::slice_reader::SliceReader;
 
 /// Walker over an indexed-struct payload borrowed from `&'p [u8]`.
 ///
@@ -51,19 +48,18 @@ use crate::slice_reader::SliceReader;
 /// };
 /// let payload = &bytes[rev_len + 4..];
 ///
-/// let w = IndexedStructWalker::<&[u8]>::from_payload(payload, 1, 3).unwrap();
+/// let w = IndexedStructWalker::from_payload(payload, 1, 3).unwrap();
 /// assert_eq!(w.decode_field::<u32>(0).unwrap(), 42);
 /// assert_eq!(w.decode_field::<String>(1).unwrap(), "answer");
 /// ```
 #[derive(Debug)]
-pub struct IndexedStructWalker<'p, R: ?Sized = SliceReader<'p>> {
+pub struct IndexedStructWalker<'p> {
 	payload: &'p [u8],
 	field_count: u16,
 	revision: u16,
-	_reader: PhantomData<*const R>,
 }
 
-impl<'p, R: ?Sized> IndexedStructWalker<'p, R> {
+impl<'p> IndexedStructWalker<'p> {
 	/// Open an indexed-struct walker over an already-extracted payload slice.
 	///
 	/// `field_count` comes from the type definition (the macro emits the literal).
@@ -88,7 +84,6 @@ impl<'p, R: ?Sized> IndexedStructWalker<'p, R> {
 			payload,
 			field_count,
 			revision,
-			_reader: PhantomData,
 		})
 	}
 
@@ -187,7 +182,7 @@ mod tests {
 	#[test]
 	fn opens_and_reads_field_bytes_in_order() {
 		let payload = build_struct_payload(&[b"alpha", b"beta", b"gamma"]);
-		let w = IndexedStructWalker::<SliceReader>::from_payload(&payload, 2, 3).unwrap();
+		let w = IndexedStructWalker::from_payload(&payload, 2, 3).unwrap();
 		assert_eq!(w.field_count(), 3);
 		assert_eq!(w.revision(), 2);
 		assert_eq!(w.field_bytes(0).unwrap(), b"alpha");
@@ -198,14 +193,14 @@ mod tests {
 	#[test]
 	fn rejects_out_of_range_field() {
 		let payload = build_struct_payload(&[b"a", b"b"]);
-		let w = IndexedStructWalker::<SliceReader>::from_payload(&payload, 1, 2).unwrap();
+		let w = IndexedStructWalker::from_payload(&payload, 1, 2).unwrap();
 		assert!(w.field_bytes(2).is_err());
 	}
 
 	#[test]
 	fn rejects_truncated_prologue() {
 		let payload = [0u8, 0, 0]; // 3 bytes but field_count = 2 needs 8.
-		let err = IndexedStructWalker::<SliceReader>::from_payload(&payload, 1, 2).unwrap_err();
+		let err = IndexedStructWalker::from_payload(&payload, 1, 2).unwrap_err();
 		assert!(matches!(err, Error::OptimisedSubReaderOverrun));
 	}
 
@@ -214,7 +209,7 @@ mod tests {
 		// field_count = 1 → 4 bytes of prologue, but offset says 100.
 		let mut payload = vec![0u8; 8];
 		payload[0..4].copy_from_slice(&100u32.to_le_bytes());
-		let err = IndexedStructWalker::<SliceReader>::from_payload(&payload, 1, 1).unwrap_err();
+		let err = IndexedStructWalker::from_payload(&payload, 1, 1).unwrap_err();
 		assert!(matches!(err, Error::OptimisedOffsetOutOfRange { .. }));
 	}
 
@@ -225,7 +220,7 @@ mod tests {
 		// Offsets: [16, 8] — non-monotonic.
 		payload[0..4].copy_from_slice(&16u32.to_le_bytes());
 		payload[4..8].copy_from_slice(&8u32.to_le_bytes());
-		let err = IndexedStructWalker::<SliceReader>::from_payload(&payload, 1, 2).unwrap_err();
+		let err = IndexedStructWalker::from_payload(&payload, 1, 2).unwrap_err();
 		assert!(matches!(err, Error::OptimisedOffsetsNonMonotonic));
 	}
 
@@ -234,7 +229,7 @@ mod tests {
 		// field_count = 1, prologue = 4 bytes, but first offset says 2.
 		let mut payload = vec![0u8; 8];
 		payload[0..4].copy_from_slice(&2u32.to_le_bytes());
-		let err = IndexedStructWalker::<SliceReader>::from_payload(&payload, 1, 1).unwrap_err();
+		let err = IndexedStructWalker::from_payload(&payload, 1, 1).unwrap_err();
 		assert!(matches!(err, Error::OptimisedOffsetOutOfRange { .. }));
 	}
 }
