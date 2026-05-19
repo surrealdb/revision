@@ -103,7 +103,7 @@ pub fn emit_walk_impl(
 					let __cursor = __buf.len() - __slice.len();
 					return ::std::result::Result::Ok(#walker_name {
 						repr: #walker_repr_name::Materialised {
-							bytes: __buf,
+							bytes: ::std::borrow::Cow::Owned(__buf),
 							cursor: __cursor,
 							offsets: ::std::option::Option::None,
 							pos: 0,
@@ -128,7 +128,7 @@ pub fn emit_walk_impl(
 					};
 					return ::std::result::Result::Ok(#walker_name {
 						repr: #walker_repr_name::Materialised {
-							bytes: __buf,
+							bytes: ::std::borrow::Cow::Owned(__buf),
 							cursor: __cursor,
 							discriminant: __mat_disc,
 							pos: 0,
@@ -162,10 +162,10 @@ pub fn emit_walk_impl(
 			match &item.kind {
 				ItemKind::Struct(_) => {
 					if matches!(h.struct_kind, StructEncoding::Indexed) {
-						// Indexed struct: slurp the whole payload, parse
-						// the offset table once, and return a Materialised
-						// walker holding both. Per-field methods can then
-						// jump directly to a field's byte range in O(1).
+						// Indexed struct: borrow the payload directly from the
+						// reader's buffer (no allocation) and return a
+						// Materialised walker over Cow::Borrowed. Per-field
+						// methods jump via offsets in O(1).
 						let field_count = optimised_struct_field_count.unwrap_or(0) as usize;
 						let field_count_u16 = field_count as u16;
 						Ok(quote! {
@@ -174,18 +174,24 @@ pub fn emit_walk_impl(
 								::std::io::Read::read_exact(reader, &mut __len_buf)
 									.map_err(::revision::Error::Io)?;
 								let __payload_len = u32::from_le_bytes(__len_buf) as usize;
-								let mut __payload: ::std::vec::Vec<u8> =
-									::std::vec![0u8; __payload_len];
-								::std::io::Read::read_exact(reader, &mut __payload)
-									.map_err(::revision::Error::Io)?;
-								// Tag the walker with the field count so
-								// per-field decode knows it's the indexed
-								// case; offsets are read lazily from
-								// `bytes[i*4..i*4+4]` per access — no
-								// Vec<u32> alloc.
+								// Borrow the payload from the reader's buffer.
+								// `BorrowedReader` contract guarantees the bytes
+								// stay valid for `'r` after `advance`.
+								let __peeked = ::revision::BorrowedReader::peek_bytes(
+									reader, __payload_len,
+								)?;
+								let __ptr = __peeked.as_ptr();
+								::revision::BorrowedReader::advance(reader, __payload_len)?;
+								// SAFETY: `peek_bytes` returned a slice from
+								// `reader`'s buffer; `advance` only moves the
+								// cursor, leaving the underlying bytes valid for
+								// the reader's lifetime `'r`.
+								let __payload: &'r [u8] = unsafe {
+									::std::slice::from_raw_parts(__ptr, __payload_len)
+								};
 								return ::std::result::Result::Ok(#walker_name {
 									repr: #walker_repr_name::Materialised {
-										bytes: __payload,
+										bytes: ::std::borrow::Cow::Borrowed(__payload),
 										cursor: 0,
 										offsets: ::std::option::Option::Some(#field_count_u16),
 										pos: 0,
@@ -356,15 +362,17 @@ fn emit_struct_walker_struct(walker_name: &Ident, walker_repr_name: &Ident) -> T
 			},
 			/// Materialised mode covers two cases:
 			///
-			/// 1. cross-revision `convert_fn` round-trip: bytes are the
-			///    re-encoded current-rev value; `offsets` is `None` and the
-			///    walker reads fields sequentially through `cursor`.
-			/// 2. optimised + `struct = "indexed"` payload: bytes are the
-			///    indexed-struct body (offset table parsed off the wire
-			///    into `offsets`); per-field decode jumps via
+			/// 1. cross-revision `convert_fn` round-trip: `bytes` is
+			///    `Cow::Owned(Vec<u8>)` holding the re-encoded current-rev
+			///    value; `offsets` is `None` and the walker reads fields
+			///    sequentially through `cursor`.
+			/// 2. optimised + `struct = "indexed"` payload: `bytes` is
+			///    `Cow::Borrowed(&'r [u8])` borrowed directly from the
+			///    parent reader's buffer (no allocation); the offset table
+			///    sits at the start of `bytes`; per-field decode jumps via
 			///    `offsets[i]` for O(1) random access.
 			Materialised {
-				bytes: ::std::vec::Vec<u8>,
+				bytes: ::std::borrow::Cow<'r, [u8]>,
 				cursor: usize,
 				/// `Some(field_count)` when the payload was an indexed struct.
 				/// The offset table sits at the start of `bytes`; offsets are
@@ -398,7 +406,7 @@ fn emit_enum_walker_struct(walker_name: &Ident, walker_repr_name: &Ident) -> Tok
 				pos: u32,
 			},
 			Materialised {
-				bytes: ::std::vec::Vec<u8>,
+				bytes: ::std::borrow::Cow<'r, [u8]>,
 				cursor: usize,
 				/// Variant discriminant on the re-encoded current-rev bytes.
 				discriminant: u32,
@@ -1268,24 +1276,32 @@ fn emit_optimised_enum_walker_arm(
 		sizes.insert(id, spanned_size.size);
 	}
 
-	// Build the (variant_id, size_class) → slurp body match arms.
+	// Build the (variant_id, size_class) → borrow body match arms.
+	//
+	// Each arm peeks the body bytes from the reader's buffer and advances past
+	// them. The `BorrowedReader` contract guarantees the bytes stay valid for
+	// the reader's lifetime `'r`, so no allocation is needed.
 	let mut arms = TokenStream::new();
 	for (id, size) in sizes.iter() {
 		let id_lit = *id as u8;
 		let arm = match size {
 			VariantSize::Inline => quote! {
 				(#id_lit, ::revision::optimised::tag::SizeClass::Inline) => {
-					::std::vec::Vec::new()
+					&[][..]
 				}
 			},
 			VariantSize::Fixed(n) => {
 				let n_lit = *n as usize;
 				quote! {
 					(#id_lit, ::revision::optimised::tag::SizeClass::Fixed) => {
-						let mut __buf = ::std::vec![0u8; #n_lit];
-						::std::io::Read::read_exact(reader, &mut __buf)
-							.map_err(::revision::Error::Io)?;
-						__buf
+						let __peeked = ::revision::BorrowedReader::peek_bytes(
+							reader, #n_lit,
+						)?;
+						let __ptr = __peeked.as_ptr();
+						::revision::BorrowedReader::advance(reader, #n_lit)?;
+						// SAFETY: bytes peeked from reader's buffer; `advance`
+						// keeps them valid for `'r`.
+						unsafe { ::std::slice::from_raw_parts(__ptr, #n_lit) }
 					}
 				}
 			}
@@ -1295,10 +1311,13 @@ fn emit_optimised_enum_walker_arm(
 					::std::io::Read::read_exact(reader, &mut __len_buf)
 						.map_err(::revision::Error::Io)?;
 					let __len = u32::from_le_bytes(__len_buf) as usize;
-					let mut __buf = ::std::vec![0u8; __len];
-					::std::io::Read::read_exact(reader, &mut __buf)
-						.map_err(::revision::Error::Io)?;
-					__buf
+					let __peeked = ::revision::BorrowedReader::peek_bytes(
+						reader, __len,
+					)?;
+					let __ptr = __peeked.as_ptr();
+					::revision::BorrowedReader::advance(reader, __len)?;
+					// SAFETY: as above.
+					unsafe { ::std::slice::from_raw_parts(__ptr, __len) }
 				}
 			},
 		};
@@ -1314,7 +1333,7 @@ fn emit_optimised_enum_walker_arm(
 			let __tag = ::revision::optimised::tag::read_tag(reader)?;
 			let __sc = __tag.size_class()?;
 			let __variant_id = __tag.variant_id();
-			let __payload: ::std::vec::Vec<u8> = match (__variant_id, __sc) {
+			let __payload: &'r [u8] = match (__variant_id, __sc) {
 				#arms
 				_ => {
 					return ::std::result::Result::Err(::revision::Error::Deserialize(
@@ -1324,7 +1343,7 @@ fn emit_optimised_enum_walker_arm(
 			};
 			return ::std::result::Result::Ok(#walker_name {
 				repr: #walker_repr_name::Materialised {
-					bytes: __payload,
+					bytes: ::std::borrow::Cow::Borrowed(__payload),
 					cursor: 0,
 					discriminant: __variant_id as u32,
 					pos: 0,
