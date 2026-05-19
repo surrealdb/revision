@@ -135,16 +135,40 @@ impl<'ast> Visit<'ast> for GatherOverrides<'_> {
 /// types where varint vs fixed actually differ on the wire.
 const FIXED_SUPPORTED_INTS: &[&str] = &["u32", "i32", "u64", "i64", "u128", "i128"];
 
-/// If `ty` is one of the FIXED_SUPPORTED_INTS, return its name; else `None`.
+/// If `ty` is one of the FIXED_SUPPORTED_INTS spelled as a bare name,
+/// return its name; else `None`.
 ///
-/// The match is syntactic (compares the type's token stream against the
-/// known names) and so does not see through type aliases. That mirrors the
-/// existing constraints elsewhere in the macro.
+/// The match is purely syntactic — it does **not** see through type aliases
+/// (`type MyId = u32;` ... `x: MyId` is rejected) or qualified paths
+/// (`::std::primitive::u32`, `core::primitive::u32` are rejected). The
+/// macro can't resolve aliases at parse time; rejecting them here forces
+/// the caller to spell the bare name so the wire-format encoding the field
+/// gets is visible at the declaration site rather than buried in a
+/// distant `type` alias.
 pub fn fixed_int_name(ty: &Type) -> Option<&'static str> {
 	let s = ty.to_token_stream().to_string();
-	// `to_token_stream` for a primitive type produces just the bare name.
+	// `to_token_stream` for a bare primitive type produces just its name
+	// (e.g. `u32`); paths produce `:: std :: primitive :: u32` with
+	// whitespace around `::`. Compare to the canonical bare-name list to
+	// reject both aliases and paths.
 	let trimmed = s.trim();
 	FIXED_SUPPORTED_INTS.iter().find(|name| **name == trimmed).copied()
+}
+
+/// Build the rejection error for a field whose type isn't one of the bare
+/// supported integer names. The message calls out both the "wrong type"
+/// case (e.g. `String`) and the "right type, wrong spelling" case (paths,
+/// aliases) because the macro can't disambiguate them syntactically.
+fn fixed_attr_error(ty: &Type) -> syn::Error {
+	Error::new_spanned(
+		ty,
+		"`#[revision(fixed)]` requires the field type to be one of `u32`, `i32`, \
+		 `u64`, `i64`, `u128`, `i128` spelled as the bare primitive name. \
+		 Qualified paths (`::std::primitive::u32`, `core::primitive::u32`) and \
+		 type aliases (`type MyId = u32; field: MyId`) are not seen through by \
+		 the macro and so cannot carry this attribute — spell the bare name on \
+		 the field or remove the attribute.",
+	)
 }
 
 /// Emit `serialize_<int>_fixed_le(*value, writer)` for a `#[revision(fixed)]`
@@ -154,12 +178,7 @@ pub fn emit_serialize_fixed_le(
 	value_expr: &TokenStream,
 	writer_expr: &TokenStream,
 ) -> syn::Result<TokenStream> {
-	let kind = fixed_int_name(ty).ok_or_else(|| {
-		Error::new_spanned(
-			ty,
-			"`#[revision(fixed)]` is only valid on `u32`, `i32`, `u64`, `i64`, `u128`, `i128` fields",
-		)
-	})?;
+	let kind = fixed_int_name(ty).ok_or_else(|| fixed_attr_error(ty))?;
 	let fn_name = format_ident!("encode_{}_fixed_le", kind);
 	Ok(quote! {
 		::revision::implementations::primitives::#fn_name(*#value_expr, #writer_expr)?;
@@ -168,12 +187,7 @@ pub fn emit_serialize_fixed_le(
 
 /// Emit `decode_<int>_fixed_le(reader)` for a `#[revision(fixed)]` field.
 pub fn emit_deserialize_fixed_le(ty: &Type, reader_expr: &TokenStream) -> syn::Result<TokenStream> {
-	let kind = fixed_int_name(ty).ok_or_else(|| {
-		Error::new_spanned(
-			ty,
-			"`#[revision(fixed)]` is only valid on `u32`, `i32`, `u64`, `i64`, `u128`, `i128` fields",
-		)
-	})?;
+	let kind = fixed_int_name(ty).ok_or_else(|| fixed_attr_error(ty))?;
 	let fn_name = format_ident!("decode_{}_fixed_le", kind);
 	Ok(quote! {
 		::revision::implementations::primitives::#fn_name(#reader_expr)?
@@ -182,12 +196,7 @@ pub fn emit_deserialize_fixed_le(ty: &Type, reader_expr: &TokenStream) -> syn::R
 
 /// Emit `skip_<int>_fixed_le(reader)` for a `#[revision(fixed)]` field.
 pub fn emit_skip_fixed_le(ty: &Type, reader_expr: &TokenStream) -> syn::Result<TokenStream> {
-	let kind = fixed_int_name(ty).ok_or_else(|| {
-		Error::new_spanned(
-			ty,
-			"`#[revision(fixed)]` is only valid on `u32`, `i32`, `u64`, `i64`, `u128`, `i128` fields",
-		)
-	})?;
+	let kind = fixed_int_name(ty).ok_or_else(|| fixed_attr_error(ty))?;
 	let fn_name = format_ident!("skip_{}_fixed_le", kind);
 	Ok(quote! {
 		::revision::implementations::primitives::#fn_name(#reader_expr)?;
