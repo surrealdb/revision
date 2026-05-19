@@ -53,8 +53,20 @@ per-field encoding-override attributes.
   parent walker is `IndexedBorrowed`, `walk_<field>` for `indexed_map` /
   `indexed_seq` / `indexed_set` fields extracts the field's bytes
   directly from the parent's offset table (`Cow::Borrowed`), skipping
-  the decode + re-encode round-trip. Wire / ConvertedOwned parents
-  still take the slower path.
+  the decode + re-encode round-trip.
+- **Zero-copy `walk_<field>` for Wire-repr parents too.** When the
+  parent walker is `Wire` (sequential optimised or current-rev
+  legacy), the macro emits a `skip_indexed_*` call bracketed by
+  `BorrowedReader::remaining()` snapshots and borrows the field's
+  exact wire bytes from the difference. Same zero-allocation result
+  as the indexed-struct path, just derived by skip+slice instead of
+  offset-table lookup. Only the rare `ConvertedOwned` (cross-rev
+  `convert_fn` re-encode) path still allocates, because its bytes
+  are owned by the walker and don't outlive `self`.
+- **New trait method `BorrowedReader::remaining()`** returns the
+  unconsumed tail as a borrowed slice — enables the Wire-repr
+  fast path. Default impl returns `&[]`; `&[u8]` and `SliceReader<'a>`
+  override with the actual tail.
 
 ### Pin tests
 

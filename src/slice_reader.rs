@@ -168,6 +168,34 @@ pub unsafe trait BorrowedReader: Read {
 	/// Used by optimised walkers and the encode side to compute offsets
 	/// relative to the start of an optimised compound's payload.
 	fn position(&self) -> usize;
+
+	/// The unconsumed tail as a borrowed slice.
+	///
+	/// Returns a view of the bytes the reader has yet to read, tied to the
+	/// reader's borrow. Unlike [`peek_bytes`](Self::peek_bytes), the caller
+	/// does not have to know the length in advance — and unlike `position`,
+	/// the returned slice is concrete bytes, not a count.
+	///
+	/// **Use case**: capture before/after slices around a `skip`-style call
+	/// to recover the field's exact wire bytes without decoding them:
+	///
+	/// ```ignore
+	/// let before = reader.remaining();        // &[u8] of all unread bytes
+	/// some_skip_routine(&mut reader)?;        // advances past one logical value
+	/// let after = reader.remaining();
+	/// let consumed_bytes = &before[..before.len() - after.len()];
+	/// // `consumed_bytes` is the just-skipped value's wire bytes, zero-copy.
+	/// ```
+	///
+	/// The default implementation returns `&[]`; readers that can provide
+	/// the unconsumed tail (i.e. all `BorrowedReader` impls in this crate)
+	/// override it. Callers reaching for the slice via the macro-emitted
+	/// `walk_<field>` accessor receive the override's result and so always
+	/// get a meaningful slice.
+	#[inline]
+	fn remaining(&self) -> &[u8] {
+		&[]
+	}
 }
 
 // SAFETY: `&[u8]::peek_bytes` returns a slice into the caller-owned buffer the
@@ -203,6 +231,13 @@ unsafe impl BorrowedReader for &[u8] {
 		// absolute position. Callers that need positions should use `SliceReader`.
 		0
 	}
+
+	#[inline]
+	fn remaining(&self) -> &[u8] {
+		// `*self` is `&[u8]` — the entire unread tail by definition (advancing
+		// replaces the slice with its suffix).
+		self
+	}
 }
 
 // SAFETY: `SliceReader<'a>` borrows an external `&'a [u8]` it never modifies.
@@ -227,6 +262,11 @@ unsafe impl<'a> BorrowedReader for SliceReader<'a> {
 	#[inline]
 	fn position(&self) -> usize {
 		self.consumed_len()
+	}
+
+	#[inline]
+	fn remaining(&self) -> &[u8] {
+		self.inner
 	}
 }
 
