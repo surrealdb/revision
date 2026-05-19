@@ -119,6 +119,21 @@ primitives directly:
   copying them into per-walk `Vec<u8>` allocations.
   `SerializeRevisioned` and `DeserializeRevisioned` keep their
   `Read` / `Write` bounds unchanged.
+- **Walker view types gained an `'r` lifetime parameter** and now
+  hold `Cow<'r, [u8]>` instead of `Vec<u8>`. Affects
+  `OwnedVariantView<'r, T>`, `OwnedIndexedMapView<'r, K, V>`,
+  `OwnedIndexedSeqView<'r, T>`, `OwnedIndexedSetView<'r, T>`. When
+  the walker's source is slice-backed (the common case) the view
+  borrows directly — no copy. The `Vec::new(...)` constructors
+  changed signature to take `Cow<'r, [u8]>`. Callers reaching for
+  these views by name in type signatures or constructors need to
+  add the lifetime parameter.
+- **Optimised enum and indexed-struct walks no longer allocate** a
+  `Vec<u8>` to hold the body bytes — they borrow directly from the
+  source via `BorrowedReader::peek_bytes + advance`. The cross-
+  revision `convert_fn` round-trip still allocates (rare cold
+  path). The `late_field_access/4_macro_walker_optimised_indexed`
+  bench dropped from ~80ns to ~40ns (49% faster) as a result.
 
 ### Migration
 
