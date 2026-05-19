@@ -6,7 +6,7 @@ use syn::{Ident, Index};
 
 use crate::ast::{Enum, Fields, Struct, Variant, Visit};
 
-use super::common::{CalcDiscriminant, emit_deserialize_fixed_le};
+use super::common::{CalcDiscriminant, emit_deserialize_fixed_le, emit_deserialize_specialised};
 use super::context::EncodingContext;
 use super::optimised;
 
@@ -404,6 +404,9 @@ impl<'ast> Visit<'ast> for DeserializeFields<'_> {
 						let body = if f.attrs.options.fixed {
 							let call = emit_deserialize_fixed_le(ty, &reader_expr)?;
 							quote! { let #binding = #call; }
+						} else if f.attrs.options.specialised {
+							let call = emit_deserialize_specialised(ty, &reader_expr);
+							quote! { let #binding = #call; }
 						} else {
 							quote! {
 								let #binding = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
@@ -427,6 +430,9 @@ impl<'ast> Visit<'ast> for DeserializeFields<'_> {
 						let reader_expr = quote! { reader };
 						let body = if f.attrs.options.fixed {
 							let call = emit_deserialize_fixed_le(ty, &reader_expr)?;
+							quote! { let #binding = #call; }
+						} else if f.attrs.options.specialised {
+							let call = emit_deserialize_specialised(ty, &reader_expr);
 							quote! { let #binding = #call; }
 						} else {
 							quote! {

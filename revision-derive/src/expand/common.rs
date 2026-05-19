@@ -196,3 +196,31 @@ pub fn emit_skip_fixed_le(ty: &Type, reader_expr: &TokenStream) -> syn::Result<T
 		::revision::implementations::primitives::#fn_name(#reader_expr)?;
 	})
 }
+
+/// Emit a bulk-encoded `Vec<T>` serialize call for a `#[revision(specialised)]`
+/// field. The `SerializeRevisionedSpecialised` trait is only implemented for
+/// `Vec<primitive>`, so any other type fires a trait-bound error at compile
+/// time pointing at the field.
+pub fn emit_serialize_specialised(
+	ty: &Type,
+	value_expr: &TokenStream,
+	writer_expr: &TokenStream,
+) -> TokenStream {
+	quote! {
+		<#ty as ::revision::implementations::specialised::SerializeRevisionedSpecialised>::serialize_revisioned_specialised(
+			#value_expr,
+			#writer_expr,
+		)?;
+	}
+}
+
+/// Emit a bulk-encoded `Vec<T>` deserialize call for a
+/// `#[revision(specialised)]` field. Same trait-bound contract as
+/// [`emit_serialize_specialised`].
+pub fn emit_deserialize_specialised(ty: &Type, reader_expr: &TokenStream) -> TokenStream {
+	quote! {
+		<#ty as ::revision::implementations::specialised::DeserializeRevisionedSpecialised>::deserialize_revisioned_specialised(
+			#reader_expr,
+		)?
+	}
+}

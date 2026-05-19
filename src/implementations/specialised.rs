@@ -1,4 +1,9 @@
-#![cfg(feature = "specialised-vectors")]
+//! Bulk-encoded `Vec<T>` impls for primitive `T`.
+//!
+//! These are always compiled — the `specialised-vectors` cargo feature only
+//! controls whether the trait dispatch in [`crate::implementations::vecs`]
+//! routes through them on a per-call basis. Per-field
+//! `#[revision(specialised)]` calls these directly regardless of the feature.
 
 use crate::DeserializeRevisioned;
 use crate::Error;
