@@ -670,12 +670,35 @@ fn emit_struct_methods(
 					let __before_len = __before.len();
 					#skip_call
 					let __after_len = ::revision::BorrowedReader::remaining(*reader).len();
-					let __consumed_len = __before_len - __after_len;
-					// SAFETY: `BorrowedReader::remaining` returns a slice into
-					// the reader's stable buffer; the trait's safety contract
-					// guarantees `advance`/`skip` only moves the cursor, so
-					// the bytes captured by `__before_ptr` remain valid for
-					// the reader's lifetime `'r`. Same pattern as
+					// `BorrowedReader`'s safety contract bullet (4) requires
+					// `remaining().len()` to be monotonic non-increasing
+					// under `advance`. A downstream impl that violates this
+					// would underflow naive subtraction and trigger UB in
+					// the `from_raw_parts` below — `checked_sub` turns the
+					// contract violation into a clean deserialize error
+					// instead.
+					let __consumed_len = __before_len
+						.checked_sub(__after_len)
+						.ok_or_else(|| ::revision::Error::Deserialize(
+							::std::format!(
+								"BorrowedReader::remaining() grew across an advance call \
+								 (before={}, after={}); the impl violates the trait's safety \
+								 contract — this is a bug in the reader implementation, not the \
+								 wire data",
+								__before_len,
+								__after_len,
+							)
+						))?;
+					// SAFETY: `BorrowedReader::remaining` returns a slice
+					// into the reader's stable buffer; the trait's safety
+					// contract guarantees `advance`/`skip` only moves the
+					// cursor and never invalidates previously-returned
+					// bytes (bullets 2 and 3), so
+					// `__before_ptr[..__consumed_len]` is valid for the
+					// reader's lifetime `'r`. The `checked_sub` above also
+					// ensures `__consumed_len <= __before_len`, so the
+					// slice can never extend past the bytes the trait
+					// promised were stable. Same pattern as
 					// `read_borrowed_bytes` for `peek_bytes + advance`.
 					let __field_bytes: &'r [u8] = unsafe {
 						::std::slice::from_raw_parts(__before_ptr, __consumed_len)
