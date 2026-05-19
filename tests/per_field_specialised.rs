@@ -73,7 +73,7 @@ fn specialised_attr_works_for_multiple_primitive_vecs() {
 		a: vec![1, 2, 3],
 		b: vec![100, 200, 300],
 		c: vec![-1, -2, -3],
-		d: vec![1.0, 2.5, 3.14],
+		d: vec![1.0, 2.5, 3.5],
 	};
 	let bytes = revision::to_vec(&v).unwrap();
 	let decoded: ManyVecs = revision::from_slice(&bytes).unwrap();

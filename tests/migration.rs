@@ -269,6 +269,7 @@ fn pin_optimised_rev1_struct_layout() {
 	assert_eq!(decoded.b, 11);
 }
 
+#[cfg(not(feature = "fixed-width-encoding"))]
 #[revisioned(revision(1, encoding = "optimised", struct = "indexed"))]
 #[derive(Debug, PartialEq)]
 struct PinIndexedStruct {
@@ -288,13 +289,13 @@ fn pin_optimised_indexed_struct_layout() {
 	//   field bytes                    (3 bytes: 7, 11, 19 as varints)
 	let pinned: &[u8] = &[
 		1, // u16 revision varint = 1
-		15, 0, 0, 0,  // u32_le payload length = 15 (3*4 offsets + 3 field bytes)
-		12, 0, 0, 0,  // offsets[0] = 12 (start of field a, just past prologue)
-		13, 0, 0, 0,  // offsets[1] = 13 (start of field b)
+		15, 0, 0, 0, // u32_le payload length = 15 (3*4 offsets + 3 field bytes)
+		12, 0, 0, 0, // offsets[0] = 12 (start of field a, just past prologue)
+		13, 0, 0, 0, // offsets[1] = 13 (start of field b)
 		14, 0, 0, 0,  // offsets[2] = 14 (start of field c)
-		7,            // field a = 7 (varint)
-		11,           // field b = 11 (varint)
-		19,           // field c = 19 (varint)
+		7,  // field a = 7 (varint)
+		11, // field b = 11 (varint)
+		19, // field c = 19 (varint)
 	];
 	let decoded: PinIndexedStruct = revision::from_slice(pinned).unwrap();
 	assert_eq!(decoded.a, 7);
@@ -302,6 +303,7 @@ fn pin_optimised_indexed_struct_layout() {
 	assert_eq!(decoded.c, 19);
 }
 
+#[cfg(not(feature = "fixed-width-encoding"))]
 #[revisioned(revision(1, encoding = "optimised"))]
 #[derive(Debug, PartialEq)]
 enum PinOptimisedEnum {
@@ -322,11 +324,11 @@ fn pin_optimised_varlen_enum_variant_layout() {
 	// Tag layout: variant_id in low 5 bits, size_class in bits 5..=6.
 	// Greeting is variant id 0; Varlen = 0b10. So tag = (0b10 << 5) | 0 = 0x40 = 64.
 	let pinned: &[u8] = &[
-		1,            // u16 revision varint = 1
-		64,           // optimised tag: variant_id=0, size_class=Varlen
-		3, 0, 0, 0,   // u32_le body length = 3
-		2,            // varint string length = 2
-		b'h', b'i',   // string bytes
+		1,  // u16 revision varint = 1
+		64, // optimised tag: variant_id=0, size_class=Varlen
+		3, 0, 0, 0, // u32_le body length = 3
+		2, // varint string length = 2
+		b'h', b'i', // string bytes
 	];
 	let decoded: PinOptimisedEnum = revision::from_slice(pinned).unwrap();
 	assert_eq!(decoded, PinOptimisedEnum::Greeting("hi".into()));

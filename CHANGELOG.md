@@ -1,6 +1,82 @@
 # Changelog
 
-## 0.23.0 (unreleased)
+## 0.23.0 (unreleased) — design refactor follow-up
+
+A second pass over the optimised wire-format work. Several design choices
+from the initial PR got reconsidered after self-review and an independent
+code review; this release lands the cleanups together with two new
+per-field encoding-override attributes.
+
+### Added
+
+- **`#[revision(fixed)]`** per-field attribute that forces fixed-width
+  little-endian encoding for primitive integer fields (`u32`/`i32`/
+  `u64`/`i64`/`u128`/`i128`), regardless of the crate-wide
+  `fixed-width-encoding` cargo feature. A non-integer field tagged
+  `fixed` is a compile error pointing at the field.
+- **`#[revision(specialised)]`** per-field attribute that forces bulk
+  `Vec<T>` encoding for primitive `T` (the same set already handled by
+  `specialised-vectors`), regardless of the crate-wide
+  `specialised-vectors` cargo feature. A `Vec<T>` where `T` isn't in
+  the bulk-encoded list is a compile error from the trait bound.
+- **`IndexedStructWalker::from_payload_unvalidated`** (and matching
+  `IndexedMapWalker::from_payload_unvalidated` /
+  `IndexedSeqWalker::from_payload_unvalidated`) — opt-in constructors
+  that skip the O(N) prologue validation for trusted bytes. The
+  validating `from_payload` stays the default.
+- **Multi-field optimised enum variants get `<variant>_view`** returning
+  the variant body bytes as a `VariantView<'r, ()>`. Callers decode the
+  fields sequentially from the borrowed slice. Single-field tuple
+  variants already had this; the surface is now uniform.
+
+### Changed (breaking, alpha)
+
+- **Walker view types renamed**: `OwnedVariantView` → `VariantView`,
+  `OwnedIndexedMapView` → `IndexedMapView`,
+  `OwnedIndexedSeqView` → `IndexedSeqView`,
+  `OwnedIndexedSetView` → `IndexedSetView`. The `Owned` prefix lied
+  after they switched to `Cow` storage; the new names are honest.
+- **Walker repr field is now private** (`#[doc(hidden)] pub repr` →
+  private). All access via accessor methods.
+- **Walker repr's `Materialised` variant split** into `IndexedBorrowed`
+  (struct walker) / `OptimisedBorrowed` (enum walker) and
+  `ConvertedOwned`. The runtime `offsets: Option<u16>` and
+  `bytes: Cow<'r, [u8]>` discriminants are gone; each variant has a
+  fixed shape.
+
+### Performance
+
+- **Static `[SizeClass; 32]` table per optimised enum** for walker
+  construction dispatch. N variant-branches collapse to a static array
+  lookup + 3-arm match.
+- **Zero-copy `walk_<field>` for indexed-struct parents.** When the
+  parent walker is `IndexedBorrowed`, `walk_<field>` for `indexed_map` /
+  `indexed_seq` / `indexed_set` fields extracts the field's bytes
+  directly from the parent's offset table (`Cow::Borrowed`), skipping
+  the decode + re-encode round-trip. Wire / ConvertedOwned parents
+  still take the slower path.
+
+### Pin tests
+
+Added pinned byte-sequence tests for two more wire shapes that the
+initial PR didn't cover: indexed-struct (with offset prologue) and
+varlen optimised-enum variant. These join the existing legacy-rev1 and
+optimised-rev1-sequential pins. See `tests/migration.rs`.
+
+### Reconsidered from the original "what I'd do differently" list
+
+- **Did not unify the three indexed encoder traits** (`IndexedMapEncoded`,
+  `IndexedSeqEncoded`, `IndexedSetEncoded`). After closer inspection the
+  apparent duplication reflects three genuinely different wire layouts
+  (paired key/value offsets vs single element offsets vs sorted-on-encode
+  elements), not redundant scaffolding. Unifying via a `Layout`
+  associated type would add generic complexity without reducing the
+  substantive logic.
+- **Did not add a per-type `OFFSET_TABLE_MIN_LEN` override.** The global
+  threshold of 8 is workload-defensible and no caller has asked for
+  tuning it.
+
+## 0.23.0-pre (previous PR)
 
 The headline of this release is the optimised wire format — an opt-in
 encoding that gives O(1) skip, optional offset-table prologues for

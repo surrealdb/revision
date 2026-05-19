@@ -167,10 +167,7 @@ pub fn emit_serialize_fixed_le(
 }
 
 /// Emit `decode_<int>_fixed_le(reader)` for a `#[revision(fixed)]` field.
-pub fn emit_deserialize_fixed_le(
-	ty: &Type,
-	reader_expr: &TokenStream,
-) -> syn::Result<TokenStream> {
+pub fn emit_deserialize_fixed_le(ty: &Type, reader_expr: &TokenStream) -> syn::Result<TokenStream> {
 	let kind = fixed_int_name(ty).ok_or_else(|| {
 		Error::new_spanned(
 			ty,

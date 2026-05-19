@@ -135,7 +135,7 @@ impl Read for SliceReader<'_> {
 /// 3. **Peeked bytes must remain valid for the reader's lifetime** (i.e.
 ///    for `'r` where the reader is borrowed as `&'r mut R`), regardless of
 ///    how many `advance` calls happen in between, so the unsafe code
-///    extending peek lifetimes via [`unsafe_extend_peek_lifetime`] does not
+///    extending peek lifetimes via [`read_borrowed_bytes`] does not
 ///    create dangling pointers.
 ///
 /// The two impls in this crate — `&[u8]` and [`SliceReader`] — both
