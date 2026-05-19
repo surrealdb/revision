@@ -609,13 +609,41 @@ fn emit_struct_methods(
 		// (`IndexedMapView` / `IndexedSeqView`) that the caller
 		// keeps alive while borrowing the walker from it.
 		//
-		// Implementation strategy: decode the field via the indexed
-		// deserializer, then re-serialize into a Vec<u8> via the indexed
-		// serializer. The wire format is canonical (sorted by key bytes), so
-		// re-serializing produces identical bytes a second walker can read.
-		// This is one extra alloc + walk per field — acceptable for the
-		// "I want walker access" use case; callers who only need the
-		// materialised value should use `decode_<field>` instead.
+		// Fast path: when the parent walker is `IndexedBorrowed`
+		// (optimised + `struct = "indexed"`), the field's canonical bytes
+		// already live at `bytes[offsets[i]..offsets[i+1]]`. Extract
+		// directly and wrap in `Cow::Borrowed` — zero allocation, the view
+		// preserves the parent's `'r` lifetime.
+		//
+		// Fallback: Wire or ConvertedOwned reprs go through decode +
+		// re-encode (one alloc + one walk per field) since the field's
+		// canonical bytes aren't addressable via an offset table there.
+		let fast_path_extract = |view_ty: &TokenStream| -> TokenStream {
+			quote! {
+				if let #walker_repr_name::IndexedBorrowed { bytes, field_count, .. } = &self.repr {
+					let __bytes_borrow: &'r [u8] = *bytes;
+					let __fc = *field_count as usize;
+					let __off_base = (#pos_lit as usize) * 4;
+					let __start = u32::from_le_bytes(
+						__bytes_borrow[__off_base..__off_base + 4]
+							.try_into()
+							.expect("4-byte slice"),
+					) as usize;
+					let __end = if (#pos_lit as usize) + 1 < __fc {
+						u32::from_le_bytes(
+							__bytes_borrow[__off_base + 4..__off_base + 8]
+								.try_into()
+								.expect("4-byte slice"),
+						) as usize
+					} else {
+						__bytes_borrow.len()
+					};
+					return ::std::result::Result::Ok(
+						#view_ty::new(::std::borrow::Cow::Borrowed(&__bytes_borrow[__start..__end])),
+					);
+				}
+			}
+		};
 		let walk_return_ty;
 		let walk_body;
 		let into_walk_return_ty;
@@ -628,7 +656,10 @@ fn emit_struct_methods(
 					<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::Value,
 				>
 			};
+			let view_ctor = quote! { ::revision::optimised::indexed::IndexedMapView };
+			let fast = fast_path_extract(&view_ctor);
 			walk_body = quote! {
+				#fast
 				let __v: #ty = self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
 				<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::serialize_indexed_map(
@@ -642,6 +673,7 @@ fn emit_struct_methods(
 			};
 			into_walk_return_ty = walk_return_ty.clone();
 			into_walk_body = quote! {
+				#fast
 				let mut __self = self;
 				let __v: #ty = __self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
@@ -661,7 +693,10 @@ fn emit_struct_methods(
 					<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::Item,
 				>
 			};
+			let view_ctor = quote! { ::revision::optimised::indexed::IndexedSeqView };
+			let fast = fast_path_extract(&view_ctor);
 			walk_body = quote! {
+				#fast
 				let __v: #ty = self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
 				<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::serialize_indexed_seq(
@@ -675,6 +710,7 @@ fn emit_struct_methods(
 			};
 			into_walk_return_ty = walk_return_ty.clone();
 			into_walk_body = quote! {
+				#fast
 				let mut __self = self;
 				let __v: #ty = __self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
@@ -694,7 +730,10 @@ fn emit_struct_methods(
 					<#ty as ::revision::optimised::indexed::IndexedSetEncoded>::Item,
 				>
 			};
+			let view_ctor = quote! { ::revision::optimised::indexed::IndexedSetView };
+			let fast = fast_path_extract(&view_ctor);
 			walk_body = quote! {
+				#fast
 				let __v: #ty = self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
 				<#ty as ::revision::optimised::indexed::IndexedSetEncoded>::serialize_indexed_set(
@@ -708,6 +747,7 @@ fn emit_struct_methods(
 			};
 			into_walk_return_ty = walk_return_ty.clone();
 			into_walk_body = quote! {
+				#fast
 				let mut __self = self;
 				let __v: #ty = __self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
