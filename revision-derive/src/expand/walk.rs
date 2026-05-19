@@ -605,45 +605,89 @@ fn emit_struct_methods(
 		// For fields with `#[revision(indexed_map)]` / `#[revision(indexed_seq)]`,
 		// the inner walker is `IndexedMapWalker` / `IndexedSeqWalker` rather
 		// than the field type's own `WalkRevisioned::Walker`. These walkers
-		// borrow from a payload slice, so we return an owned-bytes wrapper
-		// (`IndexedMapView` / `IndexedSeqView`) that the caller
-		// keeps alive while borrowing the walker from it.
+		// borrow from a payload slice, so we return a wire-bytes wrapper
+		// (`IndexedMapView` / `IndexedSeqView`) holding `Cow<'r, [u8]>`.
 		//
-		// Fast path: when the parent walker is `IndexedBorrowed`
-		// (optimised + `struct = "indexed"`), the field's canonical bytes
-		// already live at `bytes[offsets[i]..offsets[i+1]]`. Extract
-		// directly and wrap in `Cow::Borrowed` — zero allocation, the view
-		// preserves the parent's `'r` lifetime.
+		// Three paths, in order of preference (most-borrowed → most-allocating):
 		//
-		// Fallback: Wire or ConvertedOwned reprs go through decode +
-		// re-encode (one alloc + one walk per field) since the field's
-		// canonical bytes aren't addressable via an offset table there.
-		let fast_path_extract = |view_ty: &TokenStream| -> TokenStream {
-			quote! {
-				if let #walker_repr_name::IndexedBorrowed { bytes, field_count, .. } = &self.repr {
-					let __bytes_borrow: &'r [u8] = *bytes;
-					let __fc = *field_count as usize;
-					let __off_base = (#pos_lit as usize) * 4;
-					let __start = u32::from_le_bytes(
-						__bytes_borrow[__off_base..__off_base + 4]
-							.try_into()
-							.expect("4-byte slice"),
-					) as usize;
-					let __end = if (#pos_lit as usize) + 1 < __fc {
-						u32::from_le_bytes(
-							__bytes_borrow[__off_base + 4..__off_base + 8]
+		// 1. `IndexedBorrowed` parent (optimised + `struct = "indexed"`): the
+		//    field's canonical bytes already live at `parent.bytes[offsets[i]
+		//    ..offsets[i+1]]`. Extract directly via `Cow::Borrowed` with the
+		//    parent's `'r` lifetime. Zero allocation, O(1) lookup.
+		// 2. `Wire` parent (sequential optimised or current-rev legacy): the
+		//    field's bytes are next in the reader, but their length isn't
+		//    known up front. Capture `reader.remaining()` before and after a
+		//    `skip_indexed_*` call to derive the field's exact slice, then
+		//    extend the borrow to `'r` via the same unsafe pattern used by
+		//    `read_borrowed_bytes`. Zero allocation, O(field bytes) skip.
+		// 3. `ConvertedOwned` parent (cross-rev `convert_fn` round-trip):
+		//    the parent's bytes are an owned `Vec<u8>` that dies with `self`
+		//    on a `&self`/`self` accessor, so we can't borrow from it. Decode
+		//    the field into the runtime type and re-encode into `Cow::Owned`.
+		//    One allocation per call; rare path.
+		// `self_expr` is the identifier used for the walker instance — `self`
+		// for `walk_<field>(&mut self)` and `__self` for
+		// `into_walk_<field>(self)` after the `let mut __self = self;` rebind.
+		let fast_path_indexed_borrowed =
+			|view_ty: &TokenStream, self_expr: &TokenStream| -> TokenStream {
+				quote! {
+					if let #walker_repr_name::IndexedBorrowed { bytes, field_count, .. } = &#self_expr.repr {
+						let __bytes_borrow: &'r [u8] = *bytes;
+						let __fc = *field_count as usize;
+						let __off_base = (#pos_lit as usize) * 4;
+						let __start = u32::from_le_bytes(
+							__bytes_borrow[__off_base..__off_base + 4]
 								.try_into()
 								.expect("4-byte slice"),
-						) as usize
-					} else {
-						__bytes_borrow.len()
+						) as usize;
+						let __end = if (#pos_lit as usize) + 1 < __fc {
+							u32::from_le_bytes(
+								__bytes_borrow[__off_base + 4..__off_base + 8]
+									.try_into()
+									.expect("4-byte slice"),
+							) as usize
+						} else {
+							__bytes_borrow.len()
+						};
+						return ::std::result::Result::Ok(
+							#view_ty::new(::std::borrow::Cow::Borrowed(&__bytes_borrow[__start..__end])),
+						);
+					}
+				}
+			};
+		// Wire-parent fast path: skip the field, derive its bytes from the
+		// before/after `remaining()` snapshots, lifetime-extend via the
+		// canonical unsafe pattern (peeked bytes stay valid for `'r` per the
+		// `BorrowedReader` contract).
+		let fast_path_wire = |view_ty: &TokenStream,
+		                      skip_call: &TokenStream,
+		                      self_expr: &TokenStream|
+		 -> TokenStream {
+			quote! {
+				if let #walker_repr_name::Wire { reader, .. } = &mut #self_expr.repr {
+					let __before = ::revision::BorrowedReader::remaining(*reader);
+					let __before_ptr = __before.as_ptr();
+					let __before_len = __before.len();
+					#skip_call
+					let __after_len = ::revision::BorrowedReader::remaining(*reader).len();
+					let __consumed_len = __before_len - __after_len;
+					// SAFETY: `BorrowedReader::remaining` returns a slice into
+					// the reader's stable buffer; the trait's safety contract
+					// guarantees `advance`/`skip` only moves the cursor, so
+					// the bytes captured by `__before_ptr` remain valid for
+					// the reader's lifetime `'r`. Same pattern as
+					// `read_borrowed_bytes` for `peek_bytes + advance`.
+					let __field_bytes: &'r [u8] = unsafe {
+						::std::slice::from_raw_parts(__before_ptr, __consumed_len)
 					};
 					return ::std::result::Result::Ok(
-						#view_ty::new(::std::borrow::Cow::Borrowed(&__bytes_borrow[__start..__end])),
+						#view_ty::new(::std::borrow::Cow::Borrowed(__field_bytes)),
 					);
 				}
 			}
 		};
+		let self_walk = quote! { self };
+		let self_into = quote! { __self };
 		let walk_return_ty;
 		let walk_body;
 		let into_walk_return_ty;
@@ -657,9 +701,16 @@ fn emit_struct_methods(
 				>
 			};
 			let view_ctor = quote! { ::revision::optimised::indexed::IndexedMapView };
-			let fast = fast_path_extract(&view_ctor);
+			let skip_call = quote! {
+				<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::skip_indexed_map(*reader)?;
+			};
+			let fast_ib_w = fast_path_indexed_borrowed(&view_ctor, &self_walk);
+			let fast_w_w = fast_path_wire(&view_ctor, &skip_call, &self_walk);
+			let fast_ib_i = fast_path_indexed_borrowed(&view_ctor, &self_into);
+			let fast_w_i = fast_path_wire(&view_ctor, &skip_call, &self_into);
 			walk_body = quote! {
-				#fast
+				#fast_ib_w
+				#fast_w_w
 				let __v: #ty = self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
 				<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::serialize_indexed_map(
@@ -673,8 +724,9 @@ fn emit_struct_methods(
 			};
 			into_walk_return_ty = walk_return_ty.clone();
 			into_walk_body = quote! {
-				#fast
 				let mut __self = self;
+				#fast_ib_i
+				#fast_w_i
 				let __v: #ty = __self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
 				<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::serialize_indexed_map(
@@ -694,9 +746,16 @@ fn emit_struct_methods(
 				>
 			};
 			let view_ctor = quote! { ::revision::optimised::indexed::IndexedSeqView };
-			let fast = fast_path_extract(&view_ctor);
+			let skip_call = quote! {
+				<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::skip_indexed_seq(*reader)?;
+			};
+			let fast_ib_w = fast_path_indexed_borrowed(&view_ctor, &self_walk);
+			let fast_w_w = fast_path_wire(&view_ctor, &skip_call, &self_walk);
+			let fast_ib_i = fast_path_indexed_borrowed(&view_ctor, &self_into);
+			let fast_w_i = fast_path_wire(&view_ctor, &skip_call, &self_into);
 			walk_body = quote! {
-				#fast
+				#fast_ib_w
+				#fast_w_w
 				let __v: #ty = self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
 				<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::serialize_indexed_seq(
@@ -710,8 +769,9 @@ fn emit_struct_methods(
 			};
 			into_walk_return_ty = walk_return_ty.clone();
 			into_walk_body = quote! {
-				#fast
 				let mut __self = self;
+				#fast_ib_i
+				#fast_w_i
 				let __v: #ty = __self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
 				<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::serialize_indexed_seq(
@@ -731,9 +791,16 @@ fn emit_struct_methods(
 				>
 			};
 			let view_ctor = quote! { ::revision::optimised::indexed::IndexedSetView };
-			let fast = fast_path_extract(&view_ctor);
+			let skip_call = quote! {
+				<#ty as ::revision::optimised::indexed::IndexedSetEncoded>::skip_indexed_set(*reader)?;
+			};
+			let fast_ib_w = fast_path_indexed_borrowed(&view_ctor, &self_walk);
+			let fast_w_w = fast_path_wire(&view_ctor, &skip_call, &self_walk);
+			let fast_ib_i = fast_path_indexed_borrowed(&view_ctor, &self_into);
+			let fast_w_i = fast_path_wire(&view_ctor, &skip_call, &self_into);
 			walk_body = quote! {
-				#fast
+				#fast_ib_w
+				#fast_w_w
 				let __v: #ty = self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
 				<#ty as ::revision::optimised::indexed::IndexedSetEncoded>::serialize_indexed_set(
@@ -747,8 +814,9 @@ fn emit_struct_methods(
 			};
 			into_walk_return_ty = walk_return_ty.clone();
 			into_walk_body = quote! {
-				#fast
 				let mut __self = self;
+				#fast_ib_i
+				#fast_w_i
 				let __v: #ty = __self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
 				<#ty as ::revision::optimised::indexed::IndexedSetEncoded>::serialize_indexed_set(
