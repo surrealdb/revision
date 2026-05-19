@@ -1,0 +1,5 @@
+error: `#[revision(fixed)]` is only valid on `u32`, `i32`, `u64`, `i64`, `u128`, `i128` fields
+ --> tests/compile_fail/fixed_attr_on_non_int.rs:9:8
+  |
+9 |     name: String,
+  |           ^^^^^^

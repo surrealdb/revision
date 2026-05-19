@@ -5,7 +5,7 @@ use syn::Ident;
 
 use crate::ast::{Enum, Field, Fields, Struct, Variant, Visit};
 
-use super::common::CalcDiscriminant;
+use super::common::{CalcDiscriminant, emit_serialize_fixed_le};
 use super::context::EncodingContext;
 use super::optimised;
 
@@ -100,10 +100,17 @@ impl<'ast> Visit<'ast> for SerializeVisitor<'_> {
 
 	fn visit_field(&mut self, i: &'ast Field) -> syn::Result<()> {
 		let name = &i.name;
+		let writer = quote! { writer };
+		let body = if i.attrs.options.fixed {
+			let value = quote! { #name };
+			emit_serialize_fixed_le(&i.ty, &value, &writer)?
+		} else {
+			quote! {
+				::revision::SerializeRevisioned::serialize_revisioned(#name, writer)?;
+			}
+		};
 
-		self.stream.append_all(quote! {
-			::revision::SerializeRevisioned::serialize_revisioned(#name,writer)?;
-		});
+		self.stream.append_all(body);
 
 		Ok(())
 	}
@@ -121,9 +128,16 @@ impl<'ast> Visit<'ast> for SerializeFields<'_> {
 		}
 
 		let name = i.name.to_binding();
-		self.stream.append_all(quote! {
-			::revision::SerializeRevisioned::serialize_revisioned(#name,writer)?;
-		});
+		let writer = quote! { writer };
+		let body = if i.attrs.options.fixed {
+			let value = quote! { #name };
+			emit_serialize_fixed_le(&i.ty, &value, &writer)?
+		} else {
+			quote! {
+				::revision::SerializeRevisioned::serialize_revisioned(#name, writer)?;
+			}
+		};
+		self.stream.append_all(body);
 
 		Ok(())
 	}

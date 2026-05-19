@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use syn::{Error, Ident};
+use proc_macro2::TokenStream;
+use quote::{ToTokens, format_ident, quote};
+use syn::{Error, Ident, Type};
 
 use crate::ast::{self, Visit};
 
@@ -120,4 +122,77 @@ impl<'ast> Visit<'ast> for GatherOverrides<'_> {
 		self.discriminants.insert(i.ident.clone(), descr.value);
 		Ok(())
 	}
+}
+
+// -----------------------------------------------------------------------------
+// Per-field encoding-override dispatch helpers
+// -----------------------------------------------------------------------------
+
+/// Names of primitive integer types that `#[revision(fixed)]` supports.
+///
+/// The set matches the integers whose `SerializeRevisioned`/`DeserializeRevisioned`
+/// dispatch on the `fixed-width-encoding` cargo feature — these are the
+/// types where varint vs fixed actually differ on the wire.
+const FIXED_SUPPORTED_INTS: &[&str] = &["u32", "i32", "u64", "i64", "u128", "i128"];
+
+/// If `ty` is one of the FIXED_SUPPORTED_INTS, return its name; else `None`.
+///
+/// The match is syntactic (compares the type's token stream against the
+/// known names) and so does not see through type aliases. That mirrors the
+/// existing constraints elsewhere in the macro.
+pub fn fixed_int_name(ty: &Type) -> Option<&'static str> {
+	let s = ty.to_token_stream().to_string();
+	// `to_token_stream` for a primitive type produces just the bare name.
+	let trimmed = s.trim();
+	FIXED_SUPPORTED_INTS.iter().find(|name| **name == trimmed).copied()
+}
+
+/// Emit `serialize_<int>_fixed_le(*value, writer)` for a `#[revision(fixed)]`
+/// field. Returns an error if `ty` is not a supported primitive integer.
+pub fn emit_serialize_fixed_le(
+	ty: &Type,
+	value_expr: &TokenStream,
+	writer_expr: &TokenStream,
+) -> syn::Result<TokenStream> {
+	let kind = fixed_int_name(ty).ok_or_else(|| {
+		Error::new_spanned(
+			ty,
+			"`#[revision(fixed)]` is only valid on `u32`, `i32`, `u64`, `i64`, `u128`, `i128` fields",
+		)
+	})?;
+	let fn_name = format_ident!("encode_{}_fixed_le", kind);
+	Ok(quote! {
+		::revision::implementations::primitives::#fn_name(*#value_expr, #writer_expr)?;
+	})
+}
+
+/// Emit `decode_<int>_fixed_le(reader)` for a `#[revision(fixed)]` field.
+pub fn emit_deserialize_fixed_le(
+	ty: &Type,
+	reader_expr: &TokenStream,
+) -> syn::Result<TokenStream> {
+	let kind = fixed_int_name(ty).ok_or_else(|| {
+		Error::new_spanned(
+			ty,
+			"`#[revision(fixed)]` is only valid on `u32`, `i32`, `u64`, `i64`, `u128`, `i128` fields",
+		)
+	})?;
+	let fn_name = format_ident!("decode_{}_fixed_le", kind);
+	Ok(quote! {
+		::revision::implementations::primitives::#fn_name(#reader_expr)?
+	})
+}
+
+/// Emit `skip_<int>_fixed_le(reader)` for a `#[revision(fixed)]` field.
+pub fn emit_skip_fixed_le(ty: &Type, reader_expr: &TokenStream) -> syn::Result<TokenStream> {
+	let kind = fixed_int_name(ty).ok_or_else(|| {
+		Error::new_spanned(
+			ty,
+			"`#[revision(fixed)]` is only valid on `u32`, `i32`, `u64`, `i64`, `u128`, `i128` fields",
+		)
+	})?;
+	let fn_name = format_ident!("skip_{}_fixed_le", kind);
+	Ok(quote! {
+		::revision::implementations::primitives::#fn_name(#reader_expr)?;
+	})
 }

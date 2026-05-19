@@ -6,7 +6,7 @@ use syn::{Ident, Index};
 
 use crate::ast::{Enum, Fields, Struct, Variant, Visit};
 
-use super::common::CalcDiscriminant;
+use super::common::{CalcDiscriminant, emit_deserialize_fixed_le};
 use super::context::EncodingContext;
 use super::optimised;
 
@@ -400,9 +400,16 @@ impl<'ast> Visit<'ast> for DeserializeFields<'_> {
 
 					if exists_target && exists_current {
 						let ty = &f.ty;
-						self.stream.append_all(quote! {
-							let #binding = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
-						})
+						let reader_expr = quote! { reader };
+						let body = if f.attrs.options.fixed {
+							let call = emit_deserialize_fixed_le(ty, &reader_expr)?;
+							quote! { let #binding = #call; }
+						} else {
+							quote! {
+								let #binding = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
+							}
+						};
+						self.stream.append_all(body);
 					} else if exists_target && !exists_current {
 						if let Some(default) = f.attrs.options.default.as_ref() {
 							let default = Ident::new(&default.value(), default.span());
@@ -417,9 +424,16 @@ impl<'ast> Visit<'ast> for DeserializeFields<'_> {
 						}
 					} else if !exists_target && exists_current {
 						let ty = &f.ty;
-						self.stream.append_all(quote! {
-							let #binding = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
-						})
+						let reader_expr = quote! { reader };
+						let body = if f.attrs.options.fixed {
+							let call = emit_deserialize_fixed_le(ty, &reader_expr)?;
+							quote! { let #binding = #call; }
+						} else {
+							quote! {
+								let #binding = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
+							}
+						};
+						self.stream.append_all(body);
 					}
 				}
 			}

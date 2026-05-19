@@ -34,6 +34,9 @@ mod kw {
 	syn::custom_keyword!(indexed_map);
 	syn::custom_keyword!(indexed_seq);
 	syn::custom_keyword!(indexed_set);
+	// Per-field encoding overrides regardless of crate-wide cargo features.
+	syn::custom_keyword!(fixed);
+	syn::custom_keyword!(specialised);
 }
 
 #[derive(Debug)]
@@ -167,6 +170,16 @@ pub struct FieldOptions {
 	pub indexed_seq: bool,
 	/// `#[revision(indexed_set)]`: same, for set-shaped fields.
 	pub indexed_set: bool,
+	/// `#[revision(fixed)]`: force fixed-width little-endian encoding for
+	/// primitive integer fields, regardless of the crate-wide
+	/// `fixed-width-encoding` cargo feature. Valid on `u32`/`i32`/`u64`/
+	/// `i64`/`u128`/`i128` fields.
+	pub fixed: bool,
+	/// `#[revision(specialised)]`: force bulk `Vec<T>` encoding for primitive
+	/// element types, regardless of the crate-wide `specialised-vectors`
+	/// cargo feature. Valid on `Vec<T>` fields where `T` is a primitive in
+	/// the bulk-encoded list.
+	pub specialised: bool,
 }
 
 impl FieldOptions {
@@ -184,6 +197,8 @@ pub enum FieldOption {
 	IndexedMap(kw::indexed_map),
 	IndexedSeq(kw::indexed_seq),
 	IndexedSet(kw::indexed_set),
+	Fixed(kw::fixed),
+	Specialised(kw::specialised),
 }
 
 impl Parse for FieldOption {
@@ -208,6 +223,12 @@ impl Parse for FieldOption {
 		}
 		if input.peek(kw::indexed_set) {
 			return Ok(FieldOption::IndexedSet(input.parse()?));
+		}
+		if input.peek(kw::fixed) {
+			return Ok(FieldOption::Fixed(input.parse()?));
+		}
+		if input.peek(kw::specialised) {
+			return Ok(FieldOption::Specialised(input.parse()?));
 		}
 
 		Err(input.error("invalid field option"))
@@ -284,6 +305,18 @@ impl AttributeOptions for FieldOptions {
 						));
 					}
 					res.indexed_set = true;
+				}
+				FieldOption::Fixed(kw) => {
+					if res.fixed {
+						return Err(Error::new(kw.span(), "tried to set an option twice"));
+					}
+					res.fixed = true;
+				}
+				FieldOption::Specialised(kw) => {
+					if res.specialised {
+						return Err(Error::new(kw.span(), "tried to set an option twice"));
+					}
+					res.specialised = true;
 				}
 			}
 		}
