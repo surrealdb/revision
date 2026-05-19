@@ -22,7 +22,7 @@ const SAMPLES: usize = 10_000;
 // Fixtures
 // -----------------------------------------------------------------------------
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 struct OptStruct {
 	a: u32,
@@ -31,7 +31,7 @@ struct OptStruct {
 	d: i32,
 }
 
-#[revisioned(revision(1, encoding = "optimised", indexed_struct))]
+#[revisioned(revision(1, optimised, indexed_struct))]
 #[derive(Debug, Clone, PartialEq)]
 struct IndexedStruct {
 	first: u32,
@@ -40,7 +40,7 @@ struct IndexedStruct {
 	fourth: bool,
 }
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 enum OptEnum {
 	#[revision(size = "inline")]

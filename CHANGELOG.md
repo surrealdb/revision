@@ -100,7 +100,7 @@ unchanged on the wire; the new behaviour is opt-in per revision.
 
 #### New `#[revisioned(...)]` history syntax
 
-- `#[revisioned(revision(N, encoding = "optimised", indexed_struct))]`
+- `#[revisioned(revision(N, optimised, indexed_struct))]`
   declares one revision's encoding choices. Multiple `revision(...)`
   entries on the same type spell a contiguous history; the parser
   rejects gaps, duplicates, and mixing legacy `revision = N` with the
@@ -131,7 +131,7 @@ the offset table would be pure overhead at those sizes.
 
 #### Per-variant size class for optimised enums
 
-Variants of an `encoding = "optimised"` enum declare a tag class:
+Variants of an `optimised` enum declare a tag class:
 
 - `#[revision(size = "inline")]` — unit variants, 1 byte total on
   the wire (just the tag).
@@ -233,7 +233,7 @@ history entry:
 ```rust,ignore
 #[revisioned(
     revision(1),                                           // existing on-disk data
-    revision(2, encoding = "optimised", indexed_struct),
+    revision(2, optimised, indexed_struct),
 )]
 struct Wide {
     id: u32,

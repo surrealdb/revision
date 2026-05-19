@@ -3,7 +3,7 @@
 //! the user must opt individual fields in via `#[revision(indexed_map)]`.
 use revision::revisioned;
 
-#[revisioned(revision(1, encoding = "optimised", map = "indexed"))]
+#[revisioned(revision(1, optimised, map = "indexed"))]
 struct BadTypeLevelMap {
 	a: u32,
 }

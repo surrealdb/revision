@@ -5,7 +5,7 @@
 
 use revision::prelude::*;
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 #[derive(Debug, PartialEq)]
 enum Value {
 	#[revision(size = "inline")]

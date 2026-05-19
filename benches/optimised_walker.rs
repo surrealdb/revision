@@ -23,7 +23,7 @@ struct WideLegacy {
 	h: u32,
 }
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 #[derive(Clone)]
 struct WideOpt {
 	a: u32,

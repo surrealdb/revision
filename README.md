@@ -511,8 +511,8 @@ Types declare which revisions use it via the **history syntax**:
 ```rust,ignore
 #[revisioned(
     revision(1),                                      // legacy layout
-    revision(2, encoding = "optimised"),              // tagged envelope
-    revision(3, encoding = "optimised", indexed_struct),
+    revision(2, optimised),              // tagged envelope
+    revision(3, optimised, indexed_struct),
 )]
 struct Wide { /* fields */ }
 ```
@@ -530,12 +530,12 @@ form).
 - Mixing `revision = N` with `revision(N)` on the same type is a
   compile error.
 - Encoding-specific attributes (`map = "..."`, `seq = "..."`,
-  `struct = "..."`) require `encoding = "optimised"` on the same entry.
+  `struct = "..."`) require `optimised` on the same entry.
 
 ### Wire layout (per-entry)
 
 A type's outer envelope still begins with the `u16` revision varint.
-Under `encoding = "optimised"` the body that follows is:
+Under `optimised` the body that follows is:
 
 ```text
 struct:  u32_le payload_length || [optional u32_le; field_count] || fields
@@ -624,7 +624,7 @@ struct Profile {
 // After — two revisions, the new one uses optimised:
 #[revisioned(
     revision(1),                                        // existing on-disk data
-    revision(2, encoding = "optimised", indexed_struct),
+    revision(2, optimised, indexed_struct),
 )]
 struct Profile {
     id: u32,
@@ -659,7 +659,7 @@ attributes:
 use std::collections::{BTreeMap, BTreeSet};
 use revision::prelude::*;
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 struct Doc {
     id: u32,
     #[revision(indexed_map)]
@@ -720,7 +720,7 @@ Inline variants are one byte total on the wire; varlen variants
 carry a `u32_le` length so skip is O(1).
 
 ```rust,ignore
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 enum Event {
     #[revision(size = "inline")]
     Heartbeat,

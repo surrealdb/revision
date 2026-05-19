@@ -1,6 +1,6 @@
 //! Optimised wire format primitives.
 //!
-//! Types under `#[revisioned(revision(N, encoding = "optimised", ...))]` use a
+//! Types under `#[revisioned(revision(N, optimised, ...))]` use a
 //! compact tagged-value envelope on the wire. This module provides the runtime
 //! pieces the derive macro reaches into:
 //!

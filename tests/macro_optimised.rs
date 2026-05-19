@@ -1,4 +1,4 @@
-//! End-to-end tests for `encoding = "optimised"` codegen on structs.
+//! End-to-end tests for `optimised` codegen on structs.
 //!
 //! These tests prove the macro emits a runtime-functional optimised encoding:
 //! `u16 revision || u32_le payload_length || [optional prologue] || fields`.
@@ -15,14 +15,14 @@ fn rev_header_size() -> usize {
 	buf.len()
 }
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 struct SimpleOptimised {
 	a: u32,
 	b: u32,
 }
 
-#[revisioned(revision(1, encoding = "optimised", indexed_struct))]
+#[revisioned(revision(1, optimised, indexed_struct))]
 #[derive(Debug, Clone, PartialEq)]
 struct IndexedOptimised {
 	a: u32,
@@ -122,7 +122,7 @@ fn optimised_struct_preserves_field_values_across_a_few_sizes() {
 // which makes it a clean fit for `fixed(N)`. Primitive integer types use
 // varint encoding so they don't have a statically-known byte length and
 // shouldn't be used inside a fixed-size variant directly.
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 enum OptimisedEnum {
 	#[revision(size = "inline")]

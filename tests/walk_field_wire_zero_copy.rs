@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 
 use revision::prelude::*;
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 struct SequentialDoc {
 	id: u32,

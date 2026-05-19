@@ -1,7 +1,7 @@
 //! Per-enum static size tables for optimised fixed-class variants.
 //!
 //! The macro generates a `static SIZE_TABLE: [u8; N]` per enum that opts into
-//! `encoding = "optimised"`, indexed by variant id. The lookup is then a single
+//! `optimised`, indexed by variant id. The lookup is then a single
 //! array index. This module exposes the helper traits the macro reaches.
 
 /// Lookup variant size by id. Implemented by macro-generated tables.

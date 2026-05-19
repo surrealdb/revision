@@ -20,7 +20,7 @@ use crate::optimised::validation::validate_struct_prologue;
 /// Walker over an indexed-struct payload borrowed from `&'p [u8]`.
 ///
 /// Constructed by the derive macro when a type opts into
-/// `#[revisioned(revision(N, encoding = "optimised", indexed_struct))]`.
+/// `#[revisioned(revision(N, optimised, indexed_struct))]`.
 /// Hand-constructed use is supported for testing and surrealdb-style
 /// pre-decode filters.
 ///
@@ -28,7 +28,7 @@ use crate::optimised::validation::validate_struct_prologue;
 /// use revision::optimised::IndexedStructWalker;
 /// use revision::prelude::*;
 ///
-/// #[revisioned(revision(1, encoding = "optimised", indexed_struct))]
+/// #[revisioned(revision(1, optimised, indexed_struct))]
 /// #[derive(PartialEq, Debug)]
 /// struct Doc {
 ///     id: u32,

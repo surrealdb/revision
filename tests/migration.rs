@@ -22,21 +22,21 @@ struct OnlyRev1 {
 	b: u32,
 }
 
-#[revisioned(revision(1), revision(2, encoding = "optimised"))]
+#[revisioned(revision(1), revision(2, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 struct LegacyAndOptimised {
 	a: u32,
 	b: u32,
 }
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 struct OptimisedFromDayOne {
 	a: u32,
 	b: u32,
 }
 
-#[revisioned(revision(1), revision(2), revision(3, encoding = "optimised"))]
+#[revisioned(revision(1), revision(2), revision(3, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 struct ThreeRevisions {
 	a: u32,
@@ -44,7 +44,7 @@ struct ThreeRevisions {
 }
 
 // A type that grows a field across an encoding boundary.
-#[revisioned(revision(1), revision(2, encoding = "optimised"))]
+#[revisioned(revision(1), revision(2, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 struct GrowsAcrossBoundary {
 	a: u32,
@@ -270,7 +270,7 @@ fn pin_optimised_rev1_struct_layout() {
 }
 
 #[cfg(not(feature = "fixed-width-encoding"))]
-#[revisioned(revision(1, encoding = "optimised", indexed_struct))]
+#[revisioned(revision(1, optimised, indexed_struct))]
 #[derive(Debug, PartialEq)]
 struct PinIndexedStruct {
 	a: u32,
@@ -304,7 +304,7 @@ fn pin_optimised_indexed_struct_layout() {
 }
 
 #[cfg(not(feature = "fixed-width-encoding"))]
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 #[derive(Debug, PartialEq)]
 enum PinOptimisedEnum {
 	#[revision(size = "varlen")]
@@ -349,7 +349,7 @@ struct InnerLegacy {
 	y: u32,
 }
 
-#[revisioned(revision(1), revision(2, encoding = "optimised"))]
+#[revisioned(revision(1), revision(2, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 struct InnerOptimised {
 	x: u32,
@@ -363,7 +363,7 @@ struct OuterLegacy {
 	inner: InnerOptimised,
 }
 
-#[revisioned(revision(1), revision(2, encoding = "optimised"))]
+#[revisioned(revision(1), revision(2, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 struct OuterOptimised {
 	tag: u32,
@@ -406,7 +406,7 @@ fn optimised_outer_with_legacy_inner_round_trips() {
 // Variant lifecycle crossing the encoding boundary
 // -----------------------------------------------------------------------------
 
-#[revisioned(revision(1), revision(2, encoding = "optimised"))]
+#[revisioned(revision(1), revision(2, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 enum VariantLifecycle {
 	#[revision(end = 2, convert_fn = "migrate_old", size = "fixed(8)")]
@@ -444,13 +444,13 @@ fn variant_removed_across_optimised_boundary_routes_through_convert_fn() {
 
 #[test]
 fn nested_optimised_both_levels_round_trips() {
-	#[revisioned(revision(1, encoding = "optimised"))]
+	#[revisioned(revision(1, optimised))]
 	#[derive(Debug, Clone, PartialEq)]
 	struct Inner2 {
 		a: u32,
 	}
 
-	#[revisioned(revision(1, encoding = "optimised"))]
+	#[revisioned(revision(1, optimised))]
 	#[derive(Debug, Clone, PartialEq)]
 	struct Outer2 {
 		tag: u32,

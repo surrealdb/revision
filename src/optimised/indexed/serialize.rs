@@ -319,7 +319,7 @@ where
 /// use std::collections::BTreeMap;
 /// use revision::prelude::*;
 ///
-/// #[revisioned(revision(1, encoding = "optimised"))]
+/// #[revisioned(revision(1, optimised))]
 /// struct Doc {
 ///     #[revision(indexed_map)]
 ///     fields: BTreeMap<String, u32>,
@@ -462,7 +462,7 @@ impl<'r, T> IndexedSetView<'r, T> {
 /// ```
 /// use revision::prelude::*;
 ///
-/// #[revisioned(revision(1, encoding = "optimised"))]
+/// #[revisioned(revision(1, optimised))]
 /// struct Doc {
 ///     #[revision(indexed_seq)]
 ///     tags: Vec<String>,

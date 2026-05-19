@@ -26,11 +26,14 @@ mod kw {
 	syn::custom_keyword!(skip);
 	syn::custom_keyword!(walk);
 	// Optimised-wire-format keywords.
-	syn::custom_keyword!(encoding);
+	// Per-revision flags (collapsed to bare keywords — defaults are
+	// implicit when unspecified, so a key=value form is only justified
+	// when the keyword has more than one non-default value, which none
+	// of these do).
+	syn::custom_keyword!(optimised);
 	syn::custom_keyword!(map);
 	syn::custom_keyword!(seq);
 	syn::custom_keyword!(size);
-	// Per-revision struct-layout flag (sibling of `encoding = "optimised"`).
 	syn::custom_keyword!(indexed_struct);
 	// Per-field encoding flags for optimised revisions.
 	syn::custom_keyword!(indexed_map);
@@ -370,7 +373,7 @@ pub enum ItemOption {
 	Walk(ValueOption<kw::walk, LitBool>),
 }
 
-/// Parsed `revision(N, encoding = "...", map = "...", seq = "...", indexed_struct)`.
+/// Parsed `revision(N, optimised, map = "...", seq = "...", indexed_struct)`.
 pub struct RevisionEntryGroup {
 	pub kw: kw::revision,
 	pub _paren: token::Paren,
@@ -379,7 +382,7 @@ pub struct RevisionEntryGroup {
 }
 
 pub enum RevisionEntryOption {
-	Encoding(ValueOption<kw::encoding, LitStr>),
+	Optimised(kw::optimised),
 	Map(ValueOption<kw::map, LitStr>),
 	Seq(ValueOption<kw::seq, LitStr>),
 	IndexedStruct(kw::indexed_struct),
@@ -410,8 +413,8 @@ impl Parse for RevisionEntryGroup {
 
 impl Parse for RevisionEntryOption {
 	fn parse(input: ParseStream) -> syn::Result<Self> {
-		if input.peek(kw::encoding) {
-			return Ok(RevisionEntryOption::Encoding(input.parse()?));
+		if input.peek(kw::optimised) {
+			return Ok(RevisionEntryOption::Optimised(input.parse()?));
 		}
 		if input.peek(kw::map) {
 			return Ok(RevisionEntryOption::Map(input.parse()?));
@@ -423,7 +426,7 @@ impl Parse for RevisionEntryOption {
 			return Ok(RevisionEntryOption::IndexedStruct(input.parse()?));
 		}
 		Err(input.error(
-			"invalid `revision(...)` option (expected `encoding`, `map`, `seq`, or `indexed_struct`)",
+			"invalid `revision(...)` option (expected `optimised`, `map`, `seq`, or `indexed_struct`)",
 		))
 	}
 }
@@ -458,23 +461,10 @@ fn build_history_entry(group: RevisionEntryGroup) -> syn::Result<HistoryEntry> {
 	let span = group.kw.span();
 	let mut entry = HistoryEntry::legacy(group.revision);
 	entry.span = span;
-	let mut saw_encoding = false;
 	for opt in group.options {
 		match opt {
-			RevisionEntryOption::Encoding(v) => {
-				saw_encoding = true;
-				match v.value.value().as_str() {
-					"legacy" => entry.encoding = Encoding::Legacy,
-					"optimised" => entry.encoding = Encoding::Optimised,
-					other => {
-						return Err(Error::new(
-							v.value.span(),
-							format!(
-								"unknown encoding `{other}` (expected `legacy` or `optimised`)"
-							),
-						));
-					}
-				}
+			RevisionEntryOption::Optimised(_kw) => {
+				entry.encoding = Encoding::Optimised;
 			}
 			RevisionEntryOption::Map(v) => match v.value.value().as_str() {
 				"default" => entry.map = MapEncoding::Default,
@@ -512,14 +502,14 @@ fn build_history_entry(group: RevisionEntryGroup) -> syn::Result<HistoryEntry> {
 		}
 	}
 	// Reject per-encoding attrs on a legacy entry — keeps the AST clean.
-	if (!saw_encoding || entry.encoding == Encoding::Legacy)
+	if entry.encoding == Encoding::Legacy
 		&& (entry.map != MapEncoding::Default
 			|| entry.seq != SeqEncoding::Default
 			|| entry.struct_kind != StructEncoding::Default)
 	{
 		return Err(Error::new(
 			entry.span,
-			"encoding-specific attributes (`map`, `seq`, `indexed_struct`) require `encoding = \"optimised\"` on the same revision entry",
+			"encoding-specific attributes (`map`, `seq`, `indexed_struct`) require the `optimised` flag on the same revision entry",
 		));
 	}
 	Ok(entry)

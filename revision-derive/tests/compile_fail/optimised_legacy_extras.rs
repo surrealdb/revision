@@ -1,5 +1,5 @@
 //! Encoding-specific attributes (`map`, `seq`, `struct`) require
-//! `encoding = "optimised"` on the same revision entry.
+//! `optimised` on the same revision entry.
 use revision::revisioned;
 
 #[revisioned(revision(1, map = "indexed"))]

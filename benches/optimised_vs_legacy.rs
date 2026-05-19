@@ -1,7 +1,7 @@
 //! Direct legacy vs optimised wire-format comparison.
 //!
 //! Pairs of identically-shaped types — one with `revision = N` (legacy) and
-//! one with `revision(N, encoding = "optimised", ...)` — exercise the encode,
+//! one with `revision(N, optimised, ...)` — exercise the encode,
 //! decode, skip, and wire-size paths side-by-side. Criterion groups read as
 //! "operation on type X under legacy vs optimised".
 
@@ -27,7 +27,7 @@ struct WideLegacy {
 	h: u32,
 }
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 #[derive(Clone)]
 struct WideOptimised {
 	a: u32,
@@ -40,7 +40,7 @@ struct WideOptimised {
 	h: u32,
 }
 
-#[revisioned(revision(1, encoding = "optimised", indexed_struct))]
+#[revisioned(revision(1, optimised, indexed_struct))]
 #[derive(Clone)]
 struct WideIndexed {
 	a: u32,

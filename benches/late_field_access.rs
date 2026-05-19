@@ -38,7 +38,7 @@ struct NestedLegacy {
 	d: u64,
 }
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 #[derive(Clone)]
 struct NestedOpt {
 	a: u32,
@@ -78,7 +78,7 @@ struct Wide25Legacy {
 	final_label: String,
 }
 
-#[revisioned(revision(1, encoding = "optimised", indexed_struct))]
+#[revisioned(revision(1, optimised, indexed_struct))]
 #[derive(Clone)]
 struct Wide25IndexedOpt {
 	id: u32,
