@@ -1307,11 +1307,11 @@ fn alive_field_count(s: &Struct, revision: usize) -> usize {
 
 /// Emit the walker-construction arm for an optimised enum revision.
 ///
-/// Reads the 1-byte tag, slurps the variant payload per the declared size
-/// class, and returns a `Materialised` walker whose `discriminant` field holds
-/// the variant id from the tag. The existing per-variant `decode_<v>` /
-/// `is_<v>` / `into_<v>` methods on the `Materialised` arm then read fields
-/// directly from the slurped payload.
+/// Reads the 1-byte tag and borrows the variant payload from the reader's
+/// buffer per the declared size class, returning an `OptimisedBorrowed`
+/// walker. Dispatch is via two static `[u8; 32]` tables (size class code +
+/// fixed size) keyed by variant id; the body-read match has three arms
+/// regardless of how many variants the enum declares.
 fn emit_optimised_enum_walker_arm(
 	e: &Enum,
 	entry: &HistoryEntry,
@@ -1322,7 +1322,12 @@ fn emit_optimised_enum_walker_arm(
 	// Compute the variant_id -> declared SizeClass map for this entry.
 	let mut discriminants = HashMap::new();
 	CalcDiscriminant::new(entry.revision.value, &mut discriminants).visit_enum(e)?;
-	let mut sizes: HashMap<u32, VariantSize> = HashMap::new();
+
+	// Build two parallel [u8; 32] tables:
+	// - size_class_table: 0=Inline, 1=Fixed, 2=Varlen, 0xFF=unknown (no such variant id)
+	// - fixed_size_table: byte length for Fixed variants, 0 otherwise
+	let mut size_class_table: [u8; 32] = [0xFFu8; 32];
+	let mut fixed_size_table: [u8; 32] = [0u8; 32];
 	for v in e.variants.iter().filter(|v| v.attrs.options.exists_at(entry.revision.value)) {
 		let id = *discriminants.get(&v.ident).expect("alive variant has discriminant");
 		let Some(spanned_size) = v.attrs.options.size.as_ref() else {
@@ -1331,43 +1336,19 @@ fn emit_optimised_enum_walker_arm(
 				"variant requires `#[revision(size = \"inline\" | \"fixed(N)\" | \"varlen\")]` under `encoding = \"optimised\"`",
 			));
 		};
-		sizes.insert(id, spanned_size.size);
+		let id_idx = id as usize;
+		match spanned_size.size {
+			VariantSize::Inline => size_class_table[id_idx] = 0,
+			VariantSize::Fixed(n) => {
+				size_class_table[id_idx] = 1;
+				fixed_size_table[id_idx] = n;
+			}
+			VariantSize::Varlen => size_class_table[id_idx] = 2,
+		}
 	}
 
-	// Build the (variant_id, size_class) → borrow body match arms.
-	//
-	// Each arm peeks the body bytes from the reader's buffer and advances past
-	// them. The `BorrowedReader` contract guarantees the bytes stay valid for
-	// the reader's lifetime `'r`, so no allocation is needed.
-	let mut arms = TokenStream::new();
-	for (id, size) in sizes.iter() {
-		let id_lit = *id as u8;
-		let arm = match size {
-			VariantSize::Inline => quote! {
-				(#id_lit, ::revision::optimised::tag::SizeClass::Inline) => {
-					&[][..]
-				}
-			},
-			VariantSize::Fixed(n) => {
-				let n_lit = *n as usize;
-				quote! {
-					(#id_lit, ::revision::optimised::tag::SizeClass::Fixed) => {
-						::revision::read_borrowed_bytes(reader, #n_lit)?
-					}
-				}
-			}
-			VariantSize::Varlen => quote! {
-				(#id_lit, ::revision::optimised::tag::SizeClass::Varlen) => {
-					let mut __len_buf = [0u8; 4];
-					::std::io::Read::read_exact(reader, &mut __len_buf)
-						.map_err(::revision::Error::Io)?;
-					let __len = u32::from_le_bytes(__len_buf) as usize;
-					::revision::read_borrowed_bytes(reader, __len)?
-				}
-			},
-		};
-		arms.append_all(arm);
-	}
+	let sc_lits: Vec<u8> = size_class_table.to_vec();
+	let fx_lits: Vec<u8> = fixed_size_table.to_vec();
 
 	let bad_arm_msg = format!(
 		"unknown variant tag for optimised enum at revision {rev_lit}: variant_id={{}} size_class={{:?}}",
@@ -1375,15 +1356,40 @@ fn emit_optimised_enum_walker_arm(
 
 	Ok(quote! {
 		#rev_lit => {
+			// Per-enum static tables — laid out once, indexed by variant id.
+			// `0xFF` in the size_class table marks variant ids the enum
+			// doesn't declare at this revision.
+			static __SIZE_CLASS_TABLE: [u8; 32] = [#(#sc_lits),*];
+			static __FIXED_SIZE_TABLE: [u8; 32] = [#(#fx_lits),*];
+
 			let __tag = ::revision::optimised::tag::read_tag(reader)?;
 			let __sc = __tag.size_class()?;
 			let __variant_id = __tag.variant_id();
-			let __payload: &'r [u8] = match (__variant_id, __sc) {
-				#arms
-				_ => {
-					return ::std::result::Result::Err(::revision::Error::Deserialize(
-						::std::format!(#bad_arm_msg, __variant_id, __sc),
-					));
+			let __expected_code = __SIZE_CLASS_TABLE[__variant_id as usize];
+			let __actual_code: u8 = match __sc {
+				::revision::optimised::tag::SizeClass::Inline => 0,
+				::revision::optimised::tag::SizeClass::Fixed => 1,
+				::revision::optimised::tag::SizeClass::Varlen => 2,
+			};
+			if __expected_code == 0xFF || __expected_code != __actual_code {
+				return ::std::result::Result::Err(::revision::Error::Deserialize(
+					::std::format!(#bad_arm_msg, __variant_id, __sc),
+				));
+			}
+			// 3-arm match regardless of variant count — the static tables
+			// have already validated the (id, sc) pair.
+			let __payload: &'r [u8] = match __sc {
+				::revision::optimised::tag::SizeClass::Inline => &[][..],
+				::revision::optimised::tag::SizeClass::Fixed => {
+					let __n = __FIXED_SIZE_TABLE[__variant_id as usize] as usize;
+					::revision::read_borrowed_bytes(reader, __n)?
+				}
+				::revision::optimised::tag::SizeClass::Varlen => {
+					let mut __len_buf = [0u8; 4];
+					::std::io::Read::read_exact(reader, &mut __len_buf)
+						.map_err(::revision::Error::Io)?;
+					let __len = u32::from_le_bytes(__len_buf) as usize;
+					::revision::read_borrowed_bytes(reader, __len)?
 				}
 			};
 			return ::std::result::Result::Ok(#walker_name {
