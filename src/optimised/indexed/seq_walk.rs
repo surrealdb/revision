@@ -47,9 +47,20 @@ impl<'p, T> IndexedSeqWalker<'p, T> {
 	///
 	/// Skips the O(len) offset-table check that [`from_payload`] runs. Use
 	/// only when the bytes are trusted (e.g. freshly written by the same
-	/// process). On untrusted input a malformed prologue produces silent
-	/// wrong-element bytes rather than a clean
-	/// [`Error::OptimisedOffsetsNonMonotonic`].
+	/// process).
+	///
+	/// # Panics on malformed input
+	///
+	/// On untrusted input this trades a clean
+	/// [`Error::OptimisedOffsetsNonMonotonic`] at construction for a
+	/// **panic on element access** if the offset table is corrupt:
+	/// [`element_bytes`](Self::element_bytes) slices the body by raw
+	/// offsets read from the prologue, so offsets past the body or
+	/// non-monotonic adjacent entries trigger slice-out-of-bounds
+	/// panics.
+	///
+	/// This is intended behaviour: the caller asserted trust. Callers
+	/// who cannot make that assertion should use [`from_payload`].
 	///
 	/// [`from_payload`]: Self::from_payload
 	/// [`Error::OptimisedOffsetsNonMonotonic`]: crate::Error::OptimisedOffsetsNonMonotonic

@@ -96,14 +96,31 @@ impl<'p> IndexedStructWalker<'p> {
 	/// Skips the O(field_count) offset-table check that [`from_payload`] runs.
 	/// Use only when the bytes are trusted — typically when they were
 	/// produced by `to_vec` or another in-process serialiser in the same
-	/// run. On untrusted input this trades a clean
-	/// [`Error::OptimisedOffsetsNonMonotonic`] / [`Error::OptimisedOffsetOutOfRange`]
-	/// for silent wrong-field-bytes on access (the offset lookup still
-	/// bounds-checks, but malformed offset tables can return overlapping or
-	/// out-of-order slices for adjacent fields).
+	/// run.
 	///
-	/// Returns `Error::OptimisedSubReaderOverrun` only when the payload is
-	/// too short to hold the offset table itself.
+	/// # Panics on malformed input
+	///
+	/// On untrusted input this trades a clean
+	/// [`Error::OptimisedOffsetsNonMonotonic`] /
+	/// [`Error::OptimisedOffsetOutOfRange`] at construction for a **panic
+	/// on field access** if the offset table is corrupt. Specifically,
+	/// [`field_bytes`](Self::field_bytes) and
+	/// [`decode_field`](Self::decode_field) slice the payload by raw
+	/// indices read from the prologue, so an offset that exceeds
+	/// `payload.len()` or whose neighbour is smaller (non-monotonic)
+	/// triggers a slice-out-of-bounds panic via standard `Index`/`Range`
+	/// bounds checking.
+	///
+	/// This is the intended behaviour: the caller asserted trust by
+	/// choosing this constructor, and a panic on corrupted "trusted"
+	/// bytes signals that the trust assumption was wrong. Callers who
+	/// cannot make that assertion should use [`from_payload`] instead,
+	/// which fails cleanly with a typed error.
+	///
+	/// Returns `Error::OptimisedSubReaderOverrun` only when the payload
+	/// is too short to hold the offset table itself — that check is
+	/// kept because constructing the walker over a payload shorter than
+	/// `field_count * 4` would have no defensible interpretation.
 	///
 	/// [`from_payload`]: Self::from_payload
 	/// [`Error::OptimisedOffsetsNonMonotonic`]: crate::Error::OptimisedOffsetsNonMonotonic

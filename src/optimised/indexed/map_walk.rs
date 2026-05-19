@@ -53,11 +53,23 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 	/// ascending key region).
 	///
 	/// Skips the O(len) validation that [`from_payload`] runs. Use only when
-	/// the bytes are trusted (e.g. freshly written by the same process). On
-	/// untrusted input a malformed prologue produces silent wrong-key /
-	/// wrong-value bytes rather than a clean
+	/// the bytes are trusted (e.g. freshly written by the same process).
+	///
+	/// # Panics on malformed input
+	///
+	/// On untrusted input this trades a clean
 	/// [`Error::OptimisedOffsetsNonMonotonic`] /
-	/// [`Error::OptimisedKeyRegionNotAscending`].
+	/// [`Error::OptimisedKeyRegionNotAscending`] at construction for a
+	/// **panic on access** if the offset table or key/value regions are
+	/// corrupt: per-entry accessors slice the regions by raw offsets,
+	/// triggering slice-out-of-bounds panics on offsets past the region's
+	/// length or non-monotonic adjacent entries. Binary-search lookups
+	/// also rely on the ascending invariant — searching a non-ascending
+	/// region may return wrong results without panicking.
+	///
+	/// This is intended behaviour: the caller asserted trust by choosing
+	/// this constructor. Callers who cannot make that assertion should
+	/// use [`from_payload`].
 	///
 	/// [`from_payload`]: Self::from_payload
 	/// [`Error::OptimisedOffsetsNonMonotonic`]: crate::Error::OptimisedOffsetsNonMonotonic
