@@ -302,12 +302,15 @@ where
 // Owned views (walker handles)
 // -----------------------------------------------------------------------------
 
-/// Owned wire-bytes handle for an indexed map field.
+/// Wire-bytes handle for an indexed map field.
 ///
 /// The walker's per-field `walk_<field>` / `into_walk_<field>` accessors
-/// return one of these for `#[revision(indexed_map)]` fields. The view owns
-/// the encoded payload as `Vec<u8>`; call [`walker`](Self::walker) to borrow
-/// an [`IndexedMapWalker`] from it for binary-search lookups.
+/// return one of these for `#[revision(indexed_map)]` fields. The view holds
+/// a `Cow<'r, [u8]>` over the encoded payload — borrowed from the parent
+/// walker's source when the source is slice-backed (the common case),
+/// owned only when the cross-revision `convert_fn` path re-encodes. Call
+/// [`walker`](Self::walker) to borrow an [`IndexedMapWalker`] from it for
+/// binary-search lookups.
 ///
 /// Lifetimes: the walker borrows from the view, so the view must outlive the
 /// walker.
@@ -345,21 +348,21 @@ where
 /// ```
 ///
 /// [`IndexedMapWalker`]: crate::optimised::IndexedMapWalker
-pub struct OwnedIndexedMapView<K, V> {
-	bytes: Vec<u8>,
+pub struct OwnedIndexedMapView<'r, K, V> {
+	bytes: std::borrow::Cow<'r, [u8]>,
 	_marker: PhantomData<fn() -> (K, V)>,
 }
 
-impl<K, V> OwnedIndexedMapView<K, V> {
+impl<'r, K, V> OwnedIndexedMapView<'r, K, V> {
 	#[doc(hidden)]
-	pub fn new(bytes: Vec<u8>) -> Self {
+	pub fn new(bytes: std::borrow::Cow<'r, [u8]>) -> Self {
 		Self {
 			bytes,
 			_marker: PhantomData,
 		}
 	}
 
-	/// Borrow an [`IndexedMapWalker`] over the owned wire bytes.
+	/// Borrow an [`IndexedMapWalker`] over the wire bytes.
 	///
 	/// [`IndexedMapWalker`]: crate::optimised::IndexedMapWalker
 	pub fn walker(&self) -> Result<crate::optimised::IndexedMapWalker<'_, K, V>, Error> {
@@ -371,24 +374,25 @@ impl<K, V> OwnedIndexedMapView<K, V> {
 		&self.bytes
 	}
 
-	/// Consume and return the owned bytes.
-	pub fn into_bytes(self) -> Vec<u8> {
+	/// Consume and return the bytes as a `Cow`.
+	pub fn into_bytes(self) -> std::borrow::Cow<'r, [u8]> {
 		self.bytes
 	}
 }
 
-/// Owned wire-bytes handle for an optimised-enum variant's payload.
+/// Wire-bytes handle for an optimised-enum variant's payload.
 ///
-/// Returned by `into_<variant>` on optimised-enum walkers (for single-field
-/// tuple variants). The view owns the variant's body bytes — i.e. everything
-/// after the 1-byte tag — sized per the variant's declared size class
-/// (`inline` → empty, `fixed(N)` → N bytes, `varlen` → the `u32_le`-prefixed
-/// body).
+/// Returned by `<variant>_view` on optimised-enum walkers (for single-field
+/// tuple variants). The view holds the variant's body bytes — i.e.
+/// everything after the 1-byte tag — sized per the variant's declared size
+/// class (`inline` → empty, `fixed(N)` → N bytes, `varlen` → the
+/// `u32_le`-prefixed body). The bytes live in a `Cow<'r, [u8]>`: borrowed
+/// directly from the parent walker's source in the common (slice-backed,
+/// optimised) case, owned only when the cross-revision `convert_fn` path
+/// re-encodes.
 ///
 /// The inner walker is intentionally not exposed as a returned value to
-/// avoid the `Walker<'r, R>` GAT lifetime trap (the walker borrows from a
-/// reader, the reader needs to be stored externally, and a materialised
-/// payload has no reader). Callers either:
+/// avoid the `Walker<'r, R>` GAT lifetime trap. Callers either:
 ///
 /// - read the variant value directly with `decode_<variant>` (the simpler
 ///   path), or
@@ -396,14 +400,14 @@ impl<K, V> OwnedIndexedMapView<K, V> {
 ///   `T::walk_revisioned(&mut &view.as_bytes()[..])` within their scope.
 ///
 /// `decode_<variant>` remains the recommended path for most callers.
-pub struct OwnedVariantView<T> {
-	bytes: Vec<u8>,
+pub struct OwnedVariantView<'r, T> {
+	bytes: std::borrow::Cow<'r, [u8]>,
 	_marker: PhantomData<fn() -> T>,
 }
 
-impl<T> OwnedVariantView<T> {
+impl<'r, T> OwnedVariantView<'r, T> {
 	#[doc(hidden)]
-	pub fn new(bytes: Vec<u8>) -> Self {
+	pub fn new(bytes: std::borrow::Cow<'r, [u8]>) -> Self {
 		Self {
 			bytes,
 			_marker: PhantomData,
@@ -416,23 +420,23 @@ impl<T> OwnedVariantView<T> {
 		&self.bytes
 	}
 
-	/// Consume and return the owned bytes.
-	pub fn into_bytes(self) -> Vec<u8> {
+	/// Consume and return the bytes as a `Cow`.
+	pub fn into_bytes(self) -> std::borrow::Cow<'r, [u8]> {
 		self.bytes
 	}
 }
 
-/// Owned wire-bytes handle for an indexed set field. Wire format is identical
+/// Wire-bytes handle for an indexed set field. Wire format is identical
 /// to [`OwnedIndexedSeqView`] (the set's element bytes were sorted on encode
 /// so the `IndexedSeqWalker` can be used for binary-search membership tests).
-pub struct OwnedIndexedSetView<T> {
-	bytes: Vec<u8>,
+pub struct OwnedIndexedSetView<'r, T> {
+	bytes: std::borrow::Cow<'r, [u8]>,
 	_marker: PhantomData<fn() -> T>,
 }
 
-impl<T> OwnedIndexedSetView<T> {
+impl<'r, T> OwnedIndexedSetView<'r, T> {
 	#[doc(hidden)]
-	pub fn new(bytes: Vec<u8>) -> Self {
+	pub fn new(bytes: std::borrow::Cow<'r, [u8]>) -> Self {
 		Self {
 			bytes,
 			_marker: PhantomData,
@@ -447,7 +451,7 @@ impl<T> OwnedIndexedSetView<T> {
 		&self.bytes
 	}
 
-	pub fn into_bytes(self) -> Vec<u8> {
+	pub fn into_bytes(self) -> std::borrow::Cow<'r, [u8]> {
 		self.bytes
 	}
 }
@@ -479,14 +483,14 @@ impl<T> OwnedIndexedSetView<T> {
 /// let s = <String as DeserializeRevisioned>::deserialize_revisioned(&mut elt).unwrap();
 /// assert_eq!(s, "tag-5");
 /// ```
-pub struct OwnedIndexedSeqView<T> {
-	bytes: Vec<u8>,
+pub struct OwnedIndexedSeqView<'r, T> {
+	bytes: std::borrow::Cow<'r, [u8]>,
 	_marker: PhantomData<fn() -> T>,
 }
 
-impl<T> OwnedIndexedSeqView<T> {
+impl<'r, T> OwnedIndexedSeqView<'r, T> {
 	#[doc(hidden)]
-	pub fn new(bytes: Vec<u8>) -> Self {
+	pub fn new(bytes: std::borrow::Cow<'r, [u8]>) -> Self {
 		Self {
 			bytes,
 			_marker: PhantomData,
@@ -501,7 +505,7 @@ impl<T> OwnedIndexedSeqView<T> {
 		&self.bytes
 	}
 
-	pub fn into_bytes(self) -> Vec<u8> {
+	pub fn into_bytes(self) -> std::borrow::Cow<'r, [u8]> {
 		self.bytes
 	}
 }

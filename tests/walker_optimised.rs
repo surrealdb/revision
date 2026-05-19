@@ -169,6 +169,47 @@ fn walker_variant_view_works_on_optimised_enum() {
 }
 
 #[test]
+fn walker_variant_view_borrows_from_source_for_optimised_enum() {
+	// Surrealdb-style descent pattern: walk into an optimised enum, get the
+	// variant body as a borrowed slice, then construct an inner walker over
+	// the borrowed bytes — zero allocations for the variant body.
+	//
+	// This is what the `WalkRevisioned: BorrowedReader` bound + Cow<'r, [u8]>
+	// in the walker repr enables.
+	#[revisioned(revision(1, encoding = "optimised"))]
+	#[derive(Debug, PartialEq)]
+	enum Value {
+		#[revision(size = "inline")]
+		Null,
+		#[revision(size = "varlen")]
+		Array(Vec<u32>),
+	}
+
+	let v = Value::Array(vec![1, 2, 3, 4, 5]);
+	let bytes = revision::to_vec(&v).unwrap();
+
+	// Outer walk: optimised enum, body bytes are borrowed from `bytes`.
+	let mut r: &[u8] = &bytes;
+	let w = Value::walk_revisioned(&mut r).unwrap();
+	let view = w.array_view().unwrap();
+
+	// `as_bytes` returns a slice into the source `bytes` — same buffer, no
+	// copy. We verify the pointer to prove the no-alloc property.
+	let body: &[u8] = view.as_bytes();
+	assert!(
+		body.as_ptr() >= bytes.as_ptr()
+			&& body.as_ptr() <= unsafe { bytes.as_ptr().add(bytes.len()) },
+		"view's bytes should point inside the source buffer (got a copy, alloc happened)"
+	);
+
+	// Construct an inner walker over the borrowed body. Streaming descent.
+	let mut cursor: &[u8] = body;
+	let inner: Vec<u32> =
+		<Vec<u32> as revision::DeserializeRevisioned>::deserialize_revisioned(&mut cursor).unwrap();
+	assert_eq!(inner, vec![1, 2, 3, 4, 5]);
+}
+
+#[test]
 fn walker_decode_variant_errors_on_wrong_variant() {
 	let v = OptEnum::Unit;
 	let bytes = revision::to_vec(&v).unwrap();

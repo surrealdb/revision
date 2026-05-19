@@ -606,6 +606,7 @@ fn emit_struct_methods(
 		if f.attrs.options.indexed_map {
 			walk_return_ty = quote! {
 				::revision::optimised::indexed::OwnedIndexedMapView<
+					'r,
 					<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::Key,
 					<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::Value,
 				>
@@ -617,7 +618,9 @@ fn emit_struct_methods(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedMapView::new(__bytes),
+					::revision::optimised::indexed::OwnedIndexedMapView::new(
+					::std::borrow::Cow::Owned(__bytes),
+				),
 				)
 			};
 			into_walk_return_ty = walk_return_ty.clone();
@@ -629,12 +632,15 @@ fn emit_struct_methods(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedMapView::new(__bytes),
+					::revision::optimised::indexed::OwnedIndexedMapView::new(
+					::std::borrow::Cow::Owned(__bytes),
+				),
 				)
 			};
 		} else if f.attrs.options.indexed_seq {
 			walk_return_ty = quote! {
 				::revision::optimised::indexed::OwnedIndexedSeqView<
+					'r,
 					<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::Item,
 				>
 			};
@@ -645,7 +651,9 @@ fn emit_struct_methods(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedSeqView::new(__bytes),
+					::revision::optimised::indexed::OwnedIndexedSeqView::new(
+					::std::borrow::Cow::Owned(__bytes),
+				),
 				)
 			};
 			into_walk_return_ty = walk_return_ty.clone();
@@ -657,12 +665,15 @@ fn emit_struct_methods(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedSeqView::new(__bytes),
+					::revision::optimised::indexed::OwnedIndexedSeqView::new(
+					::std::borrow::Cow::Owned(__bytes),
+				),
 				)
 			};
 		} else if f.attrs.options.indexed_set {
 			walk_return_ty = quote! {
 				::revision::optimised::indexed::OwnedIndexedSetView<
+					'r,
 					<#ty as ::revision::optimised::indexed::IndexedSetEncoded>::Item,
 				>
 			};
@@ -673,7 +684,9 @@ fn emit_struct_methods(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedSetView::new(__bytes),
+					::revision::optimised::indexed::OwnedIndexedSetView::new(
+					::std::borrow::Cow::Owned(__bytes),
+				),
 				)
 			};
 			into_walk_return_ty = walk_return_ty.clone();
@@ -685,7 +698,9 @@ fn emit_struct_methods(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedSetView::new(__bytes),
+					::revision::optimised::indexed::OwnedIndexedSetView::new(
+					::std::borrow::Cow::Owned(__bytes),
+				),
 				)
 			};
 		} else {
@@ -1044,12 +1059,12 @@ fn emit_enum_methods(
 					/// Return the variant payload as an [`OwnedVariantView`].
 					///
 					/// Works on both Wire and Materialised walkers (including
-					/// optimised enums). For Wire mode the variant body is read
-					/// into an owned `Vec<u8>`; for Materialised mode the body
-					/// bytes are sliced out of the existing buffer. Either way
-					/// the caller owns a self-contained view they can call
-					/// `T::walk_revisioned` against, retain across function
-					/// boundaries, or feed into another walker.
+					/// optimised enums). When the walker's bytes were borrowed
+					/// from a slice-backed source (the common optimised-enum
+					/// case), the view borrows the variant body directly — no
+					/// allocation. Wire-mode walkers re-encode (one
+					/// allocation); materialised + owned (cross-revision
+					/// `convert_fn`) walkers move the owned bytes.
 					///
 					/// Use [`decode_<variant>`](Self::#decode_name) when you
 					/// want the inner type by value directly.
@@ -1059,7 +1074,7 @@ fn emit_enum_methods(
 					pub fn #view_name(
 						self,
 					) -> ::std::result::Result<
-						::revision::optimised::indexed::OwnedVariantView<#inner_ty>,
+						::revision::optimised::indexed::OwnedVariantView<'r, #inner_ty>,
 						::revision::Error,
 					> {
 						if !self.#is_name() {
@@ -1072,7 +1087,7 @@ fn emit_enum_methods(
 								),
 							));
 						}
-						let __bytes: ::std::vec::Vec<u8> = match self.repr {
+						let __bytes: ::std::borrow::Cow<'r, [u8]> = match self.repr {
 							#walker_repr_name::Wire { reader, .. } => {
 								// Read the inner value then re-emit its bytes.
 								// One alloc + one re-serialise; matches the
@@ -1081,10 +1096,18 @@ fn emit_enum_methods(
 									<#inner_ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)?;
 								let mut __buf = ::std::vec::Vec::new();
 								<#inner_ty as ::revision::SerializeRevisioned>::serialize_revisioned(&__v, &mut __buf)?;
-								__buf
+								::std::borrow::Cow::Owned(__buf)
 							}
-							#walker_repr_name::Materialised { bytes, cursor, .. } => {
-								bytes[cursor..].to_vec()
+							#walker_repr_name::Materialised { bytes: ::std::borrow::Cow::Borrowed(slice), cursor, .. } => {
+								// slice: &'r [u8] — preserves the source's
+								// lifetime so the view's bytes outlive `self`.
+								::std::borrow::Cow::Borrowed(&slice[cursor..])
+							}
+							#walker_repr_name::Materialised { bytes: ::std::borrow::Cow::Owned(vec), cursor, .. } => {
+								// cross-revision convert_fn re-encode — owned.
+								let mut v = vec;
+								v.drain(..cursor);
+								::std::borrow::Cow::Owned(v)
 							}
 						};
 						::std::result::Result::Ok(
