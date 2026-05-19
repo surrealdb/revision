@@ -37,13 +37,13 @@ fixed-width-encoding = []
 [dependencies]
 revision-derive = { version = "0.22.0", path = "revision-derive" }
 bytes = { version = "1.11.0", optional = true }
-chrono = { version = "0.4.42", features = ["serde"], optional = true }
-geo = { version = "0.31.0", features = ["use-serde"], optional = true }
+chrono = { version = "0.4.42", default-features = false, features = ["std"], optional = true }
+geo = { version = "0.32.0", default-features = false, features = ["use-serde"], optional = true }
 imbl = { version = "6.1.0", optional = true }
 ordered-float = { version = "5.1.0", optional = true }
 regex = { version = "1.12.2", optional = true }
-roaring = { version = "0.11.2", features = ["serde"], optional = true }
-rust_decimal = { version = "1.39.0", optional = true }
+roaring = { version = "0.11.2", optional = true }
+rust_decimal = { version = "1.39.0", default-features = false, optional = true }
 uuid = { version = "1.19.0", optional = true }
 
 [dev-dependencies]
