@@ -2,15 +2,17 @@
 //! and implements it for primitive data types using the `bincode` format.
 //!
 //! The `Revisioned` trait is automatically implemented for the following primitives:
-//! u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, char,
-//! str, String, Vec<T>, Arrays up to 32 elements, Option<T>, Box<T>, Bound<T>, Range<T>, Wrapping<T>,
-//! (A, B), (A, B, C), (A, B, C, D), (A, B, C, D, E), Duration, SystemTime, HashMap<K, V>,
-//! BTreeMap<K, V>, Result<T, E>, Cow<'_, T>, Decimal, regex::Regex, uuid::Uuid, chrono::Duration,
-//! chrono::DateTime<Utc>, geo::Point, geo::LineString geo::Polygon, geo::MultiPoint,
-//! geo::MultiLineString, and geo::MultiPolygon.
+//! `u8`, `u16`, `u32`, `u64`, `u128`, `usize`, `i8`, `i16`, `i32`, `i64`, `i128`, `isize`,
+//! `f32`, `f64`, `char`, `str`, `String`, `Vec<T>`, arrays up to 32 elements, `Option<T>`,
+//! `Box<T>`, `Bound<T>`, `Range<T>`, `Wrapping<T>`, `(A, B)`, `(A, B, C)`, `(A, B, C, D)`,
+//! `(A, B, C, D, E)`, `Duration`, `SystemTime`, `HashMap<K, V>`, `BTreeMap<K, V>`,
+//! `Result<T, E>`, `Cow<'_, T>`, `Decimal`, `regex::Regex`, `uuid::Uuid`,
+//! `chrono::Duration`, `chrono::DateTime<Utc>`, `geo::Point`, `geo::LineString`,
+//! `geo::Polygon`, `geo::MultiPoint`, `geo::MultiLineString`, and `geo::MultiPolygon`.
 
 pub mod error;
 pub mod implementations;
+pub mod optimised;
 
 pub mod slice_reader;
 pub mod walk;
@@ -21,7 +23,7 @@ pub use revision_derive::revisioned;
 use std::any::TypeId;
 use std::io::{Read, Write};
 
-pub use slice_reader::{BorrowedReader, SliceReader, advance_read};
+pub use slice_reader::{BorrowedReader, SliceReader, advance_read, read_borrowed_bytes};
 pub use walk::{
 	EnumWalker, LeafWalker, LengthPrefixedBytes, MapEntry, MapWalker, OptionWalker, ResultWalker,
 	SeqItem, SeqWalker, StructWalker, WalkRevisioned, read_enum_discriminant,
@@ -82,6 +84,9 @@ pub fn skip_check_slice<T: SkipCheckRevisioned>(bytes: &[u8]) -> Result<usize, E
 }
 
 pub mod prelude {
+	pub use crate::optimised::{
+		IndexedMapWalker, IndexedSeqWalker, IndexedStructWalker, SizeClass, Tag,
+	};
 	pub use crate::{
 		BorrowedReader, EnumWalker, LeafWalker, LengthPrefixedBytes, MapEntry, MapWalker,
 		OptionWalker, ResultWalker, SeqItem, SeqWalker, StructWalker, WalkRevisioned,

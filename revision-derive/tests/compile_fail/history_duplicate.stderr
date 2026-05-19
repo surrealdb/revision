@@ -1,0 +1,5 @@
+error: duplicate revision number 1
+ --> tests/compile_fail/history_duplicate.rs:4:36
+  |
+4 | #[revisioned(revision(1), revision(1))]
+  |                                    ^

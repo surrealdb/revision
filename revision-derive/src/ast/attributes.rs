@@ -9,6 +9,8 @@ use syn::{
 	token,
 };
 
+use super::history::{Encoding, HistoryEntry, MapEncoding, SeqEncoding, StructEncoding};
+
 mod kw {
 	syn::custom_keyword!(start);
 	syn::custom_keyword!(end);
@@ -23,6 +25,15 @@ mod kw {
 	syn::custom_keyword!(deserialize);
 	syn::custom_keyword!(skip);
 	syn::custom_keyword!(walk);
+	// Optimised-wire-format keywords.
+	syn::custom_keyword!(encoding);
+	syn::custom_keyword!(map);
+	syn::custom_keyword!(seq);
+	syn::custom_keyword!(size);
+	// Per-field encoding flags for optimised revisions.
+	syn::custom_keyword!(indexed_map);
+	syn::custom_keyword!(indexed_seq);
+	syn::custom_keyword!(indexed_set);
 }
 
 #[derive(Debug)]
@@ -68,7 +79,7 @@ where
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpannedLit<V> {
 	pub value: V,
 	pub span: Span,
@@ -148,6 +159,14 @@ pub struct FieldOptions {
 	pub end: Option<SpannedLit<usize>>,
 	pub convert: Option<LitStr>,
 	pub default: Option<LitStr>,
+	/// `#[revision(indexed_map)]`: encode this field's `BTreeMap`-like value
+	/// using the indexed-map wire format under optimised revisions. Has no
+	/// effect on legacy revisions.
+	pub indexed_map: bool,
+	/// `#[revision(indexed_seq)]`: same, for sequence-shaped fields.
+	pub indexed_seq: bool,
+	/// `#[revision(indexed_set)]`: same, for set-shaped fields.
+	pub indexed_set: bool,
 }
 
 impl FieldOptions {
@@ -162,6 +181,9 @@ pub enum FieldOption {
 	End(ValueOption<kw::end, SpannedLit<usize>>),
 	Convert(ValueOption<kw::convert_fn, LitStr>),
 	Default(ValueOption<kw::default_fn, LitStr>),
+	IndexedMap(kw::indexed_map),
+	IndexedSeq(kw::indexed_seq),
+	IndexedSet(kw::indexed_set),
 }
 
 impl Parse for FieldOption {
@@ -177,6 +199,15 @@ impl Parse for FieldOption {
 		}
 		if input.peek(kw::default_fn) {
 			return Ok(FieldOption::Default(input.parse()?));
+		}
+		if input.peek(kw::indexed_map) {
+			return Ok(FieldOption::IndexedMap(input.parse()?));
+		}
+		if input.peek(kw::indexed_seq) {
+			return Ok(FieldOption::IndexedSeq(input.parse()?));
+		}
+		if input.peek(kw::indexed_set) {
+			return Ok(FieldOption::IndexedSet(input.parse()?));
 		}
 
 		Err(input.error("invalid field option"))
@@ -218,6 +249,42 @@ impl AttributeOptions for FieldOptions {
 					}
 					res.default = Some(x.value);
 				}
+				FieldOption::IndexedMap(kw) => {
+					if res.indexed_map {
+						return Err(Error::new(kw.span(), "tried to set an option twice"));
+					}
+					if res.indexed_seq || res.indexed_set {
+						return Err(Error::new(
+							kw.span(),
+							"a field can declare at most one of `indexed_map`, `indexed_seq`, `indexed_set`",
+						));
+					}
+					res.indexed_map = true;
+				}
+				FieldOption::IndexedSeq(kw) => {
+					if res.indexed_seq {
+						return Err(Error::new(kw.span(), "tried to set an option twice"));
+					}
+					if res.indexed_map || res.indexed_set {
+						return Err(Error::new(
+							kw.span(),
+							"a field can declare at most one of `indexed_map`, `indexed_seq`, `indexed_set`",
+						));
+					}
+					res.indexed_seq = true;
+				}
+				FieldOption::IndexedSet(kw) => {
+					if res.indexed_set {
+						return Err(Error::new(kw.span(), "tried to set an option twice"));
+					}
+					if res.indexed_map || res.indexed_seq {
+						return Err(Error::new(
+							kw.span(),
+							"a field can declare at most one of `indexed_map`, `indexed_seq`, `indexed_set`",
+						));
+					}
+					res.indexed_set = true;
+				}
 			}
 		}
 
@@ -236,24 +303,103 @@ impl AttributeOptions for FieldOptions {
 
 #[derive(Debug)]
 pub struct ItemOptions {
+	/// Legacy `revision = N` attribute, retained for the existing call sites in
+	/// `expand/mod.rs`. New code should consume [`history`](Self::history).
+	#[allow(dead_code)]
 	pub revision: Option<usize>,
+	/// Resolved revision history. Always populated by [`finish`](Self::finish):
+	/// either from a legacy `revision = N` (synthesised as N all-legacy entries),
+	/// or from one or more new-style `revision(N, ...)` entries.
+	pub history: Vec<HistoryEntry>,
 	pub serialize: bool,
 	pub deserialize: bool,
 	pub skip: Option<bool>,
 	pub walk: Option<bool>,
 }
 
+#[allow(dead_code)]
+impl ItemOptions {
+	/// The latest revision number in this type's history, if any was specified.
+	#[inline]
+	pub fn current_revision(&self) -> Option<usize> {
+		self.history.last().map(|h| h.revision.value)
+	}
+}
+
 pub enum ItemOption {
 	Revision(ValueOption<kw::revision, LitInt>),
+	RevisionEntry(RevisionEntryGroup),
 	Serialize(ValueOption<kw::serialize, LitBool>),
 	Deserialize(ValueOption<kw::deserialize, LitBool>),
 	Skip(ValueOption<kw::skip, LitBool>),
 	Walk(ValueOption<kw::walk, LitBool>),
 }
 
+/// Parsed `revision(N, encoding = "...", map = "...", seq = "...", struct = "...")`.
+pub struct RevisionEntryGroup {
+	pub kw: kw::revision,
+	pub _paren: token::Paren,
+	pub revision: SpannedLit<usize>,
+	pub options: Vec<RevisionEntryOption>,
+}
+
+pub enum RevisionEntryOption {
+	Encoding(ValueOption<kw::encoding, LitStr>),
+	Map(ValueOption<kw::map, LitStr>),
+	Seq(ValueOption<kw::seq, LitStr>),
+	Struct(ValueOption<Token![struct], LitStr>),
+}
+
+impl Parse for RevisionEntryGroup {
+	fn parse(input: ParseStream) -> syn::Result<Self> {
+		let kw: kw::revision = input.parse()?;
+		let content;
+		let paren = parenthesized!(content in input);
+		let revision: SpannedLit<usize> = content.parse()?;
+		let mut options = Vec::new();
+		while !content.is_empty() {
+			content.parse::<Token![,]>()?;
+			if content.is_empty() {
+				break;
+			}
+			options.push(content.parse()?);
+		}
+		Ok(Self {
+			kw,
+			_paren: paren,
+			revision,
+			options,
+		})
+	}
+}
+
+impl Parse for RevisionEntryOption {
+	fn parse(input: ParseStream) -> syn::Result<Self> {
+		if input.peek(kw::encoding) {
+			return Ok(RevisionEntryOption::Encoding(input.parse()?));
+		}
+		if input.peek(kw::map) {
+			return Ok(RevisionEntryOption::Map(input.parse()?));
+		}
+		if input.peek(kw::seq) {
+			return Ok(RevisionEntryOption::Seq(input.parse()?));
+		}
+		if input.peek(Token![struct]) {
+			return Ok(RevisionEntryOption::Struct(input.parse()?));
+		}
+		Err(input.error(
+			"invalid `revision(...)` option (expected `encoding`, `map`, `seq`, or `struct`)",
+		))
+	}
+}
+
 impl Parse for ItemOption {
 	fn parse(input: ParseStream) -> syn::Result<Self> {
 		if input.peek(kw::revision) {
+			// Distinguish `revision = N` (legacy) from `revision(N, ...)` (new).
+			if input.peek2(token::Paren) {
+				return Ok(ItemOption::RevisionEntry(input.parse()?));
+			}
 			return Ok(ItemOption::Revision(input.parse()?));
 		}
 		if input.peek(kw::serialize) {
@@ -273,15 +419,97 @@ impl Parse for ItemOption {
 	}
 }
 
+fn build_history_entry(group: RevisionEntryGroup) -> syn::Result<HistoryEntry> {
+	let span = group.kw.span();
+	let mut entry = HistoryEntry::legacy(group.revision, false);
+	entry.span = span;
+	let mut saw_encoding = false;
+	for opt in group.options {
+		match opt {
+			RevisionEntryOption::Encoding(v) => {
+				saw_encoding = true;
+				match v.value.value().as_str() {
+					"legacy" => entry.encoding = Encoding::Legacy,
+					"optimised" => entry.encoding = Encoding::Optimised,
+					other => {
+						return Err(Error::new(
+							v.value.span(),
+							format!(
+								"unknown encoding `{other}` (expected `legacy` or `optimised`)"
+							),
+						));
+					}
+				}
+			}
+			RevisionEntryOption::Map(v) => match v.value.value().as_str() {
+				"default" => entry.map = MapEncoding::Default,
+				"indexed" => {
+					return Err(Error::new(
+						v.value.span(),
+						"type-level `map = \"indexed\"` is not supported; use the per-field attribute `#[revision(indexed_map)]` on each map-shaped field that should use indexed encoding instead",
+					));
+				}
+				other => {
+					return Err(Error::new(
+						v.value.span(),
+						format!("unknown map encoding `{other}` (expected `default`)"),
+					));
+				}
+			},
+			RevisionEntryOption::Seq(v) => match v.value.value().as_str() {
+				"default" => entry.seq = SeqEncoding::Default,
+				"indexed" => {
+					return Err(Error::new(
+						v.value.span(),
+						"type-level `seq = \"indexed\"` is not supported; use the per-field attribute `#[revision(indexed_seq)]` on each sequence-shaped field that should use indexed encoding instead",
+					));
+				}
+				other => {
+					return Err(Error::new(
+						v.value.span(),
+						format!("unknown seq encoding `{other}` (expected `default`)"),
+					));
+				}
+			},
+			RevisionEntryOption::Struct(v) => match v.value.value().as_str() {
+				"default" => entry.struct_kind = StructEncoding::Default,
+				"indexed" => entry.struct_kind = StructEncoding::Indexed,
+				other => {
+					return Err(Error::new(
+						v.value.span(),
+						format!(
+							"unknown struct encoding `{other}` (expected `default` or `indexed`)"
+						),
+					));
+				}
+			},
+		}
+	}
+	// Reject per-encoding attrs on a legacy entry — keeps the AST clean.
+	if (!saw_encoding || entry.encoding == Encoding::Legacy)
+		&& (entry.map != MapEncoding::Default
+			|| entry.seq != SeqEncoding::Default
+			|| entry.struct_kind != StructEncoding::Default)
+	{
+		return Err(Error::new(
+			entry.span,
+			"encoding-specific attributes (`map`, `seq`, `struct`) require `encoding = \"optimised\"` on the same revision entry",
+		));
+	}
+	Ok(entry)
+}
+
 impl AttributeOptions for ItemOptions {
 	type Option = ItemOption;
 
-	fn finish(_path: Span, options: Vec<Self::Option>) -> syn::Result<Self> {
+	fn finish(path: Span, options: Vec<Self::Option>) -> syn::Result<Self> {
 		let mut revision = None;
 		let mut serialize = true;
 		let mut deserialize = true;
 		let mut skip = None;
 		let mut walk = None;
+		let mut new_entries: Vec<HistoryEntry> = Vec::new();
+		let mut new_entries_span: Option<Span> = None;
 
 		for option in options {
 			match option {
@@ -291,6 +519,12 @@ impl AttributeOptions for ItemOptions {
 					}
 
 					revision = Some(x.value.base10_parse()?);
+				}
+				ItemOption::RevisionEntry(group) => {
+					if new_entries_span.is_none() {
+						new_entries_span = Some(group.kw.span());
+					}
+					new_entries.push(build_history_entry(group)?);
 				}
 				ItemOption::Serialize(x) => {
 					serialize = x.value.value();
@@ -313,14 +547,91 @@ impl AttributeOptions for ItemOptions {
 			}
 		}
 
+		let history = resolve_history(path, revision, new_entries, new_entries_span)?;
+		// `current_revision` is the latest history entry's revision number.
+		let current = history.last().map(|h| h.revision.value);
+
 		Ok(Self {
-			revision,
+			revision: current,
+			history,
 			serialize,
 			deserialize,
 			skip,
 			walk,
 		})
 	}
+}
+
+/// Combine legacy `revision = N` and new-style `revision(N, ...)` entries into a
+/// validated history. Returns an empty `Vec` if neither was supplied — callers
+/// combining multiple [`ItemOptions`] sources will detect missing revisions at
+/// that level (see `expand/mod.rs`).
+fn resolve_history(
+	path: Span,
+	legacy_revision: Option<usize>,
+	new_entries: Vec<HistoryEntry>,
+	new_entries_span: Option<Span>,
+) -> syn::Result<Vec<HistoryEntry>> {
+	match (legacy_revision, new_entries.is_empty()) {
+		(Some(_), false) => Err(Error::new(
+			new_entries_span.unwrap_or(path),
+			"cannot mix legacy `revision = N` with new-style `revision(N, ...)` entries on the same type",
+		)),
+		(Some(n), true) => {
+			if n == 0 {
+				return Err(Error::new(path, "revision numbers must start at 1"));
+			}
+			let mut history = Vec::with_capacity(n);
+			for i in 1..=n {
+				let lit = SpannedLit {
+					value: i,
+					span: path,
+				};
+				history.push(HistoryEntry::legacy(lit, true));
+			}
+			Ok(history)
+		}
+		(None, false) => {
+			let mut sorted = new_entries;
+			sorted.sort_by_key(|h| h.revision.value);
+			for (idx, entry) in sorted.iter().enumerate() {
+				let expected = idx + 1;
+				if entry.revision.value != expected {
+					if idx > 0 && entry.revision.value == sorted[idx - 1].revision.value {
+						return Err(Error::new(
+							entry.revision.span,
+							format!("duplicate revision number {}", entry.revision.value),
+						));
+					}
+					return Err(Error::new(
+						entry.revision.span,
+						format!(
+							"revisions must be contiguous starting from 1 (expected {expected}, found {})",
+							entry.revision.value
+						),
+					));
+				}
+			}
+			Ok(sorted)
+		}
+		(None, true) => Ok(Vec::new()),
+	}
+}
+
+/// Variant-level size class for optimised-encoded enums.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum VariantSize {
+	Inline,
+	Fixed(u8),
+	Varlen,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct SpannedSize {
+	pub size: VariantSize,
+	pub span: Span,
 }
 
 #[derive(Default, Debug)]
@@ -331,6 +642,9 @@ pub struct VariantOptions {
 	pub default: Option<LitStr>,
 	pub fields_name: Option<LitStr>,
 	pub overrides: HashMap<usize, VariantOverrides>,
+	/// Size class declaration for optimised encoding. Validated against the
+	/// type's `HistoryEntry` list by the `ValidateOptimised` pass.
+	pub size: Option<SpannedSize>,
 }
 
 #[derive(Default, Debug)]
@@ -353,6 +667,7 @@ pub enum VariantOption {
 	Default(ValueOption<kw::default_fn, LitStr>),
 	Fields(ValueOption<kw::fields_name, LitStr>),
 	Override(GroupOption<Token![override], VariantOverride>),
+	Size(ValueOption<kw::size, LitStr>),
 }
 
 pub enum VariantOverride {
@@ -379,6 +694,9 @@ impl Parse for VariantOption {
 		}
 		if input.peek(Token![override]) {
 			return Ok(VariantOption::Override(input.parse()?));
+		}
+		if input.peek(kw::size) {
+			return Ok(VariantOption::Size(input.parse()?));
 		}
 
 		Err(input.error("invalid field option"))
@@ -437,6 +755,18 @@ impl AttributeOptions for VariantOptions {
 					}
 					res.fields_name = Some(x.value);
 				}
+				VariantOption::Size(x) => {
+					if res.size.is_some() {
+						return Err(Error::new(x.key.span(), "tried to set an option twice"));
+					}
+					let span = x.value.span();
+					let parsed =
+						parse_variant_size(&x.value).map_err(|msg| Error::new(span, msg))?;
+					res.size = Some(SpannedSize {
+						size: parsed,
+						span,
+					});
+				}
 				VariantOption::Override(x) => {
 					let mut overrides = VariantOverrides::default();
 					for x in x.value.into_iter() {
@@ -484,4 +814,26 @@ impl AttributeOptions for VariantOptions {
 
 		Ok(res)
 	}
+}
+
+/// Parse `"inline"`, `"varlen"`, or `"fixed(N)"` into a [`VariantSize`].
+fn parse_variant_size(lit: &LitStr) -> Result<VariantSize, String> {
+	let raw = lit.value();
+	let s = raw.trim();
+	if s == "inline" {
+		return Ok(VariantSize::Inline);
+	}
+	if s == "varlen" {
+		return Ok(VariantSize::Varlen);
+	}
+	if let Some(rest) = s.strip_prefix("fixed(")
+		&& let Some(num_str) = rest.strip_suffix(')')
+	{
+		let n: u8 = num_str
+			.trim()
+			.parse()
+			.map_err(|_| format!("invalid `fixed(N)` size: `{num_str}` is not a u8"))?;
+		return Ok(VariantSize::Fixed(n));
+	}
+	Err(format!("unknown size class `{s}` (expected `inline`, `varlen`, or `fixed(N)`)"))
 }

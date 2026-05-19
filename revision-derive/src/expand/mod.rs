@@ -1,18 +1,21 @@
 mod common;
+mod context;
 mod de;
+mod optimised;
 mod reexport;
 mod ser;
 mod skip;
 mod validate_version;
 mod walk;
 
+use context::EncodingContext;
 use de::{DeserializeVisitor, EnumStructsVisitor};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use reexport::Reexport;
 use ser::SerializeVisitor;
 use skip::SkipVisitor;
-use validate_version::ValidateRevision;
+use validate_version::{ValidateOptimised, ValidateRevision};
 
 use crate::ast::{self, Direct, ItemOptions, Visit};
 
@@ -20,18 +23,25 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 	let attrs: Direct<ItemOptions> = syn::parse2(attr)?;
 	let ast: ast::Item = syn::parse2(input)?;
 
-	let revision = match (ast.attrs.options.revision, attrs.0.revision) {
-		(Some(x), None) | (None, Some(x)) => x,
-		(None, None) => {
+	// Two sources of history: `#[revisioned(...)]` on the macro invocation
+	// (`attrs.0.history`), and `#[revision(...)]` separate attributes on the
+	// item (`ast.attrs.options.history`). Exactly one of them must be non-empty.
+	let history = match (ast.attrs.options.history.is_empty(), attrs.0.history.is_empty()) {
+		(false, true) => ast.attrs.options.history.clone(),
+		(true, false) => attrs.0.history.clone(),
+		(true, true) => {
 			return Err(syn::Error::new(
 				Span::call_site(),
-				"Current revision not specified, please specify the current revision with `#[revisioned(revision = ..)]` ",
+				"Current revision not specified, please specify the current revision with `#[revisioned(revision = ..)]` or `#[revisioned(revision(N, ...))]`",
 			));
 		}
-		(Some(_), Some(_)) => {
+		(false, false) => {
 			return Err(syn::Error::new(Span::call_site(), "Current revision specified twice"));
 		}
 	};
+
+	let revision =
+		history.last().map(|h| h.revision.value).expect("history non-empty at this point");
 
 	if revision > u16::MAX as usize {
 		return Err(syn::Error::new(
@@ -46,44 +56,54 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 	// Make sure that all used revisions are less or equal to the current revision.
 	ValidateRevision(revision).visit_item(&ast)?;
 
+	// Validate optimised-encoding invariants once, up front, so the per-visitor
+	// codegen modules can assume they hold.
+	ValidateOptimised(&history).check(&ast)?;
+
 	// Recreate the item.
 	let mut reexport = TokenStream::new();
 	Reexport {
 		revision,
 		stream: &mut reexport,
 	}
-	.visit_item(&ast)
-	.unwrap();
+	.visit_item(&ast)?;
+
+	// The latest history entry drives the serialize impl. Every prior entry has
+	// its own decode arm below.
+	let latest_entry = history.last().expect("history non-empty");
+	let serialize_ctx = EncodingContext::from_entry(latest_entry);
 
 	// serialize implementation
 	let mut serialize = TokenStream::new();
-	SerializeVisitor::new(revision, &mut serialize).visit_item(&ast).unwrap();
+	SerializeVisitor::new(revision, serialize_ctx, &mut serialize).visit_item(&ast)?;
 
 	let mut deserialize_structs = TokenStream::new();
-	EnumStructsVisitor::new(revision, &mut deserialize_structs).visit_item(&ast).unwrap();
+	EnumStructsVisitor::new(revision, &mut deserialize_structs).visit_item(&ast)?;
 
-	// deserialize implementation
-	let deserialize = (1..=revision)
-		.map(|x| {
-			// one for every revision
+	// deserialize implementation — one arm per history entry.
+	let deserialize = history
+		.iter()
+		.map(|entry| -> syn::Result<TokenStream> {
+			let x = entry.revision.value;
+			let ctx = EncodingContext::from_entry(entry);
 			let mut deserialize = TokenStream::new();
 			DeserializeVisitor {
 				target: revision,
 				current: x,
+				ctx,
 				stream: &mut deserialize,
 			}
-			.visit_item(&ast)
-			.unwrap();
+			.visit_item(&ast)?;
 
 			let revision = x as u16;
 
-			quote! {
+			Ok(quote! {
 				#revision => {
 					#deserialize
 				}
-			}
+			})
 		})
-		.collect::<Vec<_>>();
+		.collect::<syn::Result<Vec<_>>>()?;
 
 	let name = match &ast.kind {
 		ast::ItemKind::Enum(x) => x.name.clone(),
@@ -99,11 +119,14 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 	let mut skip_revision_slice_arms = Vec::new();
 
 	if skip_derive_enabled {
-		for x in 1..=schema_revision {
+		for entry in history.iter() {
+			let x = entry.revision.value;
+			let ctx = EncodingContext::from_entry(entry);
 			let mut skip_body = TokenStream::new();
 			SkipVisitor {
 				target: schema_revision,
 				current: x,
+				ctx,
 				stream: &mut skip_body,
 				slice_mode: false,
 			}
@@ -119,6 +142,7 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 			SkipVisitor {
 				target: schema_revision,
 				current: x,
+				ctx,
 				stream: &mut skip_slice_body,
 				slice_mode: true,
 			}
@@ -185,6 +209,7 @@ pub fn revision(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStrea
 			},
 			revision,
 			&ast,
+			&history,
 			has_convert_fn,
 			attrs.0.serialize,
 			attrs.0.deserialize,

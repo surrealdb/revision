@@ -62,6 +62,42 @@ path = "tests/skip.rs"
 name = "walk"
 path = "tests/walk.rs"
 
+[[test]]
+name = "optimised"
+path = "tests/optimised.rs"
+
+[[test]]
+name = "indexed"
+path = "tests/indexed.rs"
+
+[[test]]
+name = "corruption"
+path = "tests/corruption.rs"
+
+[[test]]
+name = "syntax_legacy_vs_new"
+path = "tests/syntax_legacy_vs_new.rs"
+
+[[test]]
+name = "macro_optimised"
+path = "tests/macro_optimised.rs"
+
+[[test]]
+name = "migration"
+path = "tests/migration.rs"
+
+[[test]]
+name = "walker_optimised"
+path = "tests/walker_optimised.rs"
+
+[[test]]
+name = "property"
+path = "tests/property.rs"
+
+[[test]]
+name = "indexed_fields"
+path = "tests/indexed_fields.rs"
+
 [[bench]]
 name = "roaring"
 harness = false
@@ -163,4 +199,20 @@ required-features = ["uuid"]
 
 [[bench]]
 name = "vec_bool_comparison"
+harness = false
+
+[[bench]]
+name = "optimised_vs_legacy"
+harness = false
+
+[[bench]]
+name = "optimised_nested"
+harness = false
+
+[[bench]]
+name = "optimised_walker"
+harness = false
+
+[[bench]]
+name = "late_field_access"
 harness = false

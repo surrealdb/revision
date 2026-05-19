@@ -6,16 +6,20 @@ use syn::Ident;
 use crate::ast::{Enum, Field, Fields, Struct, Variant, Visit};
 
 use super::common::CalcDiscriminant;
+use super::context::EncodingContext;
+use super::optimised;
 
 pub struct SerializeVisitor<'a> {
 	pub revision: usize,
+	pub ctx: EncodingContext,
 	pub stream: &'a mut TokenStream,
 }
 
 impl<'a> SerializeVisitor<'a> {
-	pub fn new(revision: usize, stream: &'a mut TokenStream) -> Self {
+	pub fn new(revision: usize, ctx: EncodingContext, stream: &'a mut TokenStream) -> Self {
 		Self {
 			revision,
+			ctx,
 			stream,
 		}
 	}
@@ -23,13 +27,17 @@ impl<'a> SerializeVisitor<'a> {
 
 impl<'ast> Visit<'ast> for SerializeVisitor<'_> {
 	fn visit_struct(&mut self, i: &'ast Struct) -> syn::Result<()> {
+		if self.ctx.is_optimised() {
+			let body = optimised::emit_struct_serialize(i, self.ctx);
+			self.stream.append_all(body);
+			return Ok(());
+		}
 		let mut ser_fields = TokenStream::new();
 		SerializeFields {
 			revision: self.revision,
 			stream: &mut ser_fields,
 		}
-		.visit_struct(i)
-		.unwrap();
+		.visit_struct(i)?;
 
 		match i.fields {
 			Fields::Named {
@@ -65,6 +73,11 @@ impl<'ast> Visit<'ast> for SerializeVisitor<'_> {
 	}
 
 	fn visit_enum(&mut self, i: &'ast Enum) -> syn::Result<()> {
+		if self.ctx.is_optimised() {
+			let body = optimised::emit_enum_serialize(i, self.ctx)?;
+			self.stream.append_all(body);
+			return Ok(());
+		}
 		let mut discriminants = HashMap::new();
 		CalcDiscriminant::new(self.revision, &mut discriminants).visit_enum(i)?;
 
@@ -74,8 +87,7 @@ impl<'ast> Visit<'ast> for SerializeVisitor<'_> {
 			discriminants,
 			stream: &mut ser_variants,
 		}
-		.visit_enum(i)
-		.unwrap();
+		.visit_enum(i)?;
 
 		self.stream.append_all(quote! {
 			match *self{
@@ -155,8 +167,7 @@ impl<'ast> Visit<'ast> for SerializeVariant<'_> {
 					revision: self.revision,
 					stream: &mut fields_ser,
 				}
-				.visit_variant(i)
-				.unwrap();
+				.visit_variant(i)?;
 
 				self.stream.append_all(quote! {
 					=> {
@@ -184,8 +195,7 @@ impl<'ast> Visit<'ast> for SerializeVariant<'_> {
 					revision: self.revision,
 					stream: &mut fields_ser,
 				}
-				.visit_variant(i)
-				.unwrap();
+				.visit_variant(i)?;
 
 				self.stream.append_all(quote! {
 					=> {

@@ -2,6 +2,7 @@ use std::{io, str::Utf8Error};
 
 /// An error which occurs when revisioned serialization / deserialization fails.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
 	/// An IO error occured.
 	Io(io::Error),
@@ -23,6 +24,19 @@ pub enum Error {
 	Deserialize(String),
 	/// Semantic translation/validation error.
 	Conversion(String),
+	/// Optimised wire format encountered a tag byte whose size class is reserved (`0b11`).
+	InvalidOptimisedTag(u8),
+	/// An offset in an indexed prologue points beyond the compound payload.
+	OptimisedOffsetOutOfRange {
+		offset: u32,
+		payload_len: u32,
+	},
+	/// Offsets in an indexed prologue are not strictly monotonic.
+	OptimisedOffsetsNonMonotonic,
+	/// Keys in an indexed map's keys region are not strictly ascending.
+	OptimisedKeyRegionNotAscending,
+	/// A varlen sub-reader's declared byte length exceeds the bytes available to its parent.
+	OptimisedSubReaderOverrun,
 }
 
 impl std::error::Error for Error {
@@ -65,6 +79,27 @@ impl std::fmt::Display for Error {
 			Self::Serialize(e) => write!(f, "A serialization error occured: {}", e),
 			Self::Deserialize(e) => write!(f, "A deserialization error occured: {}", e),
 			Self::Conversion(e) => write!(f, "A user generated conversion error occured: {}", e),
+			Self::InvalidOptimisedTag(t) => {
+				write!(f, "Invalid optimised wire-format tag byte: 0x{t:02x} (reserved size class)")
+			}
+			Self::OptimisedOffsetOutOfRange {
+				offset,
+				payload_len,
+			} => {
+				write!(
+					f,
+					"Optimised offset {offset} out of range for payload of {payload_len} bytes"
+				)
+			}
+			Self::OptimisedOffsetsNonMonotonic => {
+				write!(f, "Optimised indexed prologue offsets are not strictly monotonic")
+			}
+			Self::OptimisedKeyRegionNotAscending => {
+				write!(f, "Optimised indexed map keys are not strictly ascending")
+			}
+			Self::OptimisedSubReaderOverrun => {
+				write!(f, "Optimised varlen sub-reader length exceeds parent bytes")
+			}
 		}
 	}
 }

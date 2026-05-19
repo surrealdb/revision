@@ -7,10 +7,13 @@ use syn::Ident;
 use crate::ast::{Enum, Fields, Struct, Variant, Visit};
 
 use super::common::CalcDiscriminant;
+use super::context::EncodingContext;
+use super::optimised;
 
 pub struct SkipVisitor<'a> {
 	pub target: usize,
 	pub current: usize,
+	pub ctx: EncodingContext,
 	pub stream: &'a mut TokenStream,
 	/// When true, emit `skip_revisioned_slice` calls on fields (for [`skip_slice`] fast path).
 	pub slice_mode: bool,
@@ -18,6 +21,11 @@ pub struct SkipVisitor<'a> {
 
 impl<'ast> Visit<'ast> for SkipVisitor<'_> {
 	fn visit_enum(&mut self, i: &'ast Enum) -> syn::Result<()> {
+		if self.ctx.is_optimised() {
+			let body = optimised::emit_enum_skip(i, self.ctx, self.slice_mode)?;
+			self.stream.append_all(body);
+			return Ok(());
+		}
 		let mut discriminants = HashMap::new();
 		CalcDiscriminant::new(self.current, &mut discriminants).visit_enum(i)?;
 
@@ -50,6 +58,11 @@ impl<'ast> Visit<'ast> for SkipVisitor<'_> {
 	}
 
 	fn visit_struct(&mut self, i: &'ast Struct) -> syn::Result<()> {
+		if self.ctx.is_optimised() {
+			let body = optimised::emit_struct_skip(i, self.ctx, self.slice_mode);
+			self.stream.append_all(body);
+			return Ok(());
+		}
 		match i.fields {
 			Fields::Unit => {}
 			Fields::Named {

@@ -7,6 +7,8 @@ use syn::{Ident, Index};
 use crate::ast::{Enum, Fields, Struct, Variant, Visit};
 
 use super::common::CalcDiscriminant;
+use super::context::EncodingContext;
+use super::optimised;
 
 /// Visitor which creates structs for fields in a an enum variant.
 pub struct EnumStructsVisitor<'a> {
@@ -75,11 +77,17 @@ impl<'ast> Visit<'ast> for EnumStructsVisitor<'_> {
 pub struct DeserializeVisitor<'a> {
 	pub target: usize,
 	pub current: usize,
+	pub ctx: EncodingContext,
 	pub stream: &'a mut TokenStream,
 }
 
 impl<'ast> Visit<'ast> for DeserializeVisitor<'_> {
 	fn visit_enum(&mut self, i: &'ast Enum) -> syn::Result<()> {
+		if self.ctx.is_optimised() {
+			let body = optimised::emit_enum_deserialize(i, self.ctx, self.target)?;
+			self.stream.append_all(body);
+			return Ok(());
+		}
 		let mut discriminants = HashMap::new();
 		CalcDiscriminant::new(self.current, &mut discriminants).visit_enum(i)?;
 
@@ -91,8 +99,7 @@ impl<'ast> Visit<'ast> for DeserializeVisitor<'_> {
 			stream: &mut variants,
 			discriminants,
 		}
-		.visit_enum(i)
-		.unwrap();
+		.visit_enum(i)?;
 
 		let error_string =
 			format!("Invalid discriminant `{{x}}` for enum `{}` revision `{{__revision}}`", i.name);
@@ -112,14 +119,18 @@ impl<'ast> Visit<'ast> for DeserializeVisitor<'_> {
 	}
 
 	fn visit_struct(&mut self, i: &'ast Struct) -> syn::Result<()> {
+		if self.ctx.is_optimised() {
+			let body = optimised::emit_struct_deserialize(i, self.ctx, self.target);
+			self.stream.append_all(body);
+			return Ok(());
+		}
 		let mut fields_binding = TokenStream::new();
 		DeserializeFields {
 			target: self.target,
 			current: self.current,
 			stream: &mut fields_binding,
 		}
-		.visit_struct(i)
-		.unwrap();
+		.visit_struct(i)?;
 
 		match i.fields {
 			Fields::Named {
@@ -174,7 +185,12 @@ impl<'ast> Visit<'ast> for DeserializeVisitor<'_> {
 			f.attrs.options.exists_at(self.current) && !f.attrs.options.exists_at(self.target)
 		}) {
 			let binding = f.name.to_binding();
-			let convert = f.attrs.options.convert.as_ref().unwrap();
+			let convert = f
+				.attrs
+				.options
+				.convert
+				.as_ref()
+				.expect("FieldOptions::finish rejects `end` without convert_fn");
 			let convert = Ident::new(&convert.value(), convert.span());
 			let revision = self.current as u16;
 			self.stream.append_all(quote! {
@@ -210,8 +226,7 @@ impl<'ast> Visit<'ast> for DeserializeVariant<'_> {
 			current: self.current,
 			stream: &mut fields,
 		}
-		.visit_variant(i)
-		.unwrap();
+		.visit_variant(i)?;
 
 		let fields_struct_name = i.fields_name(&self.name.to_string());
 
@@ -244,7 +259,12 @@ impl<'ast> Visit<'ast> for DeserializeVariant<'_> {
 						&& !x.attrs.options.exists_at(self.target)
 				}) {
 					let binding = f.name.to_binding();
-					let convert = f.attrs.options.convert.as_ref().unwrap();
+					let convert = f
+						.attrs
+						.options
+						.convert
+						.as_ref()
+						.expect("FieldOptions::finish rejects `end` without convert_fn");
 					let convert = Ident::new(&convert.value(), convert.span());
 					let revision = self.current as u16;
 					bindings.append_all(quote! {
@@ -286,7 +306,12 @@ impl<'ast> Visit<'ast> for DeserializeVariant<'_> {
 						&& !x.attrs.options.exists_at(self.target)
 				}) {
 					let binding = f.name.to_binding();
-					let convert = f.attrs.options.convert.as_ref().unwrap();
+					let convert = f
+						.attrs
+						.options
+						.convert
+						.as_ref()
+						.expect("FieldOptions::finish rejects `end` without convert_fn");
 					let convert = Ident::new(&convert.value(), convert.span());
 					let revision = self.current as u16;
 					bindings.append_all(quote! {
@@ -326,7 +351,12 @@ impl<'ast> Visit<'ast> for DeserializeVariant<'_> {
 				.discriminants
 				.get(&i.ident)
 				.expect("missed variant during discriminant calculation");
-			let convert = i.attrs.options.convert.as_ref().unwrap();
+			let convert = i
+				.attrs
+				.options
+				.convert
+				.as_ref()
+				.expect("VariantOptions::finish rejects `end` without convert_fn");
 			let convert = Ident::new(&convert.value(), convert.span());
 			let revision = self.current as u16;
 

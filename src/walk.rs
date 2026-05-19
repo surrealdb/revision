@@ -77,11 +77,20 @@ pub trait WalkRevisioned: Revisioned {
 	///
 	/// The walker borrows the reader for `'r` and exposes shape-specific
 	/// progression methods.
-	type Walker<'r, R: Read + 'r>;
+	type Walker<'r, R: BorrowedReader + 'r>;
 
 	/// Read the type's revision-level prefix and return a walker positioned at
 	/// the start of the body.
-	fn walk_revisioned<'r, R: Read>(reader: &'r mut R) -> Result<Self::Walker<'r, R>, Error>;
+	///
+	/// The reader must be slice-backed ([`BorrowedReader`]). Callers with a
+	/// `File` or `TcpStream` should buffer the payload into a `Vec<u8>` first
+	/// — revisioned compounds carry their byte-length up front, so the full
+	/// payload has to be present before a walk can begin anyway. Walking on a
+	/// slice-backed source lets the optimised wire format borrow variant
+	/// bodies and indexed payloads directly, avoiding per-walk allocations.
+	fn walk_revisioned<'r, R: BorrowedReader>(
+		reader: &'r mut R,
+	) -> Result<Self::Walker<'r, R>, Error>;
 }
 
 // -----------------------------------------------------------------------------
@@ -175,12 +184,12 @@ where
 ///
 /// Only `decode` and `skip` are meaningful; there is no internal structure to
 /// step through.
-pub struct LeafWalker<'r, T, R: Read + 'r> {
+pub struct LeafWalker<'r, T, R: BorrowedReader + 'r> {
 	reader: &'r mut R,
 	_marker: PhantomData<fn() -> T>,
 }
 
-impl<'r, T, R: Read + 'r> LeafWalker<'r, T, R> {
+impl<'r, T, R: BorrowedReader + 'r> LeafWalker<'r, T, R> {
 	/// Construct a leaf walker; intended for use by [`WalkRevisioned`] impls.
 	#[inline]
 	pub fn new(reader: &'r mut R) -> Self {
@@ -266,13 +275,13 @@ where
 ///
 /// The wire format is a `u8` tag (`0` = `None`, `1` = `Some`) followed by an
 /// inner `T` payload when present.
-pub struct OptionWalker<'r, T, R: Read + 'r> {
+pub struct OptionWalker<'r, T, R: BorrowedReader + 'r> {
 	reader: &'r mut R,
 	tag: u8,
 	_marker: PhantomData<fn() -> T>,
 }
 
-impl<'r, T, R: Read + 'r> OptionWalker<'r, T, R> {
+impl<'r, T, R: BorrowedReader + 'r> OptionWalker<'r, T, R> {
 	/// Construct an option walker. Reads the `u8` tag from `reader`.
 	#[inline]
 	pub fn new(reader: &'r mut R) -> Result<Self, Error> {
@@ -346,13 +355,13 @@ impl<'r, T, R: Read + 'r> OptionWalker<'r, T, R> {
 ///
 /// The wire format is a `u32` tag (`0` = `Ok(T)`, `1` = `Err(E)`) followed by
 /// the corresponding payload.
-pub struct ResultWalker<'r, T, E, R: Read + 'r> {
+pub struct ResultWalker<'r, T, E, R: BorrowedReader + 'r> {
 	reader: &'r mut R,
 	tag: u32,
 	_marker: PhantomData<fn() -> Result<T, E>>,
 }
 
-impl<'r, T, E, R: Read + 'r> ResultWalker<'r, T, E, R> {
+impl<'r, T, E, R: BorrowedReader + 'r> ResultWalker<'r, T, E, R> {
 	/// Construct a result walker. Reads the `u32` variant tag from `reader`.
 	#[inline]
 	pub fn new(reader: &'r mut R) -> Result<Self, Error> {
@@ -454,13 +463,13 @@ impl<'r, T, E, R: Read + 'r> ResultWalker<'r, T, E, R> {
 /// always use per-element framing.
 ///
 /// [`SerializeRevisioned`]: crate::SerializeRevisioned
-pub struct SeqWalker<'r, T, R: Read + 'r> {
+pub struct SeqWalker<'r, T, R: BorrowedReader + 'r> {
 	reader: &'r mut R,
 	remaining: usize,
 	_marker: PhantomData<fn() -> T>,
 }
 
-impl<'r, T, R: Read + 'r> SeqWalker<'r, T, R> {
+impl<'r, T, R: BorrowedReader + 'r> SeqWalker<'r, T, R> {
 	/// Construct a sequence walker. Reads the `usize` length prefix.
 	#[inline]
 	pub fn new(reader: &'r mut R) -> Result<Self, Error> {
@@ -508,11 +517,11 @@ impl<'r, T, R: Read + 'r> SeqWalker<'r, T, R> {
 }
 
 /// One item position inside a [`SeqWalker`].
-pub struct SeqItem<'a, 'r, T, R: Read + 'r> {
+pub struct SeqItem<'a, 'r, T, R: BorrowedReader + 'r> {
 	walker: &'a mut SeqWalker<'r, T, R>,
 }
 
-impl<'a, 'r, T, R: Read + 'r> SeqItem<'a, 'r, T, R> {
+impl<'a, 'r, T, R: BorrowedReader + 'r> SeqItem<'a, 'r, T, R> {
 	/// Decode this item.
 	#[inline]
 	pub fn decode(self) -> Result<T, Error>
@@ -581,7 +590,7 @@ where
 
 /// Walker for a `(K, V)` map (length-prefix followed by alternating
 /// key/value encodings).
-pub struct MapWalker<'r, K, V, R: Read + 'r> {
+pub struct MapWalker<'r, K, V, R: BorrowedReader + 'r> {
 	reader: &'r mut R,
 	remaining: usize,
 	_marker: PhantomData<fn() -> (K, V)>,
@@ -596,7 +605,7 @@ enum MapCursor {
 	BeforeValue,
 }
 
-impl<'r, K, V, R: Read + 'r> MapWalker<'r, K, V, R> {
+impl<'r, K, V, R: BorrowedReader + 'r> MapWalker<'r, K, V, R> {
 	/// Construct a map walker. Reads the `usize` length prefix.
 	#[inline]
 	pub fn new(reader: &'r mut R) -> Result<Self, Error> {
@@ -713,7 +722,8 @@ where
 	/// the matching entry or `None` if no entry passes `predicate`.
 	///
 	/// Inherits the **sorted-map** requirement from [`find`](Self::find): wire
-	/// visit order must match the predicate's assumed ordering (see [`find`]).
+	/// visit order must match the predicate's assumed ordering (see
+	/// [`find`](Self::find)).
 	///
 	/// Sibling of [`find`](Self::find) for keys whose wire format is
 	/// exactly `usize len || raw bytes` ([`LengthPrefixedBytes`]). Each
@@ -773,12 +783,12 @@ where
 /// Calling methods out of order returns [`Error::Deserialize`] in all builds
 /// (not only debug builds), without advancing the reader when the check fails
 /// before I/O.
-pub struct MapEntry<'a, 'r, K, V, R: Read + 'r> {
+pub struct MapEntry<'a, 'r, K, V, R: BorrowedReader + 'r> {
 	walker: &'a mut MapWalker<'r, K, V, R>,
 	cursor: MapCursor,
 }
 
-impl<'a, 'r, K, V, R: Read + 'r> MapEntry<'a, 'r, K, V, R> {
+impl<'a, 'r, K, V, R: BorrowedReader + 'r> MapEntry<'a, 'r, K, V, R> {
 	fn expect_cursor(&self, expected: MapCursor, operation: &'static str) -> Result<(), Error> {
 		if self.cursor != expected {
 			return Err(Error::Deserialize(format!(
@@ -941,13 +951,13 @@ where
 /// [`position`](Self::position) counts fields **started** (`decode`, `skip`, or
 /// `walk`), not necessarily bytes fully consumed when the last operation was
 /// [`walk`](Self::walk).
-pub struct StructWalker<'r, R: Read + 'r> {
+pub struct StructWalker<'r, R: BorrowedReader + 'r> {
 	reader: &'r mut R,
 	revision: u16,
 	position: u32,
 }
 
-impl<'r, R: Read + 'r> StructWalker<'r, R> {
+impl<'r, R: BorrowedReader + 'r> StructWalker<'r, R> {
 	/// Construct a struct walker. The caller must already have read the
 	/// type-level revision header.
 	#[inline]
@@ -1043,13 +1053,13 @@ impl<'r, R: Read + 'r> StructWalker<'r, R> {
 /// On construction the walker reads the `u32` variant discriminant. The
 /// caller dispatches on `discriminant()` (or via a derive-generated table)
 /// and supplies the appropriate payload type to one of the consume methods.
-pub struct EnumWalker<'r, R: Read + 'r> {
+pub struct EnumWalker<'r, R: BorrowedReader + 'r> {
 	reader: &'r mut R,
 	revision: u16,
 	discriminant: u32,
 }
 
-impl<'r, R: Read + 'r> EnumWalker<'r, R> {
+impl<'r, R: BorrowedReader + 'r> EnumWalker<'r, R> {
 	/// Construct an enum walker. Reads the `u32` variant discriminant from
 	/// `reader`. The caller must already have read the type-level revision
 	/// header.

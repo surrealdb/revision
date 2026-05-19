@@ -1,0 +1,5 @@
+error: enum has 33 variants alive at revision 1 but `encoding = "optimised"` allows at most 32
+ --> tests/compile_fail/optimised_too_many_variants.rs:5:6
+  |
+5 | enum TooManyVariants {
+  |      ^^^^^^^^^^^^^^^
