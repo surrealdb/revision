@@ -230,3 +230,54 @@ pub fn emit_deserialize_specialised(ty: &Type, reader_expr: &TokenStream) -> Tok
 		)?
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use syn::parse_str;
+
+	fn matches(input: &str) -> Option<&'static str> {
+		let ty: Type = parse_str(input).expect("test input parses as a Type");
+		fixed_int_name(&ty)
+	}
+
+	#[test]
+	fn bare_primitives_match() {
+		assert_eq!(matches("u32"), Some("u32"));
+		assert_eq!(matches("i32"), Some("i32"));
+		assert_eq!(matches("u64"), Some("u64"));
+		assert_eq!(matches("i64"), Some("i64"));
+		assert_eq!(matches("u128"), Some("u128"));
+		assert_eq!(matches("i128"), Some("i128"));
+	}
+
+	#[test]
+	fn qualified_paths_are_rejected() {
+		// The macro can't see through paths — these must NOT silently
+		// match and fall through to the default varint encoding.
+		assert_eq!(matches("::std::primitive::u32"), None);
+		assert_eq!(matches("std::primitive::u32"), None);
+		assert_eq!(matches("core::primitive::u32"), None);
+		assert_eq!(matches("::core::primitive::i64"), None);
+	}
+
+	#[test]
+	fn aliases_and_unsupported_types_are_rejected() {
+		// Aliases — the macro can't resolve them.
+		assert_eq!(matches("MyId"), None);
+		assert_eq!(matches("Self::Id"), None);
+		// Types not in the supported set.
+		assert_eq!(matches("u8"), None);
+		assert_eq!(matches("u16"), None);
+		assert_eq!(matches("usize"), None);
+		assert_eq!(matches("isize"), None);
+		assert_eq!(matches("f32"), None);
+		assert_eq!(matches("f64"), None);
+		assert_eq!(matches("String"), None);
+		assert_eq!(matches("Vec<u32>"), None);
+		// Wrapping / reference forms.
+		assert_eq!(matches("&u32"), None);
+		assert_eq!(matches("(u32)"), None);
+		assert_eq!(matches("Wrapping<u32>"), None);
+	}
+}

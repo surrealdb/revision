@@ -146,9 +146,8 @@ optimised enum); the remaining 2 hold the size class.
 #### Walker additions
 
 - `decode_<variant>(self) -> Result<InnerT, Error>` on enum walkers
-  — works for both Wire and Materialised paths (including the
-  optimised enum's tag-byte slurp), unlike `into_<variant>` which
-  is Wire-only.
+  — works on every walker repr (Wire, OptimisedBorrowed,
+  ConvertedOwned), unlike `into_<variant>` which is Wire-only.
 - `<variant>_view(self) -> Result<OwnedVariantView<T>, Error>` —
   returns an owned wrapper around the variant payload bytes;
   callers construct their own walker / decoder against it.

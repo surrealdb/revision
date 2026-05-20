@@ -295,12 +295,14 @@ if walker.is_circle() {
 
 ### Walking across revisions
 
-`WalkRevisioned` honours the same cross-revision contract as `DeserializeRevisioned`: any wire revision in `1..=current` is accepted, and the walker presents the **latest schema** view. There are two internal modes:
+`WalkRevisioned` honours the same cross-revision contract as `DeserializeRevisioned`: any wire revision in `1..=current` is accepted, and the walker presents the **latest schema** view. The walker repr has up to four arms depending on the type:
 
-- **Wire mode** (the fast path) is used when the wire revision matches the current schema, and for any older revision of a type that does **not** use `convert_fn`. Per-field methods branch on `wire_rev` against the field's `start` annotation: fields added after the wire revision are synthesised via `Default::default()` (or the user-supplied `default_fn`); no allocations.
-- **Materialised mode** is used when the wire revision differs from the current schema *and* the type has at least one `convert_fn`. The walker internally calls `Self::deserialize_revisioned` (which honours `convert_fn`), re-encodes the result at the current revision, and then byte-walks those new bytes. The user-facing API is identical; the cost is a single `Vec<u8>` allocation plus the deserialize/serialize roundtrip.
+- **Wire** (the fast path) is used when the wire revision matches the current schema, and for any older revision of a type that does **not** use `convert_fn`. Per-field methods branch on `wire_rev` against the field's `start` annotation: fields added after the wire revision are synthesised via `Default::default()` (or the user-supplied `default_fn`); no allocations.
+- **IndexedBorrowed** (struct walker only) holds a borrowed slice over an `optimised` + `indexed_struct` payload. Per-field methods jump via the offset table in O(1); no allocations.
+- **OptimisedBorrowed** (enum walker only) holds a borrowed slice over an `optimised` enum's variant body. Per-variant accessors read directly from the slice.
+- **ConvertedOwned** is used when the wire revision differs from the current schema *and* the type has at least one `convert_fn`. The walker internally calls `Self::deserialize_revisioned` (which honours `convert_fn`), re-encodes the result at the current revision into an owned `Vec<u8>`, and then byte-walks those new bytes. The user-facing API is identical; the cost is a single `Vec<u8>` allocation plus the deserialize/serialize roundtrip.
 
-The walker's mode selection happens at construction; per-method code paths do not branch beyond a single match on the internal repr.
+The walker's repr is selected at construction; per-method code paths do not branch beyond a single match on the internal repr.
 
 ```rust
 use revision::{WalkRevisioned, revisioned, to_vec};
@@ -529,8 +531,9 @@ form).
   and no duplicates; the parser errors at the call site otherwise.
 - Mixing `revision = N` with `revision(N)` on the same type is a
   compile error.
-- Encoding-specific attributes (`map = "..."`, `seq = "..."`,
-  `struct = "..."`) require `optimised` on the same entry.
+- Encoding-specific attributes (`indexed_struct` and the per-field
+  `indexed_map` / `indexed_seq` / `indexed_set` markers) require the
+  `optimised` flag on the same revision entry.
 
 ### Wire layout (per-entry)
 
@@ -743,20 +746,22 @@ if walker.is_heartbeat() {
 }
 ```
 
-The `decode_<variant>` accessor works on Wire and Materialised
-walkers alike — the recommended path for surrealdb-style filters
-that peek the variant before deciding whether to fully decode.
+The `decode_<variant>` accessor works on every walker repr (Wire,
+OptimisedBorrowed, ConvertedOwned) — the recommended path for
+surrealdb-style filters that peek the variant before deciding whether
+to fully decode.
 
 ### Limitations (current iteration)
 
 - **Walker on optimised enums** exposes `discriminant()`,
   `is_<variant>()`, and `decode_<variant>(self)` directly. The
   consuming `into_<variant>` accessor (returning a borrowed
-  sub-walker) still errors on the materialised path — that's the
-  `Walker<'r, R>` GAT lifetime trap; use
-  `<variant>_view(self) -> OwnedVariantView<T>` to get the variant
-  payload bytes as an owned handle, then construct your own walker
-  from `view.as_bytes()` if needed.
+  sub-walker) errors on the `OptimisedBorrowed` and `ConvertedOwned`
+  paths — that's the `Walker<'r, R>` GAT lifetime trap; use
+  `<variant>_view(self) -> VariantView<'r, T>` to get the variant
+  payload bytes (borrowed from the source in the common
+  `OptimisedBorrowed` case), then construct your own walker from
+  `view.as_bytes()` if needed.
 - The type-level `map = "indexed"` / `seq = "indexed"` attributes are
   rejected at parse time — they're impossible to implement soundly
   without specialisation (the macro can't tell `BTreeMap` from any
@@ -775,14 +780,20 @@ that peek the variant before deciding whether to fully decode.
 The optimised wire format adds several attributes; they follow two
 shapes depending on what they declare:
 
-- **Type-level configuration** uses `key = "value"` pairs because the
-  value comes from a finite-but-extensible set: `encoding =
-  "optimised"`, `indexed_struct`, `size = "inline" | "fixed(N)" |
-  "varlen"`. Future encodings (e.g. `encoding = "tagged"`) slot in
-  without breaking existing callers.
-- **Field-level flags** use bare keywords (`indexed_map`,
-  `indexed_seq`, `indexed_set`) because they're booleans —
-  presence means "yes". Mixing two for one field is a compile error.
+- **Opt-in flags** are bare keywords because they're booleans —
+  presence means "yes", absence means "no". Currently:
+  `optimised` and `indexed_struct` at the revision level
+  (inside `#[revisioned(revision(N, ...))]`); `indexed_map`,
+  `indexed_seq`, `indexed_set`, `fixed`, `specialised` at the
+  field level (inside `#[revision(...)]` on a field). Mixing
+  two indexed-* markers for one field is a compile error.
+- **Parameterised options** use `key = "value"` pairs because the
+  value carries information beyond on/off: `size = "inline" |
+  "fixed(N)" | "varlen"` on optimised-enum variants picks one
+  of three classes (with an embedded byte count for `fixed`);
+  `start = N`, `end = N`, `convert_fn = "..."`,
+  `default_fn = "..."`, `fields_name = "..."` likewise take a
+  parameter.
 
 This split mirrors how Rust's own `#[cfg(...)]` works: `cfg(test)`
 is a flag, `cfg(target_os = "linux")` is a configuration value.

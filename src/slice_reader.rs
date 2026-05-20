@@ -142,16 +142,20 @@ impl Read for SliceReader<'_> {
 ///    fast path do not create dangling pointers.
 ///
 /// 4. **`remaining().len()` is monotonically non-increasing under
-///    `advance`** — each `advance(n)` call must strictly reduce (by
-///    exactly `n`) or leave unchanged the length reported by
-///    `remaining`. The macro-emitted Wire fast path computes the
-///    consumed byte count as
-///    `remaining_before.len() - remaining_after.len()`; an impl that
-///    ever grows `remaining` across an `advance` would underflow this
+///    `advance`** — for any successful `advance` call,
+///    `remaining_after.len() <= remaining_before.len()` must hold.
+///    The macro-emitted Wire fast path computes the consumed byte
+///    count as `remaining_before.len() - remaining_after.len()` and
+///    relies on the result being non-negative; an impl that ever
+///    grows `remaining` across an `advance` would underflow this
 ///    subtraction. (The macro guards against underflow with a
 ///    `checked_sub` that returns a corrupt-impl error rather than
 ///    triggering UB, but in-crate impls and any reasonable downstream
-///    impl must honour this invariant.)
+///    impl must honour this invariant.) The bullet deliberately does
+///    *not* require that `advance(n)` reduces `remaining` by exactly
+///    `n` — an impl that coalesces, buffers, or otherwise chooses a
+///    larger reduction is still sound for the unsafe code that
+///    depends on this contract.
 ///
 /// The two impls in this crate — `&[u8]` and [`SliceReader`] — both
 /// trivially satisfy this contract: `peek_bytes` and `remaining` return

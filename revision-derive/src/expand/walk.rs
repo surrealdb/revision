@@ -675,16 +675,14 @@ fn emit_struct_methods(
 					// under `advance`. A downstream impl that violates this
 					// would underflow naive subtraction and trigger UB in
 					// the `from_raw_parts` below — `checked_sub` turns the
-					// contract violation into a clean deserialize error
-					// instead.
+					// contract violation into a typed
+					// `BorrowedReaderContractViolation` error instead.
 					let __consumed_len = __before_len
 						.checked_sub(__after_len)
-						.ok_or_else(|| ::revision::Error::Deserialize(
+						.ok_or_else(|| ::revision::Error::BorrowedReaderContractViolation(
 							::std::format!(
-								"BorrowedReader::remaining() grew across an advance call \
-								 (before={}, after={}); the impl violates the trait's safety \
-								 contract — this is a bug in the reader implementation, not the \
-								 wire data",
+								"remaining().len() grew across an advance call \
+								 (before={}, after={})",
 								__before_len,
 								__after_len,
 							)

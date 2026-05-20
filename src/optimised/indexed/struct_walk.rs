@@ -103,13 +103,20 @@ impl<'p> IndexedStructWalker<'p> {
 	/// On untrusted input this trades a clean
 	/// [`Error::OptimisedOffsetsNonMonotonic`] /
 	/// [`Error::OptimisedOffsetOutOfRange`] at construction for a **panic
-	/// on field access** if the offset table is corrupt. Specifically,
-	/// [`field_bytes`](Self::field_bytes) and
-	/// [`decode_field`](Self::decode_field) slice the payload by raw
-	/// indices read from the prologue, so an offset that exceeds
-	/// `payload.len()` or whose neighbour is smaller (non-monotonic)
-	/// triggers a slice-out-of-bounds panic via standard `Index`/`Range`
-	/// bounds checking.
+	/// on field access** if the offset table is corrupt. Specifically:
+	///
+	/// - The offset *table itself* (the `field_count * 4` byte prologue)
+	///   is bounds-checked at construction — the up-front
+	///   `payload.len() < prologue_bytes` check returns
+	///   `Error::OptimisedSubReaderOverrun` if the payload is too short
+	///   to hold the table at all, so reading the four bytes for any
+	///   given offset is safe.
+	/// - The offset *values* read from that table are not checked.
+	///   [`field_bytes`](Self::field_bytes) and
+	///   [`decode_field`](Self::decode_field) slice the payload by those
+	///   values: an offset that exceeds `payload.len()` or whose
+	///   neighbour is smaller (non-monotonic) triggers a slice-out-of-
+	///   bounds panic via standard `Index`/`Range` bounds checking.
 	///
 	/// This is the intended behaviour: the caller asserted trust by
 	/// choosing this constructor, and a panic on corrupted "trusted"
@@ -120,7 +127,8 @@ impl<'p> IndexedStructWalker<'p> {
 	/// Returns `Error::OptimisedSubReaderOverrun` only when the payload
 	/// is too short to hold the offset table itself — that check is
 	/// kept because constructing the walker over a payload shorter than
-	/// `field_count * 4` would have no defensible interpretation.
+	/// `field_count * 4` would have no defensible interpretation, and
+	/// keeps the in-bounds guarantee for offset-table reads above.
 	///
 	/// [`from_payload`]: Self::from_payload
 	/// [`Error::OptimisedOffsetsNonMonotonic`]: crate::Error::OptimisedOffsetsNonMonotonic
