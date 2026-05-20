@@ -1,5 +1,5 @@
-error: type-level `map = "indexed"` is not supported; use the per-field attribute `#[revision(indexed_map)]` on each map-shaped field that should use indexed encoding instead
- --> tests/compile_fail/optimised_legacy_extras.rs:5:32
+error: encoding-specific attributes (`map`, `seq`, `indexed_struct`) require the `optimised` flag on the same revision entry
+ --> tests/compile_fail/optimised_legacy_extras.rs:7:14
   |
-5 | #[revisioned(revision(1, map = "indexed"))]
-  |                                ^^^^^^^^^
+7 | #[revisioned(revision(1, indexed_struct))]
+  |              ^^^^^^^^

@@ -1,6 +1,6 @@
 //! Optimised codegen for revisioned enums.
 //!
-//! Wire layout under `encoding = "optimised"`:
+//! Wire layout under `optimised`:
 //!
 //! ```text
 //! u16 revision                     (written by the outer impl)

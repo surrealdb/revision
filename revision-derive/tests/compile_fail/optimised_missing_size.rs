@@ -1,7 +1,7 @@
-//! Enum variants under `encoding = "optimised"` must declare a size class.
+//! Enum variants under `optimised` must declare a size class.
 use revision::revisioned;
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 enum BadEnum {
 	WithoutSizeAttribute,
 }

@@ -319,7 +319,7 @@ where
 /// use std::collections::BTreeMap;
 /// use revision::prelude::*;
 ///
-/// #[revisioned(revision(1, encoding = "optimised"))]
+/// #[revisioned(revision(1, optimised))]
 /// struct Doc {
 ///     #[revision(indexed_map)]
 ///     fields: BTreeMap<String, u32>,
@@ -348,12 +348,12 @@ where
 /// ```
 ///
 /// [`IndexedMapWalker`]: crate::optimised::IndexedMapWalker
-pub struct OwnedIndexedMapView<'r, K, V> {
+pub struct IndexedMapView<'r, K, V> {
 	bytes: std::borrow::Cow<'r, [u8]>,
 	_marker: PhantomData<fn() -> (K, V)>,
 }
 
-impl<'r, K, V> OwnedIndexedMapView<'r, K, V> {
+impl<'r, K, V> IndexedMapView<'r, K, V> {
 	#[doc(hidden)]
 	pub fn new(bytes: std::borrow::Cow<'r, [u8]>) -> Self {
 		Self {
@@ -400,12 +400,12 @@ impl<'r, K, V> OwnedIndexedMapView<'r, K, V> {
 ///   `T::walk_revisioned(&mut &view.as_bytes()[..])` within their scope.
 ///
 /// `decode_<variant>` remains the recommended path for most callers.
-pub struct OwnedVariantView<'r, T> {
+pub struct VariantView<'r, T> {
 	bytes: std::borrow::Cow<'r, [u8]>,
 	_marker: PhantomData<fn() -> T>,
 }
 
-impl<'r, T> OwnedVariantView<'r, T> {
+impl<'r, T> VariantView<'r, T> {
 	#[doc(hidden)]
 	pub fn new(bytes: std::borrow::Cow<'r, [u8]>) -> Self {
 		Self {
@@ -427,14 +427,14 @@ impl<'r, T> OwnedVariantView<'r, T> {
 }
 
 /// Wire-bytes handle for an indexed set field. Wire format is identical
-/// to [`OwnedIndexedSeqView`] (the set's element bytes were sorted on encode
+/// to [`IndexedSeqView`] (the set's element bytes were sorted on encode
 /// so the `IndexedSeqWalker` can be used for binary-search membership tests).
-pub struct OwnedIndexedSetView<'r, T> {
+pub struct IndexedSetView<'r, T> {
 	bytes: std::borrow::Cow<'r, [u8]>,
 	_marker: PhantomData<fn() -> T>,
 }
 
-impl<'r, T> OwnedIndexedSetView<'r, T> {
+impl<'r, T> IndexedSetView<'r, T> {
 	#[doc(hidden)]
 	pub fn new(bytes: std::borrow::Cow<'r, [u8]>) -> Self {
 		Self {
@@ -457,12 +457,12 @@ impl<'r, T> OwnedIndexedSetView<'r, T> {
 }
 
 /// Owned wire-bytes handle for an indexed sequence field. Mirror of
-/// [`OwnedIndexedMapView`] for the sequence case.
+/// [`IndexedMapView`] for the sequence case.
 ///
 /// ```
 /// use revision::prelude::*;
 ///
-/// #[revisioned(revision(1, encoding = "optimised"))]
+/// #[revisioned(revision(1, optimised))]
 /// struct Doc {
 ///     #[revision(indexed_seq)]
 ///     tags: Vec<String>,
@@ -483,12 +483,12 @@ impl<'r, T> OwnedIndexedSetView<'r, T> {
 /// let s = <String as DeserializeRevisioned>::deserialize_revisioned(&mut elt).unwrap();
 /// assert_eq!(s, "tag-5");
 /// ```
-pub struct OwnedIndexedSeqView<'r, T> {
+pub struct IndexedSeqView<'r, T> {
 	bytes: std::borrow::Cow<'r, [u8]>,
 	_marker: PhantomData<fn() -> T>,
 }
 
-impl<'r, T> OwnedIndexedSeqView<'r, T> {
+impl<'r, T> IndexedSeqView<'r, T> {
 	#[doc(hidden)]
 	pub fn new(bytes: std::borrow::Cow<'r, [u8]>) -> Self {
 		Self {

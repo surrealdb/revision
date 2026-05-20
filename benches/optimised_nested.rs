@@ -25,7 +25,7 @@ struct Leaf1Legacy {
 	h: u64,
 }
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 struct Leaf1Opt {
 	a: u64,
 	b: u64,
@@ -47,7 +47,7 @@ struct D3Legacy {
 	tag: u32,
 }
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 struct D3Opt {
 	leaf: Leaf1Opt,
 	tag: u32,
@@ -59,7 +59,7 @@ struct D3LegacyOuter {
 	tag: u32,
 }
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 struct D3OptOuter {
 	inner: D3Opt,
 	tag: u32,
@@ -75,7 +75,7 @@ struct D5Legacy {
 	tag: u32,
 }
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 struct D5Opt {
 	mid: D3OptOuter,
 	tag: u32,
@@ -87,7 +87,7 @@ struct D5LegacyOuter {
 	tag: u32,
 }
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 struct D5OptOuter {
 	deep: D5Opt,
 	tag: u32,

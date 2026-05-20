@@ -1,6 +1,6 @@
-//! Code generation for `encoding = "optimised"` revisions.
+//! Code generation for `optimised` revisions.
 //!
-//! Each `revision(N, encoding = "optimised", ...)` entry in a type's history
+//! Each `revision(N, optimised, ...)` entry in a type's history
 //! routes through this module instead of the legacy `expand/ser.rs`,
 //! `expand/de.rs`, `expand/skip.rs` codegen. Walker codegen still lives in
 //! `expand/walk.rs`; this module supplies the new arms it dispatches into.

@@ -295,12 +295,14 @@ if walker.is_circle() {
 
 ### Walking across revisions
 
-`WalkRevisioned` honours the same cross-revision contract as `DeserializeRevisioned`: any wire revision in `1..=current` is accepted, and the walker presents the **latest schema** view. There are two internal modes:
+`WalkRevisioned` honours the same cross-revision contract as `DeserializeRevisioned`: any wire revision in `1..=current` is accepted, and the walker presents the **latest schema** view. The walker repr has up to four arms depending on the type:
 
-- **Wire mode** (the fast path) is used when the wire revision matches the current schema, and for any older revision of a type that does **not** use `convert_fn`. Per-field methods branch on `wire_rev` against the field's `start` annotation: fields added after the wire revision are synthesised via `Default::default()` (or the user-supplied `default_fn`); no allocations.
-- **Materialised mode** is used when the wire revision differs from the current schema *and* the type has at least one `convert_fn`. The walker internally calls `Self::deserialize_revisioned` (which honours `convert_fn`), re-encodes the result at the current revision, and then byte-walks those new bytes. The user-facing API is identical; the cost is a single `Vec<u8>` allocation plus the deserialize/serialize roundtrip.
+- **Wire** (the fast path) is used when the wire revision matches the current schema, and for any older revision of a type that does **not** use `convert_fn`. Per-field methods branch on `wire_rev` against the field's `start` annotation: fields added after the wire revision are synthesised via `Default::default()` (or the user-supplied `default_fn`); no allocations.
+- **IndexedBorrowed** (struct walker only) holds a borrowed slice over an `optimised` + `indexed_struct` payload. Per-field methods jump via the offset table in O(1); no allocations.
+- **OptimisedBorrowed** (enum walker only) holds a borrowed slice over an `optimised` enum's variant body. Per-variant accessors read directly from the slice.
+- **ConvertedOwned** is used when the wire revision differs from the current schema *and* the type has at least one `convert_fn`. The walker internally calls `Self::deserialize_revisioned` (which honours `convert_fn`), re-encodes the result at the current revision into an owned `Vec<u8>`, and then byte-walks those new bytes. The user-facing API is identical; the cost is a single `Vec<u8>` allocation plus the deserialize/serialize roundtrip.
 
-The walker's mode selection happens at construction; per-method code paths do not branch beyond a single match on the internal repr.
+The walker's repr is selected at construction; per-method code paths do not branch beyond a single match on the internal repr.
 
 ```rust
 use revision::{WalkRevisioned, revisioned, to_vec};
@@ -493,12 +495,12 @@ assert!(found);
 - **[`MapWalker::find`] / [`find_bytes`]:** On a match you only get a [`LeafWalker`] for that entry's value. The method consumes the [`MapWalker`]; you cannot resume [`next_entry`] on it. Key–value pairs that sort after the match remain on the underlying reader for other callers, not for the same walker instance (by design). Both methods assume **wire visit order matches sorted-map encoding** (as when serialising `BTreeMap`). Using an ordering predicate on bytes produced from unsorted maps (`HashMap` insertion order, …) can match incorrectly or discard the tail under `Ordering::Greater`.
 - **[`LengthPrefixedBytes`] on custom types:** The marker must match the type's real `SerializeRevisioned` layout (`usize len || raw bytes`). A wrong impl breaks [`with_bytes`] / [`find_bytes`] and related paths — it is an explicit contract, not something the library can detect (same class of risk as any incorrect [`Revisioned`] impl).
 
-- The derive emits two flavours of nested walk per field. `walk_<field>(&mut self)` borrows the parent walker so the caller can keep reading siblings after the sub-walker is dropped. `into_walk_<field>(self)` consumes the parent and hands the reader to the sub-walker for the original `'r`, trading sibling access for a longer-lived sub-walker. Both error with `Error::Conversion` in materialised mode (older revs of `convert_fn`-bearing types); callers that hit that path should `decode_<field>` instead.
+- The derive emits two flavours of nested walk per field. `walk_<field>(&mut self)` borrows the parent walker so the caller can keep reading siblings after the sub-walker is dropped. `into_walk_<field>(self)` consumes the parent and hands the reader to the sub-walker for the original `'r`, trading sibling access for a longer-lived sub-walker. Both error with `Error::Conversion` on the `ConvertedOwned` repr (older revs of `convert_fn`-bearing types); callers that hit that path should `decode_<field>` instead.
 - `into_<variant>` is currently emitted for unit variants and single-field tuple variants. Multi-field tuple variants and struct variants are reachable via `discriminant()` + `decode_<field>` on the underlying bytes.
 - `Vec<T>` uses `specialised-vectors` bulk encoding for several element types when that Cargo feature is enabled (the default): primitives, `bool`, and — if the optional `uuid` / `rust_decimal` crate features are also enabled — `uuid::Uuid` and `rust_decimal::Decimal` (see `try_specialized!` in `src/implementations/vecs.rs`). `Vec<T>::walk_revisioned` rejects each such `T` with [`Error::Deserialize`] **before** reading the sequence length, leaving the reader unchanged — use [`DeserializeRevisioned`] or [`SkipRevisioned`] instead. With `specialised-vectors` disabled, every `Vec<T>` uses per-element layout and is safe to walk. `HashSet<T>`, `BTreeSet<T>`, `BinaryHeap<T>`, and the `imbl` collections always use per-element framing, so they are walkable regardless of element type.
 - [`MapEntry`] methods enforce key/value ordering in every build: calling `decode_value` before `decode_key` / `skip_key`, or repeating `decode_key`, returns [`Error::Deserialize`] without advancing the reader when the check fails before I/O.
 - [`SeqItem::walk`], [`MapEntry::walk_value`], and [`StructWalker::walk`] advance counters (`remaining`, `position`) only after `walk_revisioned` succeeds, so a failed nested walk does not desynchronise the parent walker from the byte stream.
-- A type using `convert_fn` requires both `serialize = true` and `deserialize = true` for `walk` to be derivable (the default). The derive errors at compile time if `walk = true` is combined with either disabled, since the materialised cross-revision path needs to deserialize at the wire revision and re-serialize at the current revision. Set `walk = false` on such a type if you don't need walker support.
+- A type using `convert_fn` requires both `serialize = true` and `deserialize = true` for `walk` to be derivable (the default). The derive errors at compile time if `walk = true` is combined with either disabled, since the `ConvertedOwned` cross-revision path needs to deserialize at the wire revision and re-serialize at the current revision. Set `walk = false` on such a type if you don't need walker support.
 - `Cow<'_, T>` is treated as opaque by the walker. Its `Walker` is a `LeafWalker<T::Owned>`, so `decode()` returns `T::Owned` (e.g. `String` for `Cow<'_, str>`), not a `Cow`. Use `DeserializeRevisioned` if you need a `Cow` back, or descend through `T::Owned::walk_revisioned` directly.
 
 ## Optimised wire format
@@ -511,8 +513,8 @@ Types declare which revisions use it via the **history syntax**:
 ```rust,ignore
 #[revisioned(
     revision(1),                                      // legacy layout
-    revision(2, encoding = "optimised"),              // tagged envelope
-    revision(3, encoding = "optimised", struct = "indexed"),
+    revision(2, optimised),              // tagged envelope
+    revision(3, optimised, indexed_struct),
 )]
 struct Wide { /* fields */ }
 ```
@@ -529,13 +531,14 @@ form).
   and no duplicates; the parser errors at the call site otherwise.
 - Mixing `revision = N` with `revision(N)` on the same type is a
   compile error.
-- Encoding-specific attributes (`map = "..."`, `seq = "..."`,
-  `struct = "..."`) require `encoding = "optimised"` on the same entry.
+- Encoding-specific attributes (`indexed_struct` and the per-field
+  `indexed_map` / `indexed_seq` / `indexed_set` markers) require the
+  `optimised` flag on the same revision entry.
 
 ### Wire layout (per-entry)
 
 A type's outer envelope still begins with the `u16` revision varint.
-Under `encoding = "optimised"` the body that follows is:
+Under `optimised` the body that follows is:
 
 ```text
 struct:  u32_le payload_length || [optional u32_le; field_count] || fields
@@ -559,12 +562,15 @@ optimised enums may have at most 32 variants alive at any revision.
 
 ### Indexed prologues
 
-`struct = "indexed"` prepends `[u32_le; field_count]` to the payload
+`indexed_struct` prepends `[u32_le; field_count]` to the payload
 so a walker can jump to any field in O(1). The encoder buffers fields
 into a scratch `Vec<u8>` to learn each field's offset, then emits the
-prologue and body in a single pass. (`map = "indexed"` and
-`seq = "indexed"` parse but are not yet routed through the codegen —
-they are reserved for a future iteration.)
+prologue and body in a single pass. Indexed encoding for individual
+map/seq/set fields uses the per-field attributes
+`#[revision(indexed_map)]` / `#[revision(indexed_seq)]` /
+`#[revision(indexed_set)]` instead — the type-level `map = "indexed"`
+and `seq = "indexed"` forms are rejected at parse time with a
+diagnostic pointing at the per-field variant.
 
 `OFFSET_TABLE_MIN_LEN = 8` is the minimum entry count that triggers
 the prologue; below it the encoder falls back to a sequential body
@@ -621,7 +627,7 @@ struct Profile {
 // After — two revisions, the new one uses optimised:
 #[revisioned(
     revision(1),                                        // existing on-disk data
-    revision(2, encoding = "optimised", struct = "indexed"),
+    revision(2, optimised, indexed_struct),
 )]
 struct Profile {
     id: u32,
@@ -656,7 +662,7 @@ attributes:
 use std::collections::{BTreeMap, BTreeSet};
 use revision::prelude::*;
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 struct Doc {
     id: u32,
     #[revision(indexed_map)]
@@ -717,7 +723,7 @@ Inline variants are one byte total on the wire; varlen variants
 carry a `u32_le` length so skip is O(1).
 
 ```rust,ignore
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 enum Event {
     #[revision(size = "inline")]
     Heartbeat,
@@ -740,20 +746,22 @@ if walker.is_heartbeat() {
 }
 ```
 
-The `decode_<variant>` accessor works on Wire and Materialised
-walkers alike — the recommended path for surrealdb-style filters
-that peek the variant before deciding whether to fully decode.
+The `decode_<variant>` accessor works on every walker repr (Wire,
+OptimisedBorrowed, ConvertedOwned) — the recommended path for
+surrealdb-style filters that peek the variant before deciding whether
+to fully decode.
 
 ### Limitations (current iteration)
 
 - **Walker on optimised enums** exposes `discriminant()`,
   `is_<variant>()`, and `decode_<variant>(self)` directly. The
   consuming `into_<variant>` accessor (returning a borrowed
-  sub-walker) still errors on the materialised path — that's the
-  `Walker<'r, R>` GAT lifetime trap; use
-  `<variant>_view(self) -> OwnedVariantView<T>` to get the variant
-  payload bytes as an owned handle, then construct your own walker
-  from `view.as_bytes()` if needed.
+  sub-walker) errors on the `OptimisedBorrowed` and `ConvertedOwned`
+  paths — that's the `Walker<'r, R>` GAT lifetime trap; use
+  `<variant>_view(self) -> VariantView<'r, T>` to get the variant
+  payload bytes (borrowed from the source in the common
+  `OptimisedBorrowed` case), then construct your own walker from
+  `view.as_bytes()` if needed.
 - The type-level `map = "indexed"` / `seq = "indexed"` attributes are
   rejected at parse time — they're impossible to implement soundly
   without specialisation (the macro can't tell `BTreeMap` from any
@@ -772,14 +780,20 @@ that peek the variant before deciding whether to fully decode.
 The optimised wire format adds several attributes; they follow two
 shapes depending on what they declare:
 
-- **Type-level configuration** uses `key = "value"` pairs because the
-  value comes from a finite-but-extensible set: `encoding =
-  "optimised"`, `struct = "indexed"`, `size = "inline" | "fixed(N)" |
-  "varlen"`. Future encodings (e.g. `encoding = "tagged"`) slot in
-  without breaking existing callers.
-- **Field-level flags** use bare keywords (`indexed_map`,
-  `indexed_seq`, `indexed_set`) because they're booleans —
-  presence means "yes". Mixing two for one field is a compile error.
+- **Opt-in flags** are bare keywords because they're booleans —
+  presence means "yes", absence means "no". Currently:
+  `optimised` and `indexed_struct` at the revision level
+  (inside `#[revisioned(revision(N, ...))]`); `indexed_map`,
+  `indexed_seq`, `indexed_set`, `fixed`, `specialised` at the
+  field level (inside `#[revision(...)]` on a field). Mixing
+  two indexed-* markers for one field is a compile error.
+- **Parameterised options** use `key = "value"` pairs because the
+  value carries information beyond on/off: `size = "inline" |
+  "fixed(N)" | "varlen"` on optimised-enum variants picks one
+  of three classes (with an embedded byte count for `fixed`);
+  `start = N`, `end = N`, `convert_fn = "..."`,
+  `default_fn = "..."`, `fields_name = "..."` likewise take a
+  parameter.
 
 This split mirrors how Rust's own `#[cfg(...)]` works: `cfg(test)`
 is a flag, `cfg(target_os = "linux")` is a configuration value.

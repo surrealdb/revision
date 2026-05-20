@@ -1,7 +1,7 @@
 //! Optimised enums allow at most 32 variants alive at any revision.
 use revision::revisioned;
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 enum TooManyVariants {
 	#[revision(size = "inline")] V00,
 	#[revision(size = "inline")] V01,

@@ -1,6 +1,6 @@
 //! Tag byte for the optimised wire format.
 //!
-//! Every ADT value under `encoding = "optimised"` begins with a single tag byte:
+//! Every ADT value under `optimised` begins with a single tag byte:
 //!
 //! ```text
 //! u8 tag:
@@ -26,7 +26,7 @@ const SIZE_CLASS_INLINE: u8 = 0b00;
 const SIZE_CLASS_FIXED: u8 = 0b01;
 const SIZE_CLASS_VARLEN: u8 = 0b10;
 
-/// Maximum number of variants an enum can declare under `encoding = "optimised"`.
+/// Maximum number of variants an enum can declare under `optimised`.
 pub const MAX_VARIANTS: usize = 32;
 
 /// Size class of an optimised value: how the payload (if any) is encoded after the tag.

@@ -117,31 +117,66 @@ impl Read for SliceReader<'_> {
 /// # Safety
 ///
 /// This trait is `unsafe` to implement because the crate's unsafe code
-/// (in particular [`crate::optimised::envelope::read_varlen_slice`] and the
-/// macro-generated optimised walkers) relies on a stronger contract than
-/// could be expressed in safe Rust:
+/// (in particular [`crate::optimised::envelope::read_varlen_slice`], the
+/// `walk_<field>` Wire-fast-path in macro-generated walkers, and the
+/// optimised walker constructors more broadly) relies on a stronger
+/// contract than could be expressed in safe Rust:
 ///
-/// 1. **`peek_bytes(n)` must return a slice that points into stable,
-///    addressable memory** — not a transient buffer that could be moved,
-///    reallocated, or overwritten by a subsequent call.
+/// 1. **`peek_bytes(n)` and [`remaining`](Self::remaining) must return
+///    slices that point into stable, addressable memory** — not a
+///    transient buffer that could be moved, reallocated, or overwritten
+///    by a subsequent call.
 ///
 /// 2. **`advance(n)` must only move the cursor; it must not invalidate,
-///    move, or mutate the bytes already peeked.** In particular, an impl
-///    that holds bytes in an internal `Vec<u8>` and refills the `Vec` on
-///    `advance` (e.g. a buffered file reader) does **not** satisfy this
-///    contract, because the peeked slice's pointer would dangle after the
-///    refill.
+///    move, or mutate the bytes already returned by `peek_bytes` or
+///    `remaining`.** In particular, an impl that holds bytes in an
+///    internal `Vec<u8>` and refills the `Vec` on `advance` (e.g. a
+///    buffered file reader) does **not** satisfy this contract, because
+///    previously-returned slice pointers would dangle after the refill.
 ///
-/// 3. **Peeked bytes must remain valid for the reader's lifetime** (i.e.
-///    for `'r` where the reader is borrowed as `&'r mut R`), regardless of
-///    how many `advance` calls happen in between, so the unsafe code
-///    extending peek lifetimes via [`unsafe_extend_peek_lifetime`] does not
-///    create dangling pointers.
+/// 3. **Bytes returned by `peek_bytes` or `remaining` must remain valid
+///    for the reader's lifetime** (i.e. for `'r` where the reader is
+///    borrowed as `&'r mut R`), regardless of how many `advance` calls
+///    happen in between, so the unsafe code extending peek lifetimes via
+///    [`read_borrowed_bytes`] and the macro-emitted `walk_<field>` Wire
+///    fast path do not create dangling pointers.
+///
+/// 4. **`remaining().len()` is monotonically non-increasing under
+///    `advance`** — for any successful `advance` call,
+///    `remaining_after.len() <= remaining_before.len()` must hold.
+///    The macro-emitted Wire fast path computes the consumed byte
+///    count as `remaining_before.len() - remaining_after.len()` and
+///    relies on the result being non-negative; an impl that ever
+///    grows `remaining` across an `advance` would underflow this
+///    subtraction. (The macro guards against underflow with a
+///    `checked_sub` that returns a corrupt-impl error rather than
+///    triggering UB, but in-crate impls and any reasonable downstream
+///    impl must honour this invariant.) The bullet deliberately does
+///    *not* require that `advance(n)` reduces `remaining` by exactly
+///    `n` — an impl that coalesces, buffers, or otherwise chooses a
+///    larger reduction is still sound for the unsafe code that
+///    depends on this contract.
+///
+///    *Semantic caveat:* the UB-safety promise above is **only** about
+///    memory safety. The macro-emitted `walk_<field>` Wire fast path
+///    additionally interprets `remaining_before.len() -
+///    remaining_after.len()` as "the number of bytes the
+///    `skip_indexed_*` call consumed", and hands those bytes to
+///    `IndexedMapView` / `IndexedSeqView` / `IndexedSetView` for
+///    parsing. An impl that reduces `remaining` by *more* than what
+///    `skip_*` actually visited (e.g. by coalescing reads or
+///    pre-fetching the next field) would still be UB-safe, but the
+///    view would see trailing bytes the skip didn't consume and
+///    misparse the field. The two in-crate impls (`&[u8]`,
+///    `SliceReader<'a>`) advance by exactly `n`, so this is dormant
+///    in practice — but a downstream impl that wants to be both
+///    UB-safe **and** semantically correct against the macro should
+///    advance by exactly `n` as well.
 ///
 /// The two impls in this crate — `&[u8]` and [`SliceReader`] — both
-/// trivially satisfy this contract: their `peek_bytes` returns a slice
-/// into a caller-owned buffer that the reader never mutates, and `advance`
-/// is a pure cursor bump.
+/// trivially satisfy this contract: `peek_bytes` and `remaining` return
+/// slices into a caller-owned buffer that the reader never mutates, and
+/// `advance` is a pure cursor bump that only ever reduces `remaining`.
 ///
 /// Violating any of these is **undefined behaviour**, not just a logic
 /// bug; the crate's unsafe code is correct only under this contract.
@@ -168,6 +203,45 @@ pub unsafe trait BorrowedReader: Read {
 	/// Used by optimised walkers and the encode side to compute offsets
 	/// relative to the start of an optimised compound's payload.
 	fn position(&self) -> usize;
+
+	/// The unconsumed tail as a borrowed slice.
+	///
+	/// Returns a view of the bytes the reader has yet to read, tied to the
+	/// reader's borrow. Unlike [`peek_bytes`](Self::peek_bytes), the caller
+	/// does not have to know the length in advance — and unlike `position`,
+	/// the returned slice is concrete bytes, not a count.
+	///
+	/// **Use case**: capture before/after slices around a `skip`-style call
+	/// to recover the field's exact wire bytes without decoding them:
+	///
+	/// ```ignore
+	/// let before = reader.remaining();        // &[u8] of all unread bytes
+	/// some_skip_routine(&mut reader)?;        // advances past one logical value
+	/// let after = reader.remaining();
+	/// let consumed_bytes = &before[..before.len() - after.len()];
+	/// // `consumed_bytes` is the just-skipped value's wire bytes, zero-copy.
+	/// ```
+	///
+	/// Any impl that is used as the source for an optimised-walker's
+	/// `walk_<field>` accessor **must** override this. The default
+	/// implementation `debug_assert!`s on call (panicking in debug builds
+	/// to surface the missing override) and returns `&[]` in release
+	/// (which would produce silently-empty field views — equally bad, but
+	/// at least not crashing). Both in-crate impls (`&[u8]` and
+	/// `SliceReader<'a>`) override; any new downstream `BorrowedReader`
+	/// impl should too, even if it only uses the legacy walker paths
+	/// (which don't consult `remaining`) — the override is cheap and the
+	/// foot-gun cost is much higher than the cost of writing it.
+	#[inline]
+	fn remaining(&self) -> &[u8] {
+		debug_assert!(
+			false,
+			"BorrowedReader::remaining() default impl invoked — your impl must \
+			 override it (returns &[]; the macro-emitted walk_<field> Wire fast \
+			 path will produce silently empty field views otherwise)"
+		);
+		&[]
+	}
 }
 
 // SAFETY: `&[u8]::peek_bytes` returns a slice into the caller-owned buffer the
@@ -203,6 +277,13 @@ unsafe impl BorrowedReader for &[u8] {
 		// absolute position. Callers that need positions should use `SliceReader`.
 		0
 	}
+
+	#[inline]
+	fn remaining(&self) -> &[u8] {
+		// `*self` is `&[u8]` — the entire unread tail by definition (advancing
+		// replaces the slice with its suffix).
+		self
+	}
 }
 
 // SAFETY: `SliceReader<'a>` borrows an external `&'a [u8]` it never modifies.
@@ -227,6 +308,11 @@ unsafe impl<'a> BorrowedReader for SliceReader<'a> {
 	#[inline]
 	fn position(&self) -> usize {
 		self.consumed_len()
+	}
+
+	#[inline]
+	fn remaining(&self) -> &[u8] {
+		self.inner
 	}
 }
 

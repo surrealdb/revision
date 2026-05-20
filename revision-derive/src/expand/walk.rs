@@ -7,11 +7,19 @@
 //!   representation is one of:
 //!   - **Wire**: holds `&'r mut R`, the wire revision, and a position counter.
 //!     Used for the current-rev fast path and for older revs of types that do
-//!     not use `convert_fn` (purely additive evolution).
-//!   - **Materialised**: holds an owned `Vec<u8>` of bytes serialised at the
-//!     current schema revision, plus a cursor. Used for older revs of types
-//!     that use `convert_fn`; the conversion has already been honoured by
-//!     `DeserializeRevisioned` and the bytes are then re-encoded so the
+//!     not use `convert_fn` (purely additive evolution). Optimised
+//!     sequential structs also land here after advancing past their u32_le
+//!     length prefix.
+//!   - **IndexedBorrowed** (struct walker only): holds `&'r [u8]` pointing
+//!     at an optimised + `indexed_struct` payload borrowed from the
+//!     parent reader. Per-field methods jump via the offset table in O(1).
+//!   - **OptimisedBorrowed** (enum walker only): holds `&'r [u8]` pointing
+//!     at an optimised enum's variant body, borrowed from the parent
+//!     reader. The discriminant is cached alongside.
+//!   - **ConvertedOwned**: holds an owned `Vec<u8>` of bytes serialised at
+//!     the current schema revision, plus a cursor. Used for older revs of
+//!     types that use `convert_fn`; the conversion has already been honoured
+//!     by `DeserializeRevisioned` and the bytes are then re-encoded so the
 //!     walker can read sequentially without rev branching.
 //! - The `WalkRevisioned` impl whose `walk_revisioned` reads the `u16` header
 //!   and chooses the appropriate mode.
@@ -22,7 +30,7 @@
 //!   `walk_revisioned_variant_name(wire_rev, disc)` lookup table.
 //! - `walk_revisioned_field_names(wire_rev)` lookup for structs.
 //!
-//! The Wire and Materialised arms share an identical surface API; only the
+//! All repr arms share an identical surface API; only the
 //! byte source differs. For purely additive types the materialised arm is
 //! effectively unreachable but is still emitted (to keep the walker shape
 //! uniform); compilers eliminate the unused arm.
@@ -79,7 +87,7 @@ pub fn emit_walk_impl(
 	let walker_name = format_ident!("{}Walker", name);
 	let walker_repr_name = format_ident!("{}WalkerRepr", name);
 
-	// Materialised path is only emitted when the type actually has at least
+	// ConvertedOwned path is only emitted when the type actually has at least
 	// one `convert_fn` annotation AND can both serialize and deserialize.
 	let materialise_supported = has_convert_fn && serialize_enabled && deserialize_enabled;
 
@@ -102,10 +110,9 @@ pub fn emit_walk_impl(
 					let _ = <u16 as ::revision::DeserializeRevisioned>::deserialize_revisioned(&mut __slice)?;
 					let __cursor = __buf.len() - __slice.len();
 					return ::std::result::Result::Ok(#walker_name {
-						repr: #walker_repr_name::Materialised {
-							bytes: ::std::borrow::Cow::Owned(__buf),
+						repr: #walker_repr_name::ConvertedOwned {
+							bytes: __buf,
 							cursor: __cursor,
-							offsets: ::std::option::Option::None,
 							pos: 0,
 							_marker: ::std::marker::PhantomData,
 						},
@@ -127,8 +134,8 @@ pub fn emit_walk_impl(
 						__d
 					};
 					return ::std::result::Result::Ok(#walker_name {
-						repr: #walker_repr_name::Materialised {
-							bytes: ::std::borrow::Cow::Owned(__buf),
+						repr: #walker_repr_name::ConvertedOwned {
+							bytes: __buf,
 							cursor: __cursor,
 							discriminant: __mat_disc,
 							pos: 0,
@@ -144,12 +151,12 @@ pub fn emit_walk_impl(
 	// for the optimised wire format:
 	//
 	// - For structs: advance past the `u32_le payload_length` (and any
-	//   `[u32_le; field_count]` prologue for `struct = "indexed"`) so the
+	//   `[u32_le; field_count]` prologue for `indexed_struct`) so the
 	//   subsequent Wire walker reads field bytes directly.
-	// - For enums: read the 1-byte tag, slurp the payload per the variant's
-	//   declared size class, and return a Materialised walker with
+	// - For enums: read the 1-byte tag, borrow the payload per the variant's
+	//   declared size class, and return an OptimisedBorrowed walker with
 	//   `discriminant = variant_id` (the existing per-variant decode code on
-	//   the Materialised arm reads the slurped payload directly).
+	//   the OptimisedBorrowed arm reads the borrowed payload directly).
 	let optimised_struct_field_count = match &item.kind {
 		ItemKind::Struct(s) => Some(alive_field_count(s, revision) as u32),
 		ItemKind::Enum(_) => None,
@@ -163,9 +170,9 @@ pub fn emit_walk_impl(
 				ItemKind::Struct(_) => {
 					if matches!(h.struct_kind, StructEncoding::Indexed) {
 						// Indexed struct: borrow the payload directly from the
-						// reader's buffer (no allocation) and return a
-						// Materialised walker over Cow::Borrowed. Per-field
-						// methods jump via offsets in O(1).
+						// reader's buffer (no allocation) and return an
+						// IndexedBorrowed walker. Per-field methods jump via
+						// offsets in O(1).
 						let field_count = optimised_struct_field_count.unwrap_or(0) as usize;
 						let field_count_u16 = field_count as u16;
 						Ok(quote! {
@@ -180,10 +187,9 @@ pub fn emit_walk_impl(
 								let __payload: &'r [u8] =
 									::revision::read_borrowed_bytes(reader, __payload_len)?;
 								return ::std::result::Result::Ok(#walker_name {
-									repr: #walker_repr_name::Materialised {
-										bytes: ::std::borrow::Cow::Borrowed(__payload),
-										cursor: 0,
-										offsets: ::std::option::Option::Some(#field_count_u16),
+									repr: #walker_repr_name::IndexedBorrowed {
+										bytes: __payload,
+										field_count: #field_count_u16,
 										pos: 0,
 										_marker: ::std::marker::PhantomData,
 									},
@@ -271,19 +277,22 @@ pub fn emit_walk_impl(
 			pub fn revision(&self) -> u16 {
 				match &self.repr {
 					#walker_repr_name::Wire { wire_rev, .. } => *wire_rev,
-					#walker_repr_name::Materialised { .. } => #revision_lit,
+					#walker_repr_name::OptimisedBorrowed { .. } => #revision_lit,
+					#walker_repr_name::ConvertedOwned { .. } => #revision_lit,
 				}
 			}
 
 			/// Variant discriminant on the wire (for `Wire`) or on the
-			/// re-encoded current-rev bytes (for `Materialised`). Use
+			/// re-encoded current-rev bytes (for the borrowed / owned arms).
+			/// Use
 			/// [`walk_revisioned_variant_name`](Self::walk_revisioned_variant_name)
 			/// to map this to a variant identifier.
 			#[inline]
 			pub fn discriminant(&self) -> u32 {
 				match &self.repr {
 					#walker_repr_name::Wire { discriminant, .. } => *discriminant,
-					#walker_repr_name::Materialised { discriminant, .. } => *discriminant,
+					#walker_repr_name::OptimisedBorrowed { discriminant, .. } => *discriminant,
+					#walker_repr_name::ConvertedOwned { discriminant, .. } => *discriminant,
 				}
 			}
 		},
@@ -293,7 +302,8 @@ pub fn emit_walk_impl(
 			pub fn revision(&self) -> u16 {
 				match &self.repr {
 					#walker_repr_name::Wire { wire_rev, .. } => *wire_rev,
-					#walker_repr_name::Materialised { .. } => #revision_lit,
+					#walker_repr_name::IndexedBorrowed { .. } => #revision_lit,
+					#walker_repr_name::ConvertedOwned { .. } => #revision_lit,
 				}
 			}
 		},
@@ -339,37 +349,40 @@ fn emit_struct_walker_struct(walker_name: &Ident, walker_repr_name: &Ident) -> T
 	quote! {
 		#[doc = "Walker for a revisioned struct. Generated by `#[revisioned(...)]`."]
 		pub struct #walker_name<'r, R: ::revision::BorrowedReader + 'r> {
-			#[doc(hidden)]
-			pub repr: #walker_repr_name<'r, R>,
+			repr: #walker_repr_name<'r, R>,
 		}
 
+		/// Internal repr; one variant per source-of-bytes. Made `pub` for
+		/// the macro-emitted accessors that match on it; not part of the
+		/// public API and may change without notice.
 		#[doc(hidden)]
 		pub enum #walker_repr_name<'r, R: ::revision::BorrowedReader + 'r> {
+			/// Streaming over a live reader. Used at the current revision
+			/// for purely additive types and for any optimised
+			/// sequential-struct revision (the new() arm advances past the
+			/// `u32_le payload_length` and hands the reader through).
 			Wire {
 				reader: &'r mut R,
 				wire_rev: u16,
 				pos: u32,
 			},
-			/// Materialised mode covers two cases:
-			///
-			/// 1. cross-revision `convert_fn` round-trip: `bytes` is
-			///    `Cow::Owned(Vec<u8>)` holding the re-encoded current-rev
-			///    value; `offsets` is `None` and the walker reads fields
-			///    sequentially through `cursor`.
-			/// 2. optimised + `struct = "indexed"` payload: `bytes` is
-			///    `Cow::Borrowed(&'r [u8])` borrowed directly from the
-			///    parent reader's buffer (no allocation); the offset table
-			///    sits at the start of `bytes`; per-field decode jumps via
-			///    `offsets[i]` for O(1) random access.
-			Materialised {
-				bytes: ::std::borrow::Cow<'r, [u8]>,
+			/// Optimised + `indexed_struct` payload borrowed directly
+			/// from the parent reader's buffer (no allocation). The offset
+			/// table sits at the start of `bytes`; offsets are read on
+			/// demand from `bytes[i*4..i*4+4]` for O(1) random access.
+			IndexedBorrowed {
+				bytes: &'r [u8],
+				field_count: u16,
+				pos: u32,
+				_marker: ::std::marker::PhantomData<&'r mut R>,
+			},
+			/// Cross-revision `convert_fn` round-trip: bytes are the
+			/// re-encoded current-rev value, owned because they don't
+			/// exist anywhere else. The walker reads fields sequentially
+			/// through `cursor`.
+			ConvertedOwned {
+				bytes: ::std::vec::Vec<u8>,
 				cursor: usize,
-				/// `Some(field_count)` when the payload was an indexed struct.
-				/// The offset table sits at the start of `bytes`; offsets are
-				/// read on demand from `bytes[i*4..i*4+4]` per field access,
-				/// avoiding a Vec<u32> alloc at walker construction.
-				/// `None` for the sequential `convert_fn` round-trip case.
-				offsets: ::std::option::Option<u16>,
 				pos: u32,
 				_marker: ::std::marker::PhantomData<&'r mut R>,
 			},
@@ -382,12 +395,15 @@ fn emit_enum_walker_struct(walker_name: &Ident, walker_repr_name: &Ident) -> Tok
 	quote! {
 		#[doc = "Walker for a revisioned enum. Generated by `#[revisioned(...)]`."]
 		pub struct #walker_name<'r, R: ::revision::BorrowedReader + 'r> {
-			#[doc(hidden)]
-			pub repr: #walker_repr_name<'r, R>,
+			repr: #walker_repr_name<'r, R>,
 		}
 
+		/// Internal repr; one variant per source-of-bytes. Made `pub` for
+		/// the macro-emitted accessors that match on it; not part of the
+		/// public API and may change without notice.
 		#[doc(hidden)]
 		pub enum #walker_repr_name<'r, R: ::revision::BorrowedReader + 'r> {
+			/// Streaming over a live reader.
 			Wire {
 				reader: &'r mut R,
 				wire_rev: u16,
@@ -395,10 +411,21 @@ fn emit_enum_walker_struct(walker_name: &Ident, walker_repr_name: &Ident) -> Tok
 				discriminant: u32,
 				pos: u32,
 			},
-			Materialised {
-				bytes: ::std::borrow::Cow<'r, [u8]>,
+			/// Optimised enum body borrowed directly from the parent
+			/// reader's buffer. `bytes` covers the variant payload only
+			/// (everything after the 1-byte tag, and for varlen variants
+			/// after the `u32_le` length prefix).
+			OptimisedBorrowed {
+				bytes: &'r [u8],
+				discriminant: u32,
+				pos: u32,
+				_marker: ::std::marker::PhantomData<&'r mut R>,
+			},
+			/// Cross-revision `convert_fn` round-trip; owned bytes the
+			/// walker reads through `cursor`.
+			ConvertedOwned {
+				bytes: ::std::vec::Vec<u8>,
 				cursor: usize,
-				/// Variant discriminant on the re-encoded current-rev bytes.
 				discriminant: u32,
 				pos: u32,
 				_marker: ::std::marker::PhantomData<&'r mut R>,
@@ -578,37 +605,140 @@ fn emit_struct_methods(
 		// For fields with `#[revision(indexed_map)]` / `#[revision(indexed_seq)]`,
 		// the inner walker is `IndexedMapWalker` / `IndexedSeqWalker` rather
 		// than the field type's own `WalkRevisioned::Walker`. These walkers
-		// borrow from a payload slice, so we return an owned-bytes wrapper
-		// (`OwnedIndexedMapView` / `OwnedIndexedSeqView`) that the caller
-		// keeps alive while borrowing the walker from it.
+		// borrow from a payload slice, so we return a wire-bytes wrapper
+		// (`IndexedMapView` / `IndexedSeqView`) holding `Cow<'r, [u8]>`.
 		//
-		// Implementation strategy: decode the field via the indexed
-		// deserializer, then re-serialize into a Vec<u8> via the indexed
-		// serializer. The wire format is canonical (sorted by key bytes), so
-		// re-serializing produces identical bytes a second walker can read.
-		// This is one extra alloc + walk per field — acceptable for the
-		// "I want walker access" use case; callers who only need the
-		// materialised value should use `decode_<field>` instead.
+		// Three paths, in order of preference (most-borrowed → most-allocating):
+		//
+		// 1. `IndexedBorrowed` parent (optimised + `indexed_struct`): the
+		//    field's canonical bytes already live at `parent.bytes[offsets[i]
+		//    ..offsets[i+1]]`. Extract directly via `Cow::Borrowed` with the
+		//    parent's `'r` lifetime. Zero allocation, O(1) lookup.
+		// 2. `Wire` parent (sequential optimised or current-rev legacy): the
+		//    field's bytes are next in the reader, but their length isn't
+		//    known up front. Capture `reader.remaining()` before and after a
+		//    `skip_indexed_*` call to derive the field's exact slice, then
+		//    extend the borrow to `'r` via the same unsafe pattern used by
+		//    `read_borrowed_bytes`. Zero allocation, O(field bytes) skip.
+		// 3. `ConvertedOwned` parent (cross-rev `convert_fn` round-trip):
+		//    the parent's bytes are an owned `Vec<u8>` that dies with `self`
+		//    on a `&self`/`self` accessor, so we can't borrow from it. Decode
+		//    the field into the runtime type and re-encode into `Cow::Owned`.
+		//    One allocation per call; rare path.
+		// `self_expr` is the identifier used for the walker instance — `self`
+		// for `walk_<field>(&mut self)` and `__self` for
+		// `into_walk_<field>(self)` after the `let mut __self = self;` rebind.
+		let fast_path_indexed_borrowed =
+			|view_ty: &TokenStream, self_expr: &TokenStream| -> TokenStream {
+				quote! {
+					if let #walker_repr_name::IndexedBorrowed { bytes, field_count, .. } = &#self_expr.repr {
+						let __bytes_borrow: &'r [u8] = *bytes;
+						let __fc = *field_count as usize;
+						let __off_base = (#pos_lit as usize) * 4;
+						let __start = u32::from_le_bytes(
+							__bytes_borrow[__off_base..__off_base + 4]
+								.try_into()
+								.expect("4-byte slice"),
+						) as usize;
+						let __end = if (#pos_lit as usize) + 1 < __fc {
+							u32::from_le_bytes(
+								__bytes_borrow[__off_base + 4..__off_base + 8]
+									.try_into()
+									.expect("4-byte slice"),
+							) as usize
+						} else {
+							__bytes_borrow.len()
+						};
+						return ::std::result::Result::Ok(
+							#view_ty::new(::std::borrow::Cow::Borrowed(&__bytes_borrow[__start..__end])),
+						);
+					}
+				}
+			};
+		// Wire-parent fast path: skip the field, derive its bytes from the
+		// before/after `remaining()` snapshots, lifetime-extend via the
+		// canonical unsafe pattern (peeked bytes stay valid for `'r` per the
+		// `BorrowedReader` contract).
+		let fast_path_wire = |view_ty: &TokenStream,
+		                      skip_call: &TokenStream,
+		                      self_expr: &TokenStream|
+		 -> TokenStream {
+			quote! {
+				if let #walker_repr_name::Wire { reader, .. } = &mut #self_expr.repr {
+					let __before = ::revision::BorrowedReader::remaining(*reader);
+					let __before_ptr = __before.as_ptr();
+					let __before_len = __before.len();
+					#skip_call
+					let __after_len = ::revision::BorrowedReader::remaining(*reader).len();
+					// `BorrowedReader`'s safety contract bullet (4) requires
+					// `remaining().len()` to be monotonic non-increasing
+					// under `advance`. A downstream impl that violates this
+					// would underflow naive subtraction and trigger UB in
+					// the `from_raw_parts` below — `checked_sub` turns the
+					// contract violation into a typed
+					// `BorrowedReaderContractViolation` error instead.
+					let __consumed_len = __before_len
+						.checked_sub(__after_len)
+						.ok_or_else(|| ::revision::Error::BorrowedReaderContractViolation(
+							::std::format!(
+								"remaining().len() grew across an advance call \
+								 (before={}, after={})",
+								__before_len,
+								__after_len,
+							)
+						))?;
+					// SAFETY: `BorrowedReader::remaining` returns a slice
+					// into the reader's stable buffer; the trait's safety
+					// contract guarantees `advance`/`skip` only moves the
+					// cursor and never invalidates previously-returned
+					// bytes (bullets 2 and 3), so
+					// `__before_ptr[..__consumed_len]` is valid for the
+					// reader's lifetime `'r`. The `checked_sub` above also
+					// ensures `__consumed_len <= __before_len`, so the
+					// slice can never extend past the bytes the trait
+					// promised were stable. Same pattern as
+					// `read_borrowed_bytes` for `peek_bytes + advance`.
+					let __field_bytes: &'r [u8] = unsafe {
+						::std::slice::from_raw_parts(__before_ptr, __consumed_len)
+					};
+					return ::std::result::Result::Ok(
+						#view_ty::new(::std::borrow::Cow::Borrowed(__field_bytes)),
+					);
+				}
+			}
+		};
+		let self_walk = quote! { self };
+		let self_into = quote! { __self };
 		let walk_return_ty;
 		let walk_body;
 		let into_walk_return_ty;
 		let into_walk_body;
 		if f.attrs.options.indexed_map {
 			walk_return_ty = quote! {
-				::revision::optimised::indexed::OwnedIndexedMapView<
+				::revision::optimised::indexed::IndexedMapView<
 					'r,
 					<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::Key,
 					<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::Value,
 				>
 			};
+			let view_ctor = quote! { ::revision::optimised::indexed::IndexedMapView };
+			let skip_call = quote! {
+				<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::skip_indexed_map(*reader)?;
+			};
+			let fast_ib_w = fast_path_indexed_borrowed(&view_ctor, &self_walk);
+			let fast_w_w = fast_path_wire(&view_ctor, &skip_call, &self_walk);
+			let fast_ib_i = fast_path_indexed_borrowed(&view_ctor, &self_into);
+			let fast_w_i = fast_path_wire(&view_ctor, &skip_call, &self_into);
 			walk_body = quote! {
+				#fast_ib_w
+				#fast_w_w
 				let __v: #ty = self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
 				<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::serialize_indexed_map(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedMapView::new(
+					::revision::optimised::indexed::IndexedMapView::new(
 					::std::borrow::Cow::Owned(__bytes),
 				),
 				)
@@ -616,32 +746,44 @@ fn emit_struct_methods(
 			into_walk_return_ty = walk_return_ty.clone();
 			into_walk_body = quote! {
 				let mut __self = self;
+				#fast_ib_i
+				#fast_w_i
 				let __v: #ty = __self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
 				<#ty as ::revision::optimised::indexed::IndexedMapEncoded>::serialize_indexed_map(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedMapView::new(
+					::revision::optimised::indexed::IndexedMapView::new(
 					::std::borrow::Cow::Owned(__bytes),
 				),
 				)
 			};
 		} else if f.attrs.options.indexed_seq {
 			walk_return_ty = quote! {
-				::revision::optimised::indexed::OwnedIndexedSeqView<
+				::revision::optimised::indexed::IndexedSeqView<
 					'r,
 					<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::Item,
 				>
 			};
+			let view_ctor = quote! { ::revision::optimised::indexed::IndexedSeqView };
+			let skip_call = quote! {
+				<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::skip_indexed_seq(*reader)?;
+			};
+			let fast_ib_w = fast_path_indexed_borrowed(&view_ctor, &self_walk);
+			let fast_w_w = fast_path_wire(&view_ctor, &skip_call, &self_walk);
+			let fast_ib_i = fast_path_indexed_borrowed(&view_ctor, &self_into);
+			let fast_w_i = fast_path_wire(&view_ctor, &skip_call, &self_into);
 			walk_body = quote! {
+				#fast_ib_w
+				#fast_w_w
 				let __v: #ty = self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
 				<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::serialize_indexed_seq(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedSeqView::new(
+					::revision::optimised::indexed::IndexedSeqView::new(
 					::std::borrow::Cow::Owned(__bytes),
 				),
 				)
@@ -649,32 +791,44 @@ fn emit_struct_methods(
 			into_walk_return_ty = walk_return_ty.clone();
 			into_walk_body = quote! {
 				let mut __self = self;
+				#fast_ib_i
+				#fast_w_i
 				let __v: #ty = __self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
 				<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::serialize_indexed_seq(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedSeqView::new(
+					::revision::optimised::indexed::IndexedSeqView::new(
 					::std::borrow::Cow::Owned(__bytes),
 				),
 				)
 			};
 		} else if f.attrs.options.indexed_set {
 			walk_return_ty = quote! {
-				::revision::optimised::indexed::OwnedIndexedSetView<
+				::revision::optimised::indexed::IndexedSetView<
 					'r,
 					<#ty as ::revision::optimised::indexed::IndexedSetEncoded>::Item,
 				>
 			};
+			let view_ctor = quote! { ::revision::optimised::indexed::IndexedSetView };
+			let skip_call = quote! {
+				<#ty as ::revision::optimised::indexed::IndexedSetEncoded>::skip_indexed_set(*reader)?;
+			};
+			let fast_ib_w = fast_path_indexed_borrowed(&view_ctor, &self_walk);
+			let fast_w_w = fast_path_wire(&view_ctor, &skip_call, &self_walk);
+			let fast_ib_i = fast_path_indexed_borrowed(&view_ctor, &self_into);
+			let fast_w_i = fast_path_wire(&view_ctor, &skip_call, &self_into);
 			walk_body = quote! {
+				#fast_ib_w
+				#fast_w_w
 				let __v: #ty = self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
 				<#ty as ::revision::optimised::indexed::IndexedSetEncoded>::serialize_indexed_set(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedSetView::new(
+					::revision::optimised::indexed::IndexedSetView::new(
 					::std::borrow::Cow::Owned(__bytes),
 				),
 				)
@@ -682,13 +836,15 @@ fn emit_struct_methods(
 			into_walk_return_ty = walk_return_ty.clone();
 			into_walk_body = quote! {
 				let mut __self = self;
+				#fast_ib_i
+				#fast_w_i
 				let __v: #ty = __self.#decode_name()?;
 				let mut __bytes = ::std::vec::Vec::new();
 				<#ty as ::revision::optimised::indexed::IndexedSetEncoded>::serialize_indexed_set(
 					&__v, &mut __bytes,
 				)?;
 				::std::result::Result::Ok(
-					::revision::optimised::indexed::OwnedIndexedSetView::new(
+					::revision::optimised::indexed::IndexedSetView::new(
 					::std::borrow::Cow::Owned(__bytes),
 				),
 				)
@@ -700,7 +856,12 @@ fn emit_struct_methods(
 					#walker_repr_name::Wire { reader, wire_rev, pos } => {
 						#walk_wire_body_borrow
 					}
-					#walker_repr_name::Materialised { .. } => {
+					#walker_repr_name::IndexedBorrowed { .. } => {
+						::std::result::Result::Err(::revision::Error::Conversion(
+							"walk_<field> is not supported on borrowed-bytes walkers; use decode_<field>".into(),
+						))
+					}
+					#walker_repr_name::ConvertedOwned { .. } => {
 						::std::result::Result::Err(::revision::Error::Conversion(
 							"walk_<field> is not supported on materialised walkers; use decode_<field>".into(),
 						))
@@ -713,7 +874,12 @@ fn emit_struct_methods(
 					#walker_repr_name::Wire { reader, wire_rev, pos: _ } => {
 						#into_walk_wire_body
 					}
-					#walker_repr_name::Materialised { .. } => {
+					#walker_repr_name::IndexedBorrowed { .. } => {
+						::std::result::Result::Err(::revision::Error::Conversion(
+							"into_walk_<field> is not supported on borrowed-bytes walkers; use decode_<field>".into(),
+						))
+					}
+					#walker_repr_name::ConvertedOwned { .. } => {
 						::std::result::Result::Err(::revision::Error::Conversion(
 							"into_walk_<field> is not supported on materialised walkers; use decode_<field>".into(),
 						))
@@ -725,11 +891,10 @@ fn emit_struct_methods(
 		out.append_all(quote! {
 			/// Decode this field, advancing the walker.
 			///
-			/// For materialised walkers with an indexed-struct payload
-			/// (optimised + `struct = "indexed"`), the offset table is
-			/// consulted to jump directly to this field's bytes in O(1) —
-			/// reading any field is independent of how many fields precede
-			/// it on the wire.
+			/// For `IndexedBorrowed` walkers (optimised + `indexed_struct`),
+			/// the offset table is consulted to jump directly to this field's
+			/// bytes in O(1) — reading any field is independent of how many
+			/// fields precede it on the wire.
 			#[inline]
 			pub fn #decode_name(&mut self) -> ::std::result::Result<#ty, ::revision::Error> {
 				match &mut self.repr {
@@ -738,46 +903,45 @@ fn emit_struct_methods(
 						*pos = #pos_lit + 1;
 						::std::result::Result::Ok(__v)
 					}
-					#walker_repr_name::Materialised { bytes, cursor, offsets, pos, .. } => {
-						if let ::std::option::Option::Some(__field_count) = *offsets {
-							// Indexed struct: parse this field's offset from
-							// the table at the start of `bytes`. O(1) — two
-							// u32 reads, no Vec<u32> alloc.
-							let __off_base = (#pos_lit as usize) * 4;
-							let __start = u32::from_le_bytes(
-								bytes[__off_base..__off_base + 4]
+					#walker_repr_name::IndexedBorrowed { bytes, field_count, pos, .. } => {
+						// Indexed struct: parse this field's offset from the
+						// table at the start of `bytes`. O(1) — two u32 reads,
+						// no Vec<u32> alloc.
+						let __off_base = (#pos_lit as usize) * 4;
+						let __start = u32::from_le_bytes(
+							bytes[__off_base..__off_base + 4]
+								.try_into()
+								.expect("4-byte slice"),
+						) as usize;
+						let __end = if (#pos_lit as usize) + 1 < (*field_count as usize) {
+							let __next_base = __off_base + 4;
+							u32::from_le_bytes(
+								bytes[__next_base..__next_base + 4]
 									.try_into()
 									.expect("4-byte slice"),
-							) as usize;
-							let __end = if (#pos_lit as usize) + 1 < (__field_count as usize) {
-								let __next_base = __off_base + 4;
-								u32::from_le_bytes(
-									bytes[__next_base..__next_base + 4]
-										.try_into()
-										.expect("4-byte slice"),
-								) as usize
-							} else {
-								bytes.len()
-							};
-							let mut __slice: &[u8] = &bytes[__start..__end];
-							let __v = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(&mut __slice)?;
-							*pos = #pos_lit + 1;
-							::std::result::Result::Ok(__v)
+							) as usize
 						} else {
-							// Sequential materialised path (convert_fn round-trip).
-							let mut __slice: &[u8] = &bytes[*cursor..];
-							let __v = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(&mut __slice)?;
-							*cursor = bytes.len() - __slice.len();
-							*pos = #pos_lit + 1;
-							::std::result::Result::Ok(__v)
-						}
+							bytes.len()
+						};
+						let mut __slice: &[u8] = &bytes[__start..__end];
+						let __v = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(&mut __slice)?;
+						*pos = #pos_lit + 1;
+						::std::result::Result::Ok(__v)
+					}
+					#walker_repr_name::ConvertedOwned { bytes, cursor, pos, .. } => {
+						// Sequential materialised path (convert_fn round-trip).
+						let mut __slice: &[u8] = &bytes[*cursor..];
+						let __v = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(&mut __slice)?;
+						*cursor = bytes.len() - __slice.len();
+						*pos = #pos_lit + 1;
+						::std::result::Result::Ok(__v)
 					}
 				}
 			}
 
 			/// Skip this field, advancing the walker.
 			///
-			/// Free under indexed-struct mode (the offset table already
+			/// Free under `IndexedBorrowed` mode (the offset table already
 			/// lets `decode_<field>` jump directly to any field; "skip"
 			/// just bumps the position counter).
 			#[inline]
@@ -788,36 +952,35 @@ fn emit_struct_methods(
 						*pos = #pos_lit + 1;
 						::std::result::Result::Ok(())
 					}
-					#walker_repr_name::Materialised { bytes, cursor, offsets, pos, .. } => {
-						if offsets.is_some() {
-							// Indexed: skipping is free (any field reachable in O(1)).
-							*pos = #pos_lit + 1;
-							::std::result::Result::Ok(())
-						} else {
-							let mut __slice: &[u8] = &bytes[*cursor..];
-							<#ty as ::revision::SkipRevisioned>::skip_revisioned(&mut __slice)?;
-							*cursor = bytes.len() - __slice.len();
-							*pos = #pos_lit + 1;
-							::std::result::Result::Ok(())
-						}
+					#walker_repr_name::IndexedBorrowed { pos, .. } => {
+						// Indexed: skipping is free (any field reachable in O(1)).
+						*pos = #pos_lit + 1;
+						::std::result::Result::Ok(())
+					}
+					#walker_repr_name::ConvertedOwned { bytes, cursor, pos, .. } => {
+						let mut __slice: &[u8] = &bytes[*cursor..];
+						<#ty as ::revision::SkipRevisioned>::skip_revisioned(&mut __slice)?;
+						*cursor = bytes.len() - __slice.len();
+						*pos = #pos_lit + 1;
+						::std::result::Result::Ok(())
 					}
 				}
 			}
 
 			/// Walk into this field. For fields tagged
 			/// `#[revision(indexed_map)]` / `#[revision(indexed_seq)]`,
-			/// returns an [`OwnedIndexedMapView`] / [`OwnedIndexedSeqView`]
+			/// returns an [`IndexedMapView`] / [`IndexedSeqView`]
 			/// the caller can borrow an [`IndexedMapWalker`] /
 			/// [`IndexedSeqWalker`] from. For all other fields, returns the
 			/// inner type's `WalkRevisioned::Walker` as usual (borrowing
 			/// the parent walker for the duration of the sub-walk).
 			///
-			/// Materialised walkers (older-rev `convert_fn` types) return
+			/// `ConvertedOwned` walkers (older-rev `convert_fn` types) return
 			/// [`revision::Error::Conversion`] for the legacy path; the
-			/// indexed branches re-serialise from the materialised value.
+			/// indexed branches re-serialise from the owned value.
 			///
-			/// [`OwnedIndexedMapView`]: revision::optimised::indexed::OwnedIndexedMapView
-			/// [`OwnedIndexedSeqView`]: revision::optimised::indexed::OwnedIndexedSeqView
+			/// [`IndexedMapView`]: revision::optimised::indexed::IndexedMapView
+			/// [`IndexedSeqView`]: revision::optimised::indexed::IndexedSeqView
 			/// [`IndexedMapWalker`]: revision::optimised::IndexedMapWalker
 			/// [`IndexedSeqWalker`]: revision::optimised::IndexedSeqWalker
 			#[inline]
@@ -919,8 +1082,8 @@ fn emit_enum_methods(
 
 		out.append_all(quote! {
 			/// Returns `true` if the wire's discriminant identifies this variant
-			/// at the wire revision (or, for materialised walkers, on the
-			/// re-encoded current-rev bytes).
+			/// at the wire revision (or, for borrowed / owned walkers, on the
+			/// current-rev bytes).
 			#[inline]
 			pub fn #is_name(&self) -> bool {
 				match &self.repr {
@@ -931,7 +1094,10 @@ fn emit_enum_methods(
 						};
 						__expected == ::std::option::Option::Some(*discriminant)
 					}
-					#walker_repr_name::Materialised { discriminant, .. } => {
+					#walker_repr_name::OptimisedBorrowed { discriminant, .. } => {
+						*discriminant == #current_disc
+					}
+					#walker_repr_name::ConvertedOwned { discriminant, .. } => {
 						*discriminant == #current_disc
 					}
 				}
@@ -1008,19 +1174,24 @@ fn emit_enum_methods(
 							#walker_repr_name::Wire { reader, .. } => {
 								<#inner_ty as ::revision::WalkRevisioned>::walk_revisioned(reader)
 							}
-							#walker_repr_name::Materialised { .. } => {
+							#walker_repr_name::OptimisedBorrowed { .. } => {
 								::std::result::Result::Err(::revision::Error::Conversion(
-									"into_<variant> is not supported on materialised walkers (including optimised enums); use `decode_<variant>` instead".into(),
+									"into_<variant> is not supported on borrowed-bytes walkers (optimised enums); use `decode_<variant>` or `<variant>_view` instead".into(),
+								))
+							}
+							#walker_repr_name::ConvertedOwned { .. } => {
+								::std::result::Result::Err(::revision::Error::Conversion(
+									"into_<variant> is not supported on owned-bytes walkers (cross-rev convert_fn); use `decode_<variant>` instead".into(),
 								))
 							}
 						}
 					}
 
 					/// Decode and return the inner value of the `#variant_ident`
-					/// variant directly. Unlike `into_<variant>`, this works for
-					/// both Wire and Materialised (including optimised) walkers
-					/// because it deserialises the inner type by value rather
-					/// than handing back a sub-walker.
+					/// variant directly. Unlike `into_<variant>`, this works on
+					/// every repr (Wire, OptimisedBorrowed, ConvertedOwned)
+					/// because it deserialises by value rather than handing back
+					/// a sub-walker.
 					#[inline]
 					pub fn #decode_name(
 						self,
@@ -1039,32 +1210,35 @@ fn emit_enum_methods(
 							#walker_repr_name::Wire { reader, .. } => {
 								<#inner_ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(reader)
 							}
-							#walker_repr_name::Materialised { ref bytes, cursor, .. } => {
+							#walker_repr_name::OptimisedBorrowed { bytes, .. } => {
+								let mut __slice: &[u8] = bytes;
+								<#inner_ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(&mut __slice)
+							}
+							#walker_repr_name::ConvertedOwned { ref bytes, cursor, .. } => {
 								let mut __slice: &[u8] = &bytes[cursor..];
 								<#inner_ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(&mut __slice)
 							}
 						}
 					}
 
-					/// Return the variant payload as an [`OwnedVariantView`].
+					/// Return the variant payload as a [`VariantView`].
 					///
-					/// Works on both Wire and Materialised walkers (including
-					/// optimised enums). When the walker's bytes were borrowed
-					/// from a slice-backed source (the common optimised-enum
-					/// case), the view borrows the variant body directly — no
-					/// allocation. Wire-mode walkers re-encode (one
-					/// allocation); materialised + owned (cross-revision
-					/// `convert_fn`) walkers move the owned bytes.
+					/// Works on every repr. `OptimisedBorrowed` (the common
+					/// optimised-enum case) hands back a borrowed slice with
+					/// the source's `'r` lifetime — no allocation. `Wire`
+					/// walkers re-encode (one allocation); `ConvertedOwned`
+					/// (cross-revision `convert_fn`) walkers move the owned
+					/// bytes.
 					///
 					/// Use [`decode_<variant>`](Self::#decode_name) when you
 					/// want the inner type by value directly.
 					///
-					/// [`OwnedVariantView`]: revision::optimised::indexed::OwnedVariantView
+					/// [`VariantView`]: revision::optimised::indexed::VariantView
 					#[inline]
 					pub fn #view_name(
 						self,
 					) -> ::std::result::Result<
-						::revision::optimised::indexed::OwnedVariantView<'r, #inner_ty>,
+						::revision::optimised::indexed::VariantView<'r, #inner_ty>,
 						::revision::Error,
 					> {
 						if !self.#is_name() {
@@ -1088,26 +1262,87 @@ fn emit_enum_methods(
 								<#inner_ty as ::revision::SerializeRevisioned>::serialize_revisioned(&__v, &mut __buf)?;
 								::std::borrow::Cow::Owned(__buf)
 							}
-							#walker_repr_name::Materialised { bytes: ::std::borrow::Cow::Borrowed(slice), cursor, .. } => {
-								// slice: &'r [u8] — preserves the source's
+							#walker_repr_name::OptimisedBorrowed { bytes, .. } => {
+								// bytes: &'r [u8] — preserves the source's
 								// lifetime so the view's bytes outlive `self`.
-								::std::borrow::Cow::Borrowed(&slice[cursor..])
+								::std::borrow::Cow::Borrowed(bytes)
 							}
-							#walker_repr_name::Materialised { bytes: ::std::borrow::Cow::Owned(vec), cursor, .. } => {
+							#walker_repr_name::ConvertedOwned { bytes, cursor, .. } => {
 								// cross-revision convert_fn re-encode — owned.
-								let mut v = vec;
+								let mut v = bytes;
 								v.drain(..cursor);
 								::std::borrow::Cow::Owned(v)
 							}
 						};
 						::std::result::Result::Ok(
-							::revision::optimised::indexed::OwnedVariantView::new(__bytes),
+							::revision::optimised::indexed::VariantView::new(__bytes),
 						)
 					}
 				});
 			}
 			_ => {
-				// Skip emission for multi-field variants in v1.
+				// Multi-field tuple variants and struct variants: emit
+				// `<variant>_view` returning a typed-only-by-phantom
+				// [`VariantView<'r, ()>`] that hands the caller the variant
+				// body bytes. Multi-field variants don't have a single inner
+				// type to descend into via `into_<variant>` (their body is a
+				// sequence of fields, not a single value), so the caller
+				// decodes the bytes themselves.
+				out.append_all(quote! {
+					/// Return the variant payload bytes as a
+					/// [`VariantView`].
+					///
+					/// Multi-field tuple and struct variants have no single
+					/// inner type, so `into_<variant>` is not available;
+					/// this `_view` hands you the body bytes and you can
+					/// decode the variant's fields sequentially (or feed
+					/// the bytes into another walker).
+					///
+					/// [`VariantView`]: revision::optimised::indexed::VariantView
+					#[inline]
+					pub fn #view_name(
+						self,
+					) -> ::std::result::Result<
+						::revision::optimised::indexed::VariantView<'r, ()>,
+						::revision::Error,
+					> {
+						if !self.#is_name() {
+							return ::std::result::Result::Err(::revision::Error::Deserialize(
+								::std::format!(
+									"walker variant mismatch: expected `{}` (rev {}), got discriminant {}",
+									stringify!(#variant_ident),
+									self.revision(),
+									self.discriminant(),
+								),
+							));
+						}
+						let __bytes: ::std::borrow::Cow<'r, [u8]> = match self.repr {
+							#walker_repr_name::Wire { .. } => {
+								// Wire mode for multi-field variants on legacy
+								// enums: the body is a sequence of fields with
+								// no length prefix, so we can't slurp without
+								// reading the synthetic Fields struct. Errors
+								// here; the optimised wire format gives every
+								// variant a length-prefixed body so this works
+								// for optimised enums.
+								return ::std::result::Result::Err(::revision::Error::Conversion(
+									"<variant>_view on a Wire-mode multi-field variant is not supported; encode the type under `encoding = \"optimised\"` to enable variant-body extraction".into(),
+								));
+							}
+							#walker_repr_name::OptimisedBorrowed { bytes, .. } => {
+								::std::borrow::Cow::Borrowed(bytes)
+							}
+							#walker_repr_name::ConvertedOwned { bytes, cursor, .. } => {
+								let mut v = bytes;
+								v.drain(..cursor);
+								::std::borrow::Cow::Owned(v)
+							}
+						};
+						::std::result::Result::Ok(
+							::revision::optimised::indexed::VariantView::new(__bytes),
+						)
+					}
+				});
 			}
 		}
 	}
@@ -1262,11 +1497,11 @@ fn alive_field_count(s: &Struct, revision: usize) -> usize {
 
 /// Emit the walker-construction arm for an optimised enum revision.
 ///
-/// Reads the 1-byte tag, slurps the variant payload per the declared size
-/// class, and returns a `Materialised` walker whose `discriminant` field holds
-/// the variant id from the tag. The existing per-variant `decode_<v>` /
-/// `is_<v>` / `into_<v>` methods on the `Materialised` arm then read fields
-/// directly from the slurped payload.
+/// Reads the 1-byte tag and borrows the variant payload from the reader's
+/// buffer per the declared size class, returning an `OptimisedBorrowed`
+/// walker. Dispatch is via two static `[u8; 32]` tables (size class code +
+/// fixed size) keyed by variant id; the body-read match has three arms
+/// regardless of how many variants the enum declares.
 fn emit_optimised_enum_walker_arm(
 	e: &Enum,
 	entry: &HistoryEntry,
@@ -1277,7 +1512,12 @@ fn emit_optimised_enum_walker_arm(
 	// Compute the variant_id -> declared SizeClass map for this entry.
 	let mut discriminants = HashMap::new();
 	CalcDiscriminant::new(entry.revision.value, &mut discriminants).visit_enum(e)?;
-	let mut sizes: HashMap<u32, VariantSize> = HashMap::new();
+
+	// Build two parallel [u8; 32] tables:
+	// - size_class_table: 0=Inline, 1=Fixed, 2=Varlen, 0xFF=unknown (no such variant id)
+	// - fixed_size_table: byte length for Fixed variants, 0 otherwise
+	let mut size_class_table: [u8; 32] = [0xFFu8; 32];
+	let mut fixed_size_table: [u8; 32] = [0u8; 32];
 	for v in e.variants.iter().filter(|v| v.attrs.options.exists_at(entry.revision.value)) {
 		let id = *discriminants.get(&v.ident).expect("alive variant has discriminant");
 		let Some(spanned_size) = v.attrs.options.size.as_ref() else {
@@ -1286,43 +1526,19 @@ fn emit_optimised_enum_walker_arm(
 				"variant requires `#[revision(size = \"inline\" | \"fixed(N)\" | \"varlen\")]` under `encoding = \"optimised\"`",
 			));
 		};
-		sizes.insert(id, spanned_size.size);
+		let id_idx = id as usize;
+		match spanned_size.size {
+			VariantSize::Inline => size_class_table[id_idx] = 0,
+			VariantSize::Fixed(n) => {
+				size_class_table[id_idx] = 1;
+				fixed_size_table[id_idx] = n;
+			}
+			VariantSize::Varlen => size_class_table[id_idx] = 2,
+		}
 	}
 
-	// Build the (variant_id, size_class) → borrow body match arms.
-	//
-	// Each arm peeks the body bytes from the reader's buffer and advances past
-	// them. The `BorrowedReader` contract guarantees the bytes stay valid for
-	// the reader's lifetime `'r`, so no allocation is needed.
-	let mut arms = TokenStream::new();
-	for (id, size) in sizes.iter() {
-		let id_lit = *id as u8;
-		let arm = match size {
-			VariantSize::Inline => quote! {
-				(#id_lit, ::revision::optimised::tag::SizeClass::Inline) => {
-					&[][..]
-				}
-			},
-			VariantSize::Fixed(n) => {
-				let n_lit = *n as usize;
-				quote! {
-					(#id_lit, ::revision::optimised::tag::SizeClass::Fixed) => {
-						::revision::read_borrowed_bytes(reader, #n_lit)?
-					}
-				}
-			}
-			VariantSize::Varlen => quote! {
-				(#id_lit, ::revision::optimised::tag::SizeClass::Varlen) => {
-					let mut __len_buf = [0u8; 4];
-					::std::io::Read::read_exact(reader, &mut __len_buf)
-						.map_err(::revision::Error::Io)?;
-					let __len = u32::from_le_bytes(__len_buf) as usize;
-					::revision::read_borrowed_bytes(reader, __len)?
-				}
-			},
-		};
-		arms.append_all(arm);
-	}
+	let sc_lits: Vec<u8> = size_class_table.to_vec();
+	let fx_lits: Vec<u8> = fixed_size_table.to_vec();
 
 	let bad_arm_msg = format!(
 		"unknown variant tag for optimised enum at revision {rev_lit}: variant_id={{}} size_class={{:?}}",
@@ -1330,21 +1546,45 @@ fn emit_optimised_enum_walker_arm(
 
 	Ok(quote! {
 		#rev_lit => {
+			// Per-enum static tables — laid out once, indexed by variant id.
+			// `0xFF` in the size_class table marks variant ids the enum
+			// doesn't declare at this revision.
+			static __SIZE_CLASS_TABLE: [u8; 32] = [#(#sc_lits),*];
+			static __FIXED_SIZE_TABLE: [u8; 32] = [#(#fx_lits),*];
+
 			let __tag = ::revision::optimised::tag::read_tag(reader)?;
 			let __sc = __tag.size_class()?;
 			let __variant_id = __tag.variant_id();
-			let __payload: &'r [u8] = match (__variant_id, __sc) {
-				#arms
-				_ => {
-					return ::std::result::Result::Err(::revision::Error::Deserialize(
-						::std::format!(#bad_arm_msg, __variant_id, __sc),
-					));
+			let __expected_code = __SIZE_CLASS_TABLE[__variant_id as usize];
+			let __actual_code: u8 = match __sc {
+				::revision::optimised::tag::SizeClass::Inline => 0,
+				::revision::optimised::tag::SizeClass::Fixed => 1,
+				::revision::optimised::tag::SizeClass::Varlen => 2,
+			};
+			if __expected_code == 0xFF || __expected_code != __actual_code {
+				return ::std::result::Result::Err(::revision::Error::Deserialize(
+					::std::format!(#bad_arm_msg, __variant_id, __sc),
+				));
+			}
+			// 3-arm match regardless of variant count — the static tables
+			// have already validated the (id, sc) pair.
+			let __payload: &'r [u8] = match __sc {
+				::revision::optimised::tag::SizeClass::Inline => &[][..],
+				::revision::optimised::tag::SizeClass::Fixed => {
+					let __n = __FIXED_SIZE_TABLE[__variant_id as usize] as usize;
+					::revision::read_borrowed_bytes(reader, __n)?
+				}
+				::revision::optimised::tag::SizeClass::Varlen => {
+					let mut __len_buf = [0u8; 4];
+					::std::io::Read::read_exact(reader, &mut __len_buf)
+						.map_err(::revision::Error::Io)?;
+					let __len = u32::from_le_bytes(__len_buf) as usize;
+					::revision::read_borrowed_bytes(reader, __len)?
 				}
 			};
 			return ::std::result::Result::Ok(#walker_name {
-				repr: #walker_repr_name::Materialised {
-					bytes: ::std::borrow::Cow::Borrowed(__payload),
-					cursor: 0,
+				repr: #walker_repr_name::OptimisedBorrowed {
+					bytes: __payload,
 					discriminant: __variant_id as u32,
 					pos: 0,
 					_marker: ::std::marker::PhantomData,

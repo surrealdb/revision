@@ -2,7 +2,7 @@
 //! use the per-field `#[revision(indexed_seq)]` attribute instead.
 use revision::revisioned;
 
-#[revisioned(revision(1, encoding = "optimised", seq = "indexed"))]
+#[revisioned(revision(1, optimised, seq = "indexed"))]
 struct BadTypeLevelSeq {
 	a: u32,
 }

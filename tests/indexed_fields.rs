@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use revision::prelude::*;
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 struct Doc {
 	id: u32,
@@ -36,7 +36,7 @@ fn indexed_field_round_trips() {
 
 #[test]
 fn indexed_field_walker_can_binary_search_keys() {
-	// `walk_fields` returns an OwnedIndexedMapView; the caller borrows an
+	// `walk_fields` returns an IndexedMapView; the caller borrows an
 	// IndexedMapWalker from it and can binary-search keys directly without
 	// fully materialising the map.
 	let mut fields = BTreeMap::new();
@@ -126,7 +126,7 @@ fn indexed_map_and_seq_are_mutually_exclusive_at_compile_time() {
 fn indexed_map_works_for_std_hashmap() {
 	use std::collections::HashMap;
 
-	#[revisioned(revision(1, encoding = "optimised"))]
+	#[revisioned(revision(1, optimised))]
 	#[derive(Debug, Clone, PartialEq)]
 	struct WithHashMap {
 		#[revision(indexed_map)]
@@ -148,7 +148,7 @@ fn indexed_map_works_for_std_hashmap() {
 #[cfg(feature = "imbl")]
 #[test]
 fn indexed_map_works_for_imbl_ordmap() {
-	#[revisioned(revision(1, encoding = "optimised"))]
+	#[revisioned(revision(1, optimised))]
 	#[derive(Debug, Clone, PartialEq)]
 	struct WithOrdMap {
 		#[revision(indexed_map)]
@@ -171,7 +171,7 @@ fn indexed_map_works_for_imbl_ordmap() {
 #[cfg(feature = "imbl")]
 #[test]
 fn indexed_map_works_for_imbl_hashmap() {
-	#[revisioned(revision(1, encoding = "optimised"))]
+	#[revisioned(revision(1, optimised))]
 	#[derive(Debug, Clone, PartialEq)]
 	struct WithHashMap {
 		#[revision(indexed_map)]
@@ -195,7 +195,7 @@ fn indexed_map_works_for_imbl_hashmap() {
 fn indexed_set_works_for_btreeset() {
 	use std::collections::BTreeSet;
 
-	#[revisioned(revision(1, encoding = "optimised"))]
+	#[revisioned(revision(1, optimised))]
 	#[derive(Debug, Clone, PartialEq)]
 	struct WithSet {
 		#[revision(indexed_set)]
@@ -218,7 +218,7 @@ fn indexed_set_works_for_btreeset() {
 fn indexed_set_works_for_hashset() {
 	use std::collections::HashSet;
 
-	#[revisioned(revision(1, encoding = "optimised"))]
+	#[revisioned(revision(1, optimised))]
 	#[derive(Debug, Clone, PartialEq)]
 	struct WithSet {
 		#[revision(indexed_set)]
@@ -263,7 +263,7 @@ fn indexed_set_walker_can_find_membership() {
 #[cfg(feature = "imbl")]
 #[test]
 fn indexed_set_works_for_imbl_ordset() {
-	#[revisioned(revision(1, encoding = "optimised"))]
+	#[revisioned(revision(1, optimised))]
 	#[derive(Debug, Clone, PartialEq)]
 	struct WithSet {
 		#[revision(indexed_set)]
@@ -282,7 +282,7 @@ fn indexed_set_works_for_imbl_ordset() {
 #[cfg(feature = "imbl")]
 #[test]
 fn indexed_seq_works_for_imbl_vector() {
-	#[revisioned(revision(1, encoding = "optimised"))]
+	#[revisioned(revision(1, optimised))]
 	#[derive(Debug, Clone, PartialEq)]
 	struct WithVector {
 		#[revision(indexed_seq)]

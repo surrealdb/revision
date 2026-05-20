@@ -26,14 +26,22 @@ mod kw {
 	syn::custom_keyword!(skip);
 	syn::custom_keyword!(walk);
 	// Optimised-wire-format keywords.
-	syn::custom_keyword!(encoding);
+	// Per-revision flags (collapsed to bare keywords — defaults are
+	// implicit when unspecified, so a key=value form is only justified
+	// when the keyword has more than one non-default value, which none
+	// of these do).
+	syn::custom_keyword!(optimised);
 	syn::custom_keyword!(map);
 	syn::custom_keyword!(seq);
 	syn::custom_keyword!(size);
+	syn::custom_keyword!(indexed_struct);
 	// Per-field encoding flags for optimised revisions.
 	syn::custom_keyword!(indexed_map);
 	syn::custom_keyword!(indexed_seq);
 	syn::custom_keyword!(indexed_set);
+	// Per-field encoding overrides regardless of crate-wide cargo features.
+	syn::custom_keyword!(fixed);
+	syn::custom_keyword!(specialised);
 }
 
 #[derive(Debug)]
@@ -167,6 +175,16 @@ pub struct FieldOptions {
 	pub indexed_seq: bool,
 	/// `#[revision(indexed_set)]`: same, for set-shaped fields.
 	pub indexed_set: bool,
+	/// `#[revision(fixed)]`: force fixed-width little-endian encoding for
+	/// primitive integer fields, regardless of the crate-wide
+	/// `fixed-width-encoding` cargo feature. Valid on `u32`/`i32`/`u64`/
+	/// `i64`/`u128`/`i128` fields.
+	pub fixed: bool,
+	/// `#[revision(specialised)]`: force bulk `Vec<T>` encoding for primitive
+	/// element types, regardless of the crate-wide `specialised-vectors`
+	/// cargo feature. Valid on `Vec<T>` fields where `T` is a primitive in
+	/// the bulk-encoded list.
+	pub specialised: bool,
 }
 
 impl FieldOptions {
@@ -184,6 +202,8 @@ pub enum FieldOption {
 	IndexedMap(kw::indexed_map),
 	IndexedSeq(kw::indexed_seq),
 	IndexedSet(kw::indexed_set),
+	Fixed(kw::fixed),
+	Specialised(kw::specialised),
 }
 
 impl Parse for FieldOption {
@@ -208,6 +228,12 @@ impl Parse for FieldOption {
 		}
 		if input.peek(kw::indexed_set) {
 			return Ok(FieldOption::IndexedSet(input.parse()?));
+		}
+		if input.peek(kw::fixed) {
+			return Ok(FieldOption::Fixed(input.parse()?));
+		}
+		if input.peek(kw::specialised) {
+			return Ok(FieldOption::Specialised(input.parse()?));
 		}
 
 		Err(input.error("invalid field option"))
@@ -285,6 +311,18 @@ impl AttributeOptions for FieldOptions {
 					}
 					res.indexed_set = true;
 				}
+				FieldOption::Fixed(kw) => {
+					if res.fixed {
+						return Err(Error::new(kw.span(), "tried to set an option twice"));
+					}
+					res.fixed = true;
+				}
+				FieldOption::Specialised(kw) => {
+					if res.specialised {
+						return Err(Error::new(kw.span(), "tried to set an option twice"));
+					}
+					res.specialised = true;
+				}
 			}
 		}
 
@@ -335,7 +373,7 @@ pub enum ItemOption {
 	Walk(ValueOption<kw::walk, LitBool>),
 }
 
-/// Parsed `revision(N, encoding = "...", map = "...", seq = "...", struct = "...")`.
+/// Parsed `revision(N, optimised, map = "...", seq = "...", indexed_struct)`.
 pub struct RevisionEntryGroup {
 	pub kw: kw::revision,
 	pub _paren: token::Paren,
@@ -344,10 +382,10 @@ pub struct RevisionEntryGroup {
 }
 
 pub enum RevisionEntryOption {
-	Encoding(ValueOption<kw::encoding, LitStr>),
+	Optimised(kw::optimised),
 	Map(ValueOption<kw::map, LitStr>),
 	Seq(ValueOption<kw::seq, LitStr>),
-	Struct(ValueOption<Token![struct], LitStr>),
+	IndexedStruct(kw::indexed_struct),
 }
 
 impl Parse for RevisionEntryGroup {
@@ -375,8 +413,8 @@ impl Parse for RevisionEntryGroup {
 
 impl Parse for RevisionEntryOption {
 	fn parse(input: ParseStream) -> syn::Result<Self> {
-		if input.peek(kw::encoding) {
-			return Ok(RevisionEntryOption::Encoding(input.parse()?));
+		if input.peek(kw::optimised) {
+			return Ok(RevisionEntryOption::Optimised(input.parse()?));
 		}
 		if input.peek(kw::map) {
 			return Ok(RevisionEntryOption::Map(input.parse()?));
@@ -384,11 +422,11 @@ impl Parse for RevisionEntryOption {
 		if input.peek(kw::seq) {
 			return Ok(RevisionEntryOption::Seq(input.parse()?));
 		}
-		if input.peek(Token![struct]) {
-			return Ok(RevisionEntryOption::Struct(input.parse()?));
+		if input.peek(kw::indexed_struct) {
+			return Ok(RevisionEntryOption::IndexedStruct(input.parse()?));
 		}
 		Err(input.error(
-			"invalid `revision(...)` option (expected `encoding`, `map`, `seq`, or `struct`)",
+			"invalid `revision(...)` option (expected `optimised`, `map`, `seq`, or `indexed_struct`)",
 		))
 	}
 }
@@ -421,25 +459,12 @@ impl Parse for ItemOption {
 
 fn build_history_entry(group: RevisionEntryGroup) -> syn::Result<HistoryEntry> {
 	let span = group.kw.span();
-	let mut entry = HistoryEntry::legacy(group.revision, false);
+	let mut entry = HistoryEntry::legacy(group.revision);
 	entry.span = span;
-	let mut saw_encoding = false;
 	for opt in group.options {
 		match opt {
-			RevisionEntryOption::Encoding(v) => {
-				saw_encoding = true;
-				match v.value.value().as_str() {
-					"legacy" => entry.encoding = Encoding::Legacy,
-					"optimised" => entry.encoding = Encoding::Optimised,
-					other => {
-						return Err(Error::new(
-							v.value.span(),
-							format!(
-								"unknown encoding `{other}` (expected `legacy` or `optimised`)"
-							),
-						));
-					}
-				}
+			RevisionEntryOption::Optimised(_kw) => {
+				entry.encoding = Encoding::Optimised;
 			}
 			RevisionEntryOption::Map(v) => match v.value.value().as_str() {
 				"default" => entry.map = MapEncoding::Default,
@@ -471,29 +496,20 @@ fn build_history_entry(group: RevisionEntryGroup) -> syn::Result<HistoryEntry> {
 					));
 				}
 			},
-			RevisionEntryOption::Struct(v) => match v.value.value().as_str() {
-				"default" => entry.struct_kind = StructEncoding::Default,
-				"indexed" => entry.struct_kind = StructEncoding::Indexed,
-				other => {
-					return Err(Error::new(
-						v.value.span(),
-						format!(
-							"unknown struct encoding `{other}` (expected `default` or `indexed`)"
-						),
-					));
-				}
-			},
+			RevisionEntryOption::IndexedStruct(_kw) => {
+				entry.struct_kind = StructEncoding::Indexed;
+			}
 		}
 	}
 	// Reject per-encoding attrs on a legacy entry — keeps the AST clean.
-	if (!saw_encoding || entry.encoding == Encoding::Legacy)
+	if entry.encoding == Encoding::Legacy
 		&& (entry.map != MapEncoding::Default
 			|| entry.seq != SeqEncoding::Default
 			|| entry.struct_kind != StructEncoding::Default)
 	{
 		return Err(Error::new(
 			entry.span,
-			"encoding-specific attributes (`map`, `seq`, `struct`) require `encoding = \"optimised\"` on the same revision entry",
+			"encoding-specific attributes (`map`, `seq`, `indexed_struct`) require the `optimised` flag on the same revision entry",
 		));
 	}
 	Ok(entry)
@@ -587,7 +603,7 @@ fn resolve_history(
 					value: i,
 					span: path,
 				};
-				history.push(HistoryEntry::legacy(lit, true));
+				history.push(HistoryEntry::legacy(lit));
 			}
 			Ok(history)
 		}

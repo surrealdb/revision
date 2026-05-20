@@ -5,7 +5,7 @@ use syn::Ident;
 
 use crate::ast::{Enum, Field, Fields, Struct, Variant, Visit};
 
-use super::common::CalcDiscriminant;
+use super::common::{CalcDiscriminant, emit_serialize_fixed_le, emit_serialize_specialised};
 use super::context::EncodingContext;
 use super::optimised;
 
@@ -100,10 +100,19 @@ impl<'ast> Visit<'ast> for SerializeVisitor<'_> {
 
 	fn visit_field(&mut self, i: &'ast Field) -> syn::Result<()> {
 		let name = &i.name;
+		let writer = quote! { writer };
+		let value = quote! { #name };
+		let body = if i.attrs.options.fixed {
+			emit_serialize_fixed_le(&i.ty, &value, &writer)?
+		} else if i.attrs.options.specialised {
+			emit_serialize_specialised(&i.ty, &value, &writer)
+		} else {
+			quote! {
+				::revision::SerializeRevisioned::serialize_revisioned(#name, writer)?;
+			}
+		};
 
-		self.stream.append_all(quote! {
-			::revision::SerializeRevisioned::serialize_revisioned(#name,writer)?;
-		});
+		self.stream.append_all(body);
 
 		Ok(())
 	}
@@ -121,9 +130,18 @@ impl<'ast> Visit<'ast> for SerializeFields<'_> {
 		}
 
 		let name = i.name.to_binding();
-		self.stream.append_all(quote! {
-			::revision::SerializeRevisioned::serialize_revisioned(#name,writer)?;
-		});
+		let writer = quote! { writer };
+		let value = quote! { #name };
+		let body = if i.attrs.options.fixed {
+			emit_serialize_fixed_le(&i.ty, &value, &writer)?
+		} else if i.attrs.options.specialised {
+			emit_serialize_specialised(&i.ty, &value, &writer)
+		} else {
+			quote! {
+				::revision::SerializeRevisioned::serialize_revisioned(#name, writer)?;
+			}
+		};
+		self.stream.append_all(body);
 
 		Ok(())
 	}

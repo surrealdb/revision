@@ -2,31 +2,31 @@
 //!
 //! The walker's `walk_revisioned` constructor reads the u16 wire revision and
 //! advances past the optimised envelope (`u32_le payload_length` + optional
-//! indexed prologue) for revisions that opt into `encoding = "optimised"`.
+//! indexed prologue) for revisions that opt into `optimised`.
 //! Field reads on the resulting Wire walker then succeed as normal.
 
 use revision::prelude::*;
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 struct OptStruct {
 	a: u32,
 	b: u32,
 }
 
-#[revisioned(revision(1, encoding = "optimised", struct = "indexed"))]
+#[revisioned(revision(1, optimised, indexed_struct))]
 struct IndexedStruct {
 	a: u32,
 	b: u32,
 	c: u32,
 }
 
-#[revisioned(revision(1), revision(2, encoding = "optimised"))]
+#[revisioned(revision(1), revision(2, optimised))]
 struct MixedHistory {
 	a: u32,
 	b: u32,
 }
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 enum OptEnum {
 	#[revision(size = "inline")]
 	Unit,
@@ -123,9 +123,9 @@ fn walker_on_optimised_enum_decodes_varlen_variant() {
 	assert_eq!(w.discriminant(), 1);
 	assert!(w.is_varlen());
 	assert!(!w.is_unit());
-	// `decode_<variant>` works on both Wire and Materialised walkers, so
-	// it's the right way to extract the inner value from an optimised
-	// enum walker.
+	// `decode_<variant>` works on every walker repr (Wire,
+	// OptimisedBorrowed, ConvertedOwned), so it's the right way to
+	// extract the inner value from an optimised enum walker.
 	let inner = w.decode_varlen().unwrap();
 	assert_eq!(inner, "hello");
 }
@@ -151,9 +151,10 @@ fn walker_decode_variant_works_on_legacy_enum() {
 
 #[test]
 fn walker_variant_view_works_on_optimised_enum() {
-	// `<variant>_view` returns an OwnedVariantView holding the variant body
-	// bytes. Works on both Wire (legacy) and Materialised (optimised)
-	// walkers.
+	// `<variant>_view` returns a VariantView holding the variant body
+	// bytes. Works on every walker repr — Wire (legacy enums),
+	// OptimisedBorrowed (optimised enums), and ConvertedOwned
+	// (cross-rev `convert_fn`).
 	let v = OptEnum::Varlen("hello".into());
 	let bytes = revision::to_vec(&v).unwrap();
 	let mut r: &[u8] = &bytes;
@@ -176,7 +177,7 @@ fn walker_variant_view_borrows_from_source_for_optimised_enum() {
 	//
 	// This is what the `WalkRevisioned: BorrowedReader` bound + Cow<'r, [u8]>
 	// in the walker repr enables.
-	#[revisioned(revision(1, encoding = "optimised"))]
+	#[revisioned(revision(1, optimised))]
 	#[derive(Debug, PartialEq)]
 	enum Value {
 		#[revision(size = "inline")]

@@ -1,6 +1,6 @@
 //! Tagged-value envelope encoders and decoders.
 //!
-//! These helpers are the runtime side of `encoding = "optimised"` codegen. The
+//! These helpers are the runtime side of `optimised` codegen. The
 //! macro emits calls into them; user code reaches them only indirectly.
 
 use std::io::{Read, Write};

@@ -40,6 +40,41 @@ impl<'p, T> IndexedSeqWalker<'p, T> {
 	/// `payload` is the bytes after the outer optimised-envelope tag+length:
 	/// `flags || varint(len) || body`.
 	pub fn from_payload(payload: &'p [u8]) -> Result<Self, Error> {
+		Self::from_payload_inner(payload, true)
+	}
+
+	/// Open a walker **without** validating the prologue (monotonic offsets).
+	///
+	/// Skips the O(len) offset-table check that [`from_payload`] runs. Use
+	/// only when the bytes are trusted (e.g. freshly written by the same
+	/// process).
+	///
+	/// # Panics on malformed input
+	///
+	/// On untrusted input this trades a clean
+	/// [`Error::OptimisedOffsetsNonMonotonic`] at construction for
+	/// failures on access. Specifically:
+	///
+	/// - The offset *table* itself is bounds-checked at construction —
+	///   `OptimisedSubReaderOverrun` is returned if the payload is too
+	///   short to hold `len * 4` bytes of offsets. Reading any offset
+	///   from the table is therefore safe.
+	/// - The offset *values* read from that table are not checked.
+	///   [`element_bytes`](Self::element_bytes) slices the body by
+	///   those values; an offset past the body's length or a
+	///   non-monotonic adjacent entry triggers a slice-out-of-bounds
+	///   panic.
+	///
+	/// This is intended behaviour: the caller asserted trust. Callers
+	/// who cannot make that assertion should use [`from_payload`].
+	///
+	/// [`from_payload`]: Self::from_payload
+	/// [`Error::OptimisedOffsetsNonMonotonic`]: crate::Error::OptimisedOffsetsNonMonotonic
+	pub fn from_payload_unvalidated(payload: &'p [u8]) -> Result<Self, Error> {
+		Self::from_payload_inner(payload, false)
+	}
+
+	fn from_payload_inner(payload: &'p [u8], validate: bool) -> Result<Self, Error> {
 		if payload.is_empty() {
 			return Err(Error::OptimisedSubReaderOverrun);
 		}
@@ -67,7 +102,9 @@ impl<'p, T> IndexedSeqWalker<'p, T> {
 		let offsets = parse_offsets(&payload[cursor..cursor + table_bytes]);
 		cursor += table_bytes;
 		let body = &payload[cursor..];
-		validate_seq_prologue(&offsets, body.len() as u32)?;
+		if validate {
+			validate_seq_prologue(&offsets, body.len() as u32)?;
+		}
 		Ok(Self {
 			body,
 			offsets: Some(offsets),

@@ -645,6 +645,50 @@ impl Revisioned for f64 {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// Per-field fixed-width-LE helpers
+// -----------------------------------------------------------------------------
+//
+// These helpers always write/read the integer as little-endian fixed-width
+// bytes, regardless of the `fixed-width-encoding` cargo feature. The derive
+// macro routes integer fields tagged `#[revision(fixed)]` through these so
+// individual fields can opt into fixed encoding even when the crate-wide
+// default is varint (and idempotently when the default is already fixed).
+//
+// Hidden from rustdoc — they're stable surface for the macro's emitted code,
+// not part of the documented user API.
+
+macro_rules! fixed_le_helpers {
+	($t:ty, $width:expr, $encode:ident, $decode:ident, $skip:ident) => {
+		#[doc(hidden)]
+		#[inline]
+		pub fn $encode<W: io::Write>(value: $t, writer: &mut W) -> Result<(), Error> {
+			writer.write_all(&value.to_le_bytes()).map_err(Error::Io)
+		}
+
+		#[doc(hidden)]
+		#[inline]
+		pub fn $decode<R: io::Read>(reader: &mut R) -> Result<$t, Error> {
+			let b = read_buffer::<$width, _>(reader)?;
+			Ok(<$t>::from_le_bytes(b))
+		}
+
+		#[doc(hidden)]
+		#[inline]
+		pub fn $skip<R: io::Read>(reader: &mut R) -> Result<(), Error> {
+			let mut buf = [0u8; $width];
+			reader.read_exact(&mut buf).map_err(Error::Io)
+		}
+	};
+}
+
+fixed_le_helpers!(u32, 4, encode_u32_fixed_le, decode_u32_fixed_le, skip_u32_fixed_le);
+fixed_le_helpers!(i32, 4, encode_i32_fixed_le, decode_i32_fixed_le, skip_i32_fixed_le);
+fixed_le_helpers!(u64, 8, encode_u64_fixed_le, decode_u64_fixed_le, skip_u64_fixed_le);
+fixed_le_helpers!(i64, 8, encode_i64_fixed_le, decode_i64_fixed_le, skip_i64_fixed_le);
+fixed_le_helpers!(u128, 16, encode_u128_fixed_le, decode_u128_fixed_le, skip_u128_fixed_le);
+fixed_le_helpers!(i128, 16, encode_i128_fixed_le, decode_i128_fixed_le, skip_i128_fixed_le);
+
 #[cfg(test)]
 mod tests {
 	use crate::implementations::{

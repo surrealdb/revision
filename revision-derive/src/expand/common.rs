@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use syn::{Error, Ident};
+use proc_macro2::TokenStream;
+use quote::{ToTokens, format_ident, quote};
+use syn::{Error, Ident, Type};
 
 use crate::ast::{self, Visit};
 
@@ -119,5 +121,168 @@ impl<'ast> Visit<'ast> for GatherOverrides<'_> {
 
 		self.discriminants.insert(i.ident.clone(), descr.value);
 		Ok(())
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Per-field encoding-override dispatch helpers
+// -----------------------------------------------------------------------------
+
+/// Names of primitive integer types that `#[revision(fixed)]` supports.
+///
+/// The set matches the integers whose `SerializeRevisioned`/`DeserializeRevisioned`
+/// dispatch on the `fixed-width-encoding` cargo feature — these are the
+/// types where varint vs fixed actually differ on the wire.
+const FIXED_SUPPORTED_INTS: &[&str] = &["u32", "i32", "u64", "i64", "u128", "i128"];
+
+/// If `ty` is one of the FIXED_SUPPORTED_INTS spelled as a bare name,
+/// return its name; else `None`.
+///
+/// The match is purely syntactic — it does **not** see through type aliases
+/// (`type MyId = u32;` ... `x: MyId` is rejected) or qualified paths
+/// (`::std::primitive::u32`, `core::primitive::u32` are rejected). The
+/// macro can't resolve aliases at parse time; rejecting them here forces
+/// the caller to spell the bare name so the wire-format encoding the field
+/// gets is visible at the declaration site rather than buried in a
+/// distant `type` alias.
+pub fn fixed_int_name(ty: &Type) -> Option<&'static str> {
+	let s = ty.to_token_stream().to_string();
+	// `to_token_stream` for a bare primitive type produces just its name
+	// (e.g. `u32`); paths produce `:: std :: primitive :: u32` with
+	// whitespace around `::`. Compare to the canonical bare-name list to
+	// reject both aliases and paths.
+	let trimmed = s.trim();
+	FIXED_SUPPORTED_INTS.iter().find(|name| **name == trimmed).copied()
+}
+
+/// Build the rejection error for a field whose type isn't one of the bare
+/// supported integer names. The message calls out both the "wrong type"
+/// case (e.g. `String`) and the "right type, wrong spelling" case (paths,
+/// aliases) because the macro can't disambiguate them syntactically.
+fn fixed_attr_error(ty: &Type) -> syn::Error {
+	Error::new_spanned(
+		ty,
+		"`#[revision(fixed)]` requires the field type to be one of `u32`, `i32`, \
+		 `u64`, `i64`, `u128`, `i128` spelled as the bare primitive name. \
+		 Qualified paths (`::std::primitive::u32`, `core::primitive::u32`) and \
+		 type aliases (`type MyId = u32; field: MyId`) are not seen through by \
+		 the macro and so cannot carry this attribute — spell the bare name on \
+		 the field or remove the attribute.",
+	)
+}
+
+/// Emit `serialize_<int>_fixed_le(*value, writer)` for a `#[revision(fixed)]`
+/// field. Returns an error if `ty` is not a supported primitive integer.
+pub fn emit_serialize_fixed_le(
+	ty: &Type,
+	value_expr: &TokenStream,
+	writer_expr: &TokenStream,
+) -> syn::Result<TokenStream> {
+	let kind = fixed_int_name(ty).ok_or_else(|| fixed_attr_error(ty))?;
+	let fn_name = format_ident!("encode_{}_fixed_le", kind);
+	Ok(quote! {
+		::revision::implementations::primitives::#fn_name(*#value_expr, #writer_expr)?;
+	})
+}
+
+/// Emit `decode_<int>_fixed_le(reader)` for a `#[revision(fixed)]` field.
+pub fn emit_deserialize_fixed_le(ty: &Type, reader_expr: &TokenStream) -> syn::Result<TokenStream> {
+	let kind = fixed_int_name(ty).ok_or_else(|| fixed_attr_error(ty))?;
+	let fn_name = format_ident!("decode_{}_fixed_le", kind);
+	Ok(quote! {
+		::revision::implementations::primitives::#fn_name(#reader_expr)?
+	})
+}
+
+/// Emit `skip_<int>_fixed_le(reader)` for a `#[revision(fixed)]` field.
+pub fn emit_skip_fixed_le(ty: &Type, reader_expr: &TokenStream) -> syn::Result<TokenStream> {
+	let kind = fixed_int_name(ty).ok_or_else(|| fixed_attr_error(ty))?;
+	let fn_name = format_ident!("skip_{}_fixed_le", kind);
+	Ok(quote! {
+		::revision::implementations::primitives::#fn_name(#reader_expr)?;
+	})
+}
+
+/// Emit a bulk-encoded `Vec<T>` serialize call for a `#[revision(specialised)]`
+/// field. The `SerializeRevisionedSpecialised` trait is only implemented for
+/// `Vec<primitive>`, so any other type fires a trait-bound error at compile
+/// time pointing at the field.
+pub fn emit_serialize_specialised(
+	ty: &Type,
+	value_expr: &TokenStream,
+	writer_expr: &TokenStream,
+) -> TokenStream {
+	quote! {
+		<#ty as ::revision::implementations::specialised::SerializeRevisionedSpecialised>::serialize_revisioned_specialised(
+			#value_expr,
+			#writer_expr,
+		)?;
+	}
+}
+
+/// Emit a bulk-encoded `Vec<T>` deserialize call for a
+/// `#[revision(specialised)]` field. Same trait-bound contract as
+/// [`emit_serialize_specialised`].
+pub fn emit_deserialize_specialised(ty: &Type, reader_expr: &TokenStream) -> TokenStream {
+	quote! {
+		<#ty as ::revision::implementations::specialised::DeserializeRevisionedSpecialised>::deserialize_revisioned_specialised(
+			#reader_expr,
+		)?
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use syn::parse_str;
+
+	fn matches(input: &str) -> Option<&'static str> {
+		let ty: Type = parse_str(input).expect("test input parses as a Type");
+		fixed_int_name(&ty)
+	}
+
+	#[test]
+	fn bare_primitives_match() {
+		assert_eq!(matches("u32"), Some("u32"));
+		assert_eq!(matches("i32"), Some("i32"));
+		assert_eq!(matches("u64"), Some("u64"));
+		assert_eq!(matches("i64"), Some("i64"));
+		assert_eq!(matches("u128"), Some("u128"));
+		assert_eq!(matches("i128"), Some("i128"));
+	}
+
+	#[test]
+	fn qualified_paths_are_rejected() {
+		// The macro can't see through paths — these must NOT silently
+		// match and fall through to the default varint encoding.
+		assert_eq!(matches("::std::primitive::u32"), None);
+		assert_eq!(matches("std::primitive::u32"), None);
+		assert_eq!(matches("core::primitive::u32"), None);
+		assert_eq!(matches("::core::primitive::i64"), None);
+	}
+
+	#[test]
+	fn aliases_and_unsupported_types_are_rejected() {
+		// Aliases — the macro can't resolve them.
+		assert_eq!(matches("MyId"), None);
+		assert_eq!(matches("Self::Id"), None);
+		// Types not in the supported set.
+		assert_eq!(matches("u8"), None);
+		assert_eq!(matches("u16"), None);
+		assert_eq!(matches("usize"), None);
+		assert_eq!(matches("isize"), None);
+		assert_eq!(matches("f32"), None);
+		assert_eq!(matches("f64"), None);
+		assert_eq!(matches("String"), None);
+		assert_eq!(matches("Vec<u32>"), None);
+		// Wrapping / reference forms.
+		assert_eq!(matches("&u32"), None);
+		assert_eq!(matches("&mut u32"), None);
+		assert_eq!(matches("(u32)"), None);
+		assert_eq!(matches("Wrapping<u32>"), None);
+		assert_eq!(matches("Option<u32>"), None);
+		// Raw pointer forms.
+		assert_eq!(matches("*const u32"), None);
+		assert_eq!(matches("*mut u32"), None);
 	}
 }

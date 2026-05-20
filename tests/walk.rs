@@ -421,7 +421,7 @@ fn walker_rejects_invalid_wire_revision() {
 }
 
 // -----------------------------------------------------------------------------
-// Materialised-mode cross-rev: types using `convert_fn`
+// ConvertedOwned-mode cross-rev: types using `convert_fn`
 // -----------------------------------------------------------------------------
 
 #[revisioned(revision = 1)]
@@ -450,11 +450,11 @@ impl ConvertedFoo {
 }
 
 #[test]
-fn walker_materialises_for_convert_fn_type_at_older_revision() {
+fn walker_converts_for_convert_fn_type_at_older_revision() {
 	// Encode at rev 1, walk at rev 2. The walker should detect the
-	// `convert_fn` and materialise: deserialize at wire rev 1 (which
-	// runs the converter) and re-encode at current revision so the
-	// walker can read sequentially at the latest schema.
+	// `convert_fn` and take the ConvertedOwned path: deserialize at
+	// wire rev 1 (which runs the converter) and re-encode at current
+	// revision so the walker can read sequentially at the latest schema.
 	let v1 = ConvertedFooV1 {
 		width: 5,
 	};
@@ -462,7 +462,7 @@ fn walker_materialises_for_convert_fn_type_at_older_revision() {
 
 	let mut r = bytes.as_slice();
 	let mut walker = ConvertedFoo::walk_revisioned(&mut r).unwrap();
-	// Materialised mode reports the schema revision since bytes are
+	// ConvertedOwned mode reports the schema revision since bytes are
 	// re-encoded at current.
 	assert_eq!(walker.revision(), 2);
 

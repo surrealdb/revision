@@ -6,7 +6,7 @@ use syn::Ident;
 
 use crate::ast::{Enum, Fields, Struct, Variant, Visit};
 
-use super::common::CalcDiscriminant;
+use super::common::{CalcDiscriminant, emit_skip_fixed_le};
 use super::context::EncodingContext;
 use super::optimised;
 
@@ -154,28 +154,36 @@ impl<'ast> Visit<'ast> for SkipFields<'_> {
 
 					if exists_target && exists_current {
 						let ty = &f.ty;
-						if self.slice_mode {
-							self.stream.append_all(quote! {
+						let body = if f.attrs.options.fixed {
+							let reader_expr = quote! { reader };
+							emit_skip_fixed_le(ty, &reader_expr)?
+						} else if self.slice_mode {
+							quote! {
 								<#ty as ::revision::SkipRevisioned>::skip_revisioned_slice(reader)?;
-							});
+							}
 						} else {
-							self.stream.append_all(quote! {
+							quote! {
 								<#ty as ::revision::SkipRevisioned>::skip_revisioned(reader)?;
-							});
-						}
+							}
+						};
+						self.stream.append_all(body);
 					} else if exists_target && !exists_current {
 						// Field absent on wire at this revision.
 					} else if !exists_target && exists_current {
 						let ty = &f.ty;
-						if self.slice_mode {
-							self.stream.append_all(quote! {
+						let body = if f.attrs.options.fixed {
+							let reader_expr = quote! { reader };
+							emit_skip_fixed_le(ty, &reader_expr)?
+						} else if self.slice_mode {
+							quote! {
 								<#ty as ::revision::SkipRevisioned>::skip_revisioned_slice(reader)?;
-							});
+							}
 						} else {
-							self.stream.append_all(quote! {
+							quote! {
 								<#ty as ::revision::SkipRevisioned>::skip_revisioned(reader)?;
-							});
-						}
+							}
+						};
+						self.stream.append_all(body);
 					}
 				}
 			}

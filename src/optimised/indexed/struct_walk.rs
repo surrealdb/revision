@@ -20,7 +20,7 @@ use crate::optimised::validation::validate_struct_prologue;
 /// Walker over an indexed-struct payload borrowed from `&'p [u8]`.
 ///
 /// Constructed by the derive macro when a type opts into
-/// `#[revisioned(revision(N, encoding = "optimised", struct = "indexed"))]`.
+/// `#[revisioned(revision(N, optimised, indexed_struct))]`.
 /// Hand-constructed use is supported for testing and surrealdb-style
 /// pre-decode filters.
 ///
@@ -28,7 +28,7 @@ use crate::optimised::validation::validate_struct_prologue;
 /// use revision::optimised::IndexedStructWalker;
 /// use revision::prelude::*;
 ///
-/// #[revisioned(revision(1, encoding = "optimised", struct = "indexed"))]
+/// #[revisioned(revision(1, optimised, indexed_struct))]
 /// #[derive(PartialEq, Debug)]
 /// struct Doc {
 ///     id: u32,
@@ -63,7 +63,11 @@ impl<'p> IndexedStructWalker<'p> {
 	/// Open an indexed-struct walker over an already-extracted payload slice.
 	///
 	/// `field_count` comes from the type definition (the macro emits the literal).
-	/// Performs eager prologue validation.
+	/// Performs eager prologue validation — monotonic offsets, last offset
+	/// within payload, first offset past the prologue. Use
+	/// [`from_payload_unvalidated`](Self::from_payload_unvalidated) when the
+	/// payload is trusted (e.g. freshly written by the same process) and the
+	/// O(field_count) validation cost is measurable on the hot path.
 	pub fn from_payload(payload: &'p [u8], revision: u16, field_count: u16) -> Result<Self, Error> {
 		let prologue_bytes = (field_count as usize) * 4;
 		if payload.len() < prologue_bytes {
@@ -79,6 +83,64 @@ impl<'p> IndexedStructWalker<'p> {
 				offset: first,
 				payload_len: prologue_bytes as u32,
 			});
+		}
+		Ok(Self {
+			payload,
+			field_count,
+			revision,
+		})
+	}
+
+	/// Open an indexed-struct walker **without** validating the prologue.
+	///
+	/// Skips the O(field_count) offset-table check that [`from_payload`] runs.
+	/// Use only when the bytes are trusted — typically when they were
+	/// produced by `to_vec` or another in-process serialiser in the same
+	/// run.
+	///
+	/// # Panics on malformed input
+	///
+	/// On untrusted input this trades a clean
+	/// [`Error::OptimisedOffsetsNonMonotonic`] /
+	/// [`Error::OptimisedOffsetOutOfRange`] at construction for a **panic
+	/// on field access** if the offset table is corrupt. Specifically:
+	///
+	/// - The offset *table itself* (the `field_count * 4` byte prologue)
+	///   is bounds-checked at construction — the up-front
+	///   `payload.len() < prologue_bytes` check returns
+	///   `Error::OptimisedSubReaderOverrun` if the payload is too short
+	///   to hold the table at all, so reading the four bytes for any
+	///   given offset is safe.
+	/// - The offset *values* read from that table are not checked.
+	///   [`field_bytes`](Self::field_bytes) and
+	///   [`decode_field`](Self::decode_field) slice the payload by those
+	///   values: an offset that exceeds `payload.len()` or whose
+	///   neighbour is smaller (non-monotonic) triggers a slice-out-of-
+	///   bounds panic via standard `Index`/`Range` bounds checking.
+	///
+	/// This is the intended behaviour: the caller asserted trust by
+	/// choosing this constructor, and a panic on corrupted "trusted"
+	/// bytes signals that the trust assumption was wrong. Callers who
+	/// cannot make that assertion should use [`from_payload`] instead,
+	/// which fails cleanly with a typed error.
+	///
+	/// Returns `Error::OptimisedSubReaderOverrun` only when the payload
+	/// is too short to hold the offset table itself — that check is
+	/// kept because constructing the walker over a payload shorter than
+	/// `field_count * 4` would have no defensible interpretation, and
+	/// keeps the in-bounds guarantee for offset-table reads above.
+	///
+	/// [`from_payload`]: Self::from_payload
+	/// [`Error::OptimisedOffsetsNonMonotonic`]: crate::Error::OptimisedOffsetsNonMonotonic
+	/// [`Error::OptimisedOffsetOutOfRange`]: crate::Error::OptimisedOffsetOutOfRange
+	pub fn from_payload_unvalidated(
+		payload: &'p [u8],
+		revision: u16,
+		field_count: u16,
+	) -> Result<Self, Error> {
+		let prologue_bytes = (field_count as usize) * 4;
+		if payload.len() < prologue_bytes {
+			return Err(Error::OptimisedSubReaderOverrun);
 		}
 		Ok(Self {
 			payload,

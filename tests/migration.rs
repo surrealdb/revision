@@ -22,21 +22,21 @@ struct OnlyRev1 {
 	b: u32,
 }
 
-#[revisioned(revision(1), revision(2, encoding = "optimised"))]
+#[revisioned(revision(1), revision(2, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 struct LegacyAndOptimised {
 	a: u32,
 	b: u32,
 }
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 struct OptimisedFromDayOne {
 	a: u32,
 	b: u32,
 }
 
-#[revisioned(revision(1), revision(2), revision(3, encoding = "optimised"))]
+#[revisioned(revision(1), revision(2), revision(3, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 struct ThreeRevisions {
 	a: u32,
@@ -44,7 +44,7 @@ struct ThreeRevisions {
 }
 
 // A type that grows a field across an encoding boundary.
-#[revisioned(revision(1), revision(2, encoding = "optimised"))]
+#[revisioned(revision(1), revision(2, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 struct GrowsAcrossBoundary {
 	a: u32,
@@ -269,6 +269,71 @@ fn pin_optimised_rev1_struct_layout() {
 	assert_eq!(decoded.b, 11);
 }
 
+#[cfg(not(feature = "fixed-width-encoding"))]
+#[revisioned(revision(1, optimised, indexed_struct))]
+#[derive(Debug, PartialEq)]
+struct PinIndexedStruct {
+	a: u32,
+	b: u32,
+	c: u32,
+}
+
+#[cfg(not(feature = "fixed-width-encoding"))]
+#[test]
+fn pin_optimised_indexed_struct_layout() {
+	// Bytes captured from `revision::to_vec(&PinIndexedStruct { a: 7, b: 11, c: 19 })`.
+	// Layout:
+	//   u16 revision varint            (1 byte: rev=1)
+	//   u32_le payload length          (4 bytes: prologue 12 + body 3 = 15)
+	//   u32_le offset table * 3        (12 bytes: 12, 13, 14)
+	//   field bytes                    (3 bytes: 7, 11, 19 as varints)
+	let pinned: &[u8] = &[
+		1, // u16 revision varint = 1
+		15, 0, 0, 0, // u32_le payload length = 15 (3*4 offsets + 3 field bytes)
+		12, 0, 0, 0, // offsets[0] = 12 (start of field a, just past prologue)
+		13, 0, 0, 0, // offsets[1] = 13 (start of field b)
+		14, 0, 0, 0,  // offsets[2] = 14 (start of field c)
+		7,  // field a = 7 (varint)
+		11, // field b = 11 (varint)
+		19, // field c = 19 (varint)
+	];
+	let decoded: PinIndexedStruct = revision::from_slice(pinned).unwrap();
+	assert_eq!(decoded.a, 7);
+	assert_eq!(decoded.b, 11);
+	assert_eq!(decoded.c, 19);
+}
+
+#[cfg(not(feature = "fixed-width-encoding"))]
+#[revisioned(revision(1, optimised))]
+#[derive(Debug, PartialEq)]
+enum PinOptimisedEnum {
+	#[revision(size = "varlen")]
+	Greeting(String),
+}
+
+#[cfg(not(feature = "fixed-width-encoding"))]
+#[test]
+fn pin_optimised_varlen_enum_variant_layout() {
+	// Bytes captured from `revision::to_vec(&PinOptimisedEnum::Greeting("hi".into()))`.
+	// Layout:
+	//   u16 revision varint            (1 byte: rev=1)
+	//   u8 tag                         (1 byte: variant_id=0 + size_class=Varlen)
+	//   u32_le body length             (4 bytes: 3 = varint(len=2) + "hi")
+	//   body                           (varint(2) + 'h' + 'i')
+	//
+	// Tag layout: variant_id in low 5 bits, size_class in bits 5..=6.
+	// Greeting is variant id 0; Varlen = 0b10. So tag = (0b10 << 5) | 0 = 0x40 = 64.
+	let pinned: &[u8] = &[
+		1,  // u16 revision varint = 1
+		64, // optimised tag: variant_id=0, size_class=Varlen
+		3, 0, 0, 0, // u32_le body length = 3
+		2, // varint string length = 2
+		b'h', b'i', // string bytes
+	];
+	let decoded: PinOptimisedEnum = revision::from_slice(pinned).unwrap();
+	assert_eq!(decoded, PinOptimisedEnum::Greeting("hi".into()));
+}
+
 // -----------------------------------------------------------------------------
 // Mixed-history nested-type tests
 // -----------------------------------------------------------------------------
@@ -284,7 +349,7 @@ struct InnerLegacy {
 	y: u32,
 }
 
-#[revisioned(revision(1), revision(2, encoding = "optimised"))]
+#[revisioned(revision(1), revision(2, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 struct InnerOptimised {
 	x: u32,
@@ -298,7 +363,7 @@ struct OuterLegacy {
 	inner: InnerOptimised,
 }
 
-#[revisioned(revision(1), revision(2, encoding = "optimised"))]
+#[revisioned(revision(1), revision(2, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 struct OuterOptimised {
 	tag: u32,
@@ -341,7 +406,7 @@ fn optimised_outer_with_legacy_inner_round_trips() {
 // Variant lifecycle crossing the encoding boundary
 // -----------------------------------------------------------------------------
 
-#[revisioned(revision(1), revision(2, encoding = "optimised"))]
+#[revisioned(revision(1), revision(2, optimised))]
 #[derive(Debug, Clone, PartialEq)]
 enum VariantLifecycle {
 	#[revision(end = 2, convert_fn = "migrate_old", size = "fixed(8)")]
@@ -379,13 +444,13 @@ fn variant_removed_across_optimised_boundary_routes_through_convert_fn() {
 
 #[test]
 fn nested_optimised_both_levels_round_trips() {
-	#[revisioned(revision(1, encoding = "optimised"))]
+	#[revisioned(revision(1, optimised))]
 	#[derive(Debug, Clone, PartialEq)]
 	struct Inner2 {
 		a: u32,
 	}
 
-	#[revisioned(revision(1, encoding = "optimised"))]
+	#[revisioned(revision(1, optimised))]
 	#[derive(Debug, Clone, PartialEq)]
 	struct Outer2 {
 		tag: u32,

@@ -4,7 +4,7 @@
 //! field payload).
 use revision::revisioned;
 
-#[revisioned(revision(1, encoding = "optimised"))]
+#[revisioned(revision(1, optimised))]
 struct BadDoc {
 	#[revision(indexed_map, indexed_seq)]
 	field: std::collections::BTreeMap<String, u32>,

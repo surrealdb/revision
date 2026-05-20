@@ -37,6 +37,14 @@ pub enum Error {
 	OptimisedKeyRegionNotAscending,
 	/// A varlen sub-reader's declared byte length exceeds the bytes available to its parent.
 	OptimisedSubReaderOverrun,
+	/// A [`BorrowedReader`](crate::BorrowedReader) implementation violated
+	/// the trait's safety contract (e.g. `remaining().len()` grew across an
+	/// `advance` call, contradicting bullet (4) of the contract). This is a
+	/// bug in the reader implementation, **not** a problem with the wire
+	/// data — surfaced as a typed error rather than UB because the unsafe
+	/// code in the macro's Wire fast path would otherwise read past the
+	/// stable buffer.
+	BorrowedReaderContractViolation(String),
 }
 
 impl std::error::Error for Error {
@@ -99,6 +107,9 @@ impl std::fmt::Display for Error {
 			}
 			Self::OptimisedSubReaderOverrun => {
 				write!(f, "Optimised varlen sub-reader length exceeds parent bytes")
+			}
+			Self::BorrowedReaderContractViolation(msg) => {
+				write!(f, "BorrowedReader implementation violates the trait safety contract: {msg}")
 			}
 		}
 	}
