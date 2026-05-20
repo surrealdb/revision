@@ -277,7 +277,12 @@ mod tests {
 		assert_eq!(matches("Vec<u32>"), None);
 		// Wrapping / reference forms.
 		assert_eq!(matches("&u32"), None);
+		assert_eq!(matches("&mut u32"), None);
 		assert_eq!(matches("(u32)"), None);
 		assert_eq!(matches("Wrapping<u32>"), None);
+		assert_eq!(matches("Option<u32>"), None);
+		// Raw pointer forms.
+		assert_eq!(matches("*const u32"), None);
+		assert_eq!(matches("*mut u32"), None);
 	}
 }

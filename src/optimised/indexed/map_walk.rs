@@ -59,13 +59,23 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 	///
 	/// On untrusted input this trades a clean
 	/// [`Error::OptimisedOffsetsNonMonotonic`] /
-	/// [`Error::OptimisedKeyRegionNotAscending`] at construction for a
-	/// **panic on access** if the offset table or key/value regions are
-	/// corrupt: per-entry accessors slice the regions by raw offsets,
-	/// triggering slice-out-of-bounds panics on offsets past the region's
-	/// length or non-monotonic adjacent entries. Binary-search lookups
-	/// also rely on the ascending invariant — searching a non-ascending
-	/// region may return wrong results without panicking.
+	/// [`Error::OptimisedKeyRegionNotAscending`] at construction for
+	/// failures on access. Specifically:
+	///
+	/// - The offset *tables* (`key_offsets`, `val_offsets`) and the
+	///   region-length headers are bounds-checked while constructing the
+	///   walker — `OptimisedSubReaderOverrun` is returned if the payload
+	///   is too short to hold them. Reading an entry from these tables
+	///   is therefore safe.
+	/// - The offset *values* read from those tables are not checked.
+	///   Per-entry accessors slice the dense key / value regions by
+	///   those values; an offset past the region's length or a
+	///   non-monotonic adjacent entry triggers a slice-out-of-bounds
+	///   panic.
+	/// - Binary-search lookups additionally rely on the keys region
+	///   being byte-ascending. Searching a non-ascending region does
+	///   **not** panic — it returns wrong results (the binary search
+	///   silently converges on a non-existent key).
 	///
 	/// This is intended behaviour: the caller asserted trust by choosing
 	/// this constructor. Callers who cannot make that assertion should

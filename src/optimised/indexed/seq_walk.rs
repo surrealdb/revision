@@ -52,12 +52,18 @@ impl<'p, T> IndexedSeqWalker<'p, T> {
 	/// # Panics on malformed input
 	///
 	/// On untrusted input this trades a clean
-	/// [`Error::OptimisedOffsetsNonMonotonic`] at construction for a
-	/// **panic on element access** if the offset table is corrupt:
-	/// [`element_bytes`](Self::element_bytes) slices the body by raw
-	/// offsets read from the prologue, so offsets past the body or
-	/// non-monotonic adjacent entries trigger slice-out-of-bounds
-	/// panics.
+	/// [`Error::OptimisedOffsetsNonMonotonic`] at construction for
+	/// failures on access. Specifically:
+	///
+	/// - The offset *table* itself is bounds-checked at construction —
+	///   `OptimisedSubReaderOverrun` is returned if the payload is too
+	///   short to hold `len * 4` bytes of offsets. Reading any offset
+	///   from the table is therefore safe.
+	/// - The offset *values* read from that table are not checked.
+	///   [`element_bytes`](Self::element_bytes) slices the body by
+	///   those values; an offset past the body's length or a
+	///   non-monotonic adjacent entry triggers a slice-out-of-bounds
+	///   panic.
 	///
 	/// This is intended behaviour: the caller asserted trust. Callers
 	/// who cannot make that assertion should use [`from_payload`].

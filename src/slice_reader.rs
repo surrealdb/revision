@@ -157,6 +157,22 @@ impl Read for SliceReader<'_> {
 ///    larger reduction is still sound for the unsafe code that
 ///    depends on this contract.
 ///
+///    *Semantic caveat:* the UB-safety promise above is **only** about
+///    memory safety. The macro-emitted `walk_<field>` Wire fast path
+///    additionally interprets `remaining_before.len() -
+///    remaining_after.len()` as "the number of bytes the
+///    `skip_indexed_*` call consumed", and hands those bytes to
+///    `IndexedMapView` / `IndexedSeqView` / `IndexedSetView` for
+///    parsing. An impl that reduces `remaining` by *more* than what
+///    `skip_*` actually visited (e.g. by coalescing reads or
+///    pre-fetching the next field) would still be UB-safe, but the
+///    view would see trailing bytes the skip didn't consume and
+///    misparse the field. The two in-crate impls (`&[u8]`,
+///    `SliceReader<'a>`) advance by exactly `n`, so this is dormant
+///    in practice — but a downstream impl that wants to be both
+///    UB-safe **and** semantically correct against the macro should
+///    advance by exactly `n` as well.
+///
 /// The two impls in this crate — `&[u8]` and [`SliceReader`] — both
 /// trivially satisfy this contract: `peek_bytes` and `remaining` return
 /// slices into a caller-owned buffer that the reader never mutates, and
