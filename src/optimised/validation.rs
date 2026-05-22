@@ -91,22 +91,29 @@ pub fn validate_key_region_ascending(
 	offset_table: &[u8],
 	count: usize,
 ) -> Result<(), Error> {
+	if count < 2 {
+		return Ok(());
+	}
+	// Carry `(prev_start, curr_start)` across iterations so each key offset is
+	// decoded exactly once instead of three times. `validate_map_prologue`
+	// already enforced monotonicity, so `curr_start > prev_start`. The last
+	// entry runs to `keys_region.len()`; intermediate entries to the next
+	// offset.
+	let mut prev_start = decode_u32_le_at(offset_table, 0) as usize;
+	let mut curr_start = decode_u32_le_at(offset_table, 8) as usize;
 	for i in 1..count {
-		let prev_start = decode_u32_le_at(offset_table, (i - 1) * 8) as usize;
-		let curr_start = decode_u32_le_at(offset_table, i * 8) as usize;
-		// `validate_map_prologue` already enforced monotonicity, so curr_start > prev_start.
-		// Last entry runs to keys_region.len(); intermediate to next offset.
-		let prev_end = curr_start;
 		let curr_end = if i + 1 < count {
 			decode_u32_le_at(offset_table, (i + 1) * 8) as usize
 		} else {
 			keys_region.len()
 		};
-		let prev = &keys_region[prev_start..prev_end];
+		let prev = &keys_region[prev_start..curr_start];
 		let curr = &keys_region[curr_start..curr_end];
 		if curr <= prev {
 			return Err(Error::OptimisedKeyRegionNotAscending);
 		}
+		prev_start = curr_start;
+		curr_start = curr_end;
 	}
 	Ok(())
 }

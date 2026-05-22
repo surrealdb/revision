@@ -206,25 +206,33 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 	}
 
 	/// Iterate key/value byte ranges in original insertion order. Indexed path only.
+	///
+	/// Forward-only by design: we carry `(k_start, v_start)` across iterations
+	/// and decode only the *next* entry's offsets each step, reusing them as
+	/// the current entry's end. This halves the per-entry decode count
+	/// relative to the naive `decode(i), decode(i+1)` pattern. The returned
+	/// iterator is `impl Iterator` (no `DoubleEndedIterator`), so callers
+	/// can't step backwards and observe stale state.
 	pub fn entries(&self) -> Option<impl Iterator<Item = (&'p [u8], &'p [u8])> + '_> {
 		let p = self.prologue.as_ref()?;
 		let keys = p.keys_region;
 		let vals = p.vals_region;
 		let n = self.len;
+		let (mut k_start, mut v_start) = if n > 0 {
+			(p.key_off(0) as usize, p.val_off(0) as usize)
+		} else {
+			(0, 0)
+		};
 		Some((0..n).map(move |i| {
-			let k_start = p.key_off(i) as usize;
-			let k_end = if i + 1 < n {
-				p.key_off(i + 1) as usize
+			let (k_end, v_end) = if i + 1 < n {
+				(p.key_off(i + 1) as usize, p.val_off(i + 1) as usize)
 			} else {
-				keys.len()
+				(keys.len(), vals.len())
 			};
-			let v_start = p.val_off(i) as usize;
-			let v_end = if i + 1 < n {
-				p.val_off(i + 1) as usize
-			} else {
-				vals.len()
-			};
-			(&keys[k_start..k_end], &vals[v_start..v_end])
+			let entry = (&keys[k_start..k_end], &vals[v_start..v_end]);
+			k_start = k_end;
+			v_start = v_end;
+			entry
 		}))
 	}
 
