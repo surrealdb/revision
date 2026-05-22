@@ -73,16 +73,17 @@ impl<'p> IndexedStructWalker<'p> {
 		if payload.len() < prologue_bytes {
 			return Err(Error::OptimisedSubReaderOverrun);
 		}
-		let offsets = parse_offsets(&payload[..prologue_bytes]);
-		validate_struct_prologue(&offsets, payload.len() as u32)?;
+		let count = field_count as usize;
+		validate_struct_prologue(&payload[..prologue_bytes], count, 4, payload.len() as u32)?;
 		// First offset must point at start of body (`prologue_bytes`).
-		if let Some(&first) = offsets.first()
-			&& (first as usize) < prologue_bytes
-		{
-			return Err(Error::OptimisedOffsetOutOfRange {
-				offset: first,
-				payload_len: prologue_bytes as u32,
-			});
+		if count > 0 {
+			let first = crate::optimised::validation::decode_u32_le_at(payload, 0);
+			if (first as usize) < prologue_bytes {
+				return Err(Error::OptimisedOffsetOutOfRange {
+					offset: first,
+					payload_len: prologue_bytes as u32,
+				});
+			}
 		}
 		Ok(Self {
 			payload,
@@ -212,11 +213,6 @@ impl<'p> IndexedStructWalker<'p> {
 // ```
 //
 // The macro emits this pattern directly per field.
-
-#[inline]
-fn parse_offsets(bytes: &[u8]) -> Vec<u32> {
-	bytes.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect()
-}
 
 #[cfg(test)]
 mod tests {

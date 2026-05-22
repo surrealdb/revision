@@ -25,6 +25,20 @@ use crate::optimised::indexed::seq_walk::FLAG_INDEXED;
 use crate::optimised::validation::{validate_key_region_ascending, validate_map_prologue};
 
 /// Walker over an indexed-map body.
+///
+/// Like [`IndexedSeqWalker`](super::IndexedSeqWalker), the offset table is
+/// borrowed directly from the payload. The wire format stores key and value
+/// offsets interleaved (`(u32_le key_off, u32_le val_off); count`), so we
+/// keep them as a single `&'p [u8]` of `count * 8` bytes; the key column
+/// lives at stride-8 offsets `0, 8, 16, …` and the value column at
+/// `4, 12, 20, …`. Decoding entries on demand via [`key_off`] / [`val_off`]
+/// trades one `u32::from_le_bytes` per access (essentially free) for
+/// eliminating the two `Vec<u32>` allocations that the previous shape paid
+/// on every walker construction — a measurable per-row cost on scan
+/// workloads.
+///
+/// [`key_off`]: MapPrologue::key_off
+/// [`val_off`]: MapPrologue::val_off
 #[derive(Debug)]
 pub struct IndexedMapWalker<'p, K, V> {
 	/// Bytes past the flags+len header. Either the (offsets + keys + values) layout
@@ -38,10 +52,25 @@ pub struct IndexedMapWalker<'p, K, V> {
 
 #[derive(Debug)]
 struct MapPrologue<'p> {
-	key_offsets: Vec<u32>,
-	val_offsets: Vec<u32>,
+	/// `count * 8` bytes of interleaved `(u32_le key_off, u32_le val_off)`
+	/// pairs, borrowed from the payload.
+	offset_table: &'p [u8],
 	keys_region: &'p [u8],
 	vals_region: &'p [u8],
+}
+
+impl<'p> MapPrologue<'p> {
+	/// Decode the `index`-th key offset (stride 8, column 0).
+	#[inline]
+	fn key_off(&self, index: usize) -> u32 {
+		crate::optimised::validation::decode_u32_le_at(self.offset_table, index * 8)
+	}
+
+	/// Decode the `index`-th value offset (stride 8, column 1).
+	#[inline]
+	fn val_off(&self, index: usize) -> u32 {
+		crate::optimised::validation::decode_u32_le_at(self.offset_table, index * 8 + 4)
+	}
 }
 
 impl<'p, K, V> IndexedMapWalker<'p, K, V> {
@@ -113,24 +142,15 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 		if payload.len() < cursor + table_bytes {
 			return Err(Error::OptimisedSubReaderOverrun);
 		}
-
-		let mut key_offsets = Vec::with_capacity(len);
-		let mut val_offsets = Vec::with_capacity(len);
-		for i in 0..len {
-			let base = cursor + i * 8;
-			let ko = u32::from_le_bytes(payload[base..base + 4].try_into().unwrap());
-			let vo = u32::from_le_bytes(payload[base + 4..base + 8].try_into().unwrap());
-			key_offsets.push(ko);
-			val_offsets.push(vo);
-		}
+		// Borrow the interleaved `(key_off, val_off)` table directly from the
+		// payload; per-entry decode happens on access via `MapPrologue::key_off`
+		// / `val_off`. No `Vec<u32>` allocation per walker construction.
+		let offset_table = &payload[cursor..cursor + table_bytes];
 		cursor += table_bytes;
 
-		// Compute the keys region length from the last offset to the next entry.
-		// Encoded shape places the keys region immediately after the offset table.
-		// We learn the keys-region end by reading the last key_offset + the keys-region
-		// size, but the encoder didn't include a separate size — it's derivable as
-		// the next-region start. We expect the encoder to emit a u32_le keys_region_len
-		// header here to disambiguate. Add that now.
+		// `u32_le keys_region_len` and `u32_le vals_region_len` follow the
+		// interleaved offset table; together they tell us where the keys
+		// region ends and the vals region begins.
 		if payload.len() < cursor + 8 {
 			return Err(Error::OptimisedSubReaderOverrun);
 		}
@@ -150,19 +170,18 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 
 		if validate {
 			validate_map_prologue(
-				&key_offsets,
-				&val_offsets,
+				offset_table,
+				len,
 				keys_region_len as u32,
 				vals_region_len as u32,
 			)?;
-			validate_key_region_ascending(keys_region, &key_offsets)?;
+			validate_key_region_ascending(keys_region, offset_table, len)?;
 		}
 
 		Ok(Self {
 			body: &payload[1 + varint_bytes..],
 			prologue: Some(MapPrologue {
-				key_offsets,
-				val_offsets,
+				offset_table,
 				keys_region,
 				vals_region,
 			}),
@@ -187,27 +206,33 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 	}
 
 	/// Iterate key/value byte ranges in original insertion order. Indexed path only.
+	///
+	/// Forward-only by design: we carry `(k_start, v_start)` across iterations
+	/// and decode only the *next* entry's offsets each step, reusing them as
+	/// the current entry's end. This halves the per-entry decode count
+	/// relative to the naive `decode(i), decode(i+1)` pattern. The returned
+	/// iterator is `impl Iterator` (no `DoubleEndedIterator`), so callers
+	/// can't step backwards and observe stale state.
 	pub fn entries(&self) -> Option<impl Iterator<Item = (&'p [u8], &'p [u8])> + '_> {
 		let p = self.prologue.as_ref()?;
 		let keys = p.keys_region;
 		let vals = p.vals_region;
-		let kos = &p.key_offsets;
-		let vos = &p.val_offsets;
 		let n = self.len;
+		let (mut k_start, mut v_start) = if n > 0 {
+			(p.key_off(0) as usize, p.val_off(0) as usize)
+		} else {
+			(0, 0)
+		};
 		Some((0..n).map(move |i| {
-			let k_start = kos[i] as usize;
-			let k_end = if i + 1 < n {
-				kos[i + 1] as usize
+			let (k_end, v_end) = if i + 1 < n {
+				(p.key_off(i + 1) as usize, p.val_off(i + 1) as usize)
 			} else {
-				keys.len()
+				(keys.len(), vals.len())
 			};
-			let v_start = vos[i] as usize;
-			let v_end = if i + 1 < n {
-				vos[i + 1] as usize
-			} else {
-				vals.len()
-			};
-			(&keys[k_start..k_end], &vals[v_start..v_end])
+			let entry = (&keys[k_start..k_end], &vals[v_start..v_end]);
+			k_start = k_end;
+			v_start = v_end;
+			entry
 		}))
 	}
 
@@ -225,18 +250,18 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 		let mut hi = n;
 		while lo < hi {
 			let mid = lo + (hi - lo) / 2;
-			let k_start = p.key_offsets[mid] as usize;
+			let k_start = p.key_off(mid) as usize;
 			let k_end = if mid + 1 < n {
-				p.key_offsets[mid + 1] as usize
+				p.key_off(mid + 1) as usize
 			} else {
 				p.keys_region.len()
 			};
 			let key_bytes = &p.keys_region[k_start..k_end];
 			match predicate(key_bytes) {
 				Ordering::Equal => {
-					let v_start = p.val_offsets[mid] as usize;
+					let v_start = p.val_off(mid) as usize;
 					let v_end = if mid + 1 < n {
-						p.val_offsets[mid + 1] as usize
+						p.val_off(mid + 1) as usize
 					} else {
 						p.vals_region.len()
 					};

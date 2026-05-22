@@ -26,10 +26,22 @@ pub const FLAG_INDEXED: u8 = 0b0000_0001;
 /// Walker over an indexed-seq body.
 ///
 /// `T` is recorded only for type-driven decode helpers; the walker itself stores raw bytes.
+///
+/// The offset table is borrowed directly from the payload as `&'p [u8]` (a
+/// contiguous `len * 4` slice of `u32_le` entries). Individual offsets are
+/// decoded on demand via [`offset_at`] — a single `u32::from_le_bytes` on a
+/// 4-byte window, essentially one aligned `mov` on common targets. Borrowing
+/// the table instead of materialising it into a `Vec<u32>` removes one
+/// allocation + `O(len)` copy loop from every walker construction; on
+/// scan-heavy workloads that fires per row per descent level.
+///
+/// [`offset_at`]: Self::offset_at
 #[derive(Debug)]
 pub struct IndexedSeqWalker<'p, T> {
 	body: &'p [u8],
-	offsets: Option<Vec<u32>>,
+	/// `None` on the legacy path; otherwise a `len * 4` byte slice of
+	/// `u32_le` element offsets borrowed from the payload.
+	offsets: Option<&'p [u8]>,
 	len: usize,
 	_marker: PhantomData<fn() -> T>,
 }
@@ -99,11 +111,11 @@ impl<'p, T> IndexedSeqWalker<'p, T> {
 		if payload.len() < cursor + table_bytes {
 			return Err(Error::OptimisedSubReaderOverrun);
 		}
-		let offsets = parse_offsets(&payload[cursor..cursor + table_bytes]);
+		let offsets = &payload[cursor..cursor + table_bytes];
 		cursor += table_bytes;
 		let body = &payload[cursor..];
 		if validate {
-			validate_seq_prologue(&offsets, body.len() as u32)?;
+			validate_seq_prologue(offsets, len, body.len() as u32)?;
 		}
 		Ok(Self {
 			body,
@@ -111,6 +123,15 @@ impl<'p, T> IndexedSeqWalker<'p, T> {
 			len,
 			_marker: PhantomData,
 		})
+	}
+
+	/// Decode the `index`-th offset from the borrowed table.
+	///
+	/// `offsets` is the table-bytes slice produced at construction
+	/// (`len * 4` bytes); the caller must have already validated `index < len`.
+	#[inline]
+	fn offset_at(offsets: &[u8], index: usize) -> u32 {
+		crate::optimised::validation::decode_u32_le_at(offsets, index * 4)
 	}
 
 	#[inline]
@@ -133,14 +154,13 @@ impl<'p, T> IndexedSeqWalker<'p, T> {
 	pub fn element_bytes(&self, index: usize) -> Result<&'p [u8], Error> {
 		let offsets = self
 			.offsets
-			.as_ref()
 			.ok_or_else(|| Error::Deserialize("element_bytes called on non-indexed seq".into()))?;
 		if index >= self.len {
 			return Err(Error::Deserialize(format!("index {index} out of range ({})", self.len)));
 		}
-		let start = offsets[index] as usize;
+		let start = Self::offset_at(offsets, index) as usize;
 		let end = if index + 1 < self.len {
-			offsets[index + 1] as usize
+			Self::offset_at(offsets, index + 1) as usize
 		} else {
 			self.body.len()
 		};
@@ -152,11 +172,6 @@ impl<'p, T> IndexedSeqWalker<'p, T> {
 	pub fn body(&self) -> &'p [u8] {
 		self.body
 	}
-}
-
-#[inline]
-fn parse_offsets(bytes: &[u8]) -> Vec<u32> {
-	bytes.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect()
 }
 
 /// Parse a `usize` varint matching the on-wire shape used by `Vec`/map lengths.
