@@ -71,6 +71,11 @@ pub fn validate_map_prologue(
 	keys_region_len: u32,
 	vals_region_len: u32,
 ) -> Result<(), Error> {
+	// Defensive smoke-test, not a wire-format guard: the only caller derives
+	// both `offset_table` (sliced as `len * 8` bytes) and `count` from the same
+	// payload length, so a real mismatch is unreachable. Kept so that any
+	// future caller passing inconsistent arguments fails loudly here instead
+	// of producing a slice-OOB panic deeper in the validator.
 	if offset_table.len() != count.saturating_mul(8) {
 		return Err(Error::OptimisedOffsetsNonMonotonic);
 	}
@@ -193,7 +198,10 @@ mod tests {
 
 	#[test]
 	fn map_prologue_rejects_mismatched_lengths() {
-		// Caller passes a `count` that doesn't match the slice — must reject.
+		// Defensive smoke-test for the `offset_table.len() != count * 8` guard.
+		// Unreachable from real callers (both arguments come from the same
+		// payload length) but kept so a future caller passing inconsistent
+		// arguments fails with a typed error instead of a slice-OOB panic.
 		// Simulated by packing 2 pairs (16 bytes) but claiming count=3.
 		let bytes = pack_interleaved(&[0, 4], &[0, 4]);
 		assert!(matches!(
