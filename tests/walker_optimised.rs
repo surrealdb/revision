@@ -245,3 +245,132 @@ fn walker_decode_variant_errors_on_wrong_variant() {
 		other => panic!("expected Deserialize error, got {other:?}"),
 	}
 }
+
+// ---------------------------------------------------------------------------
+// `into_<field>_bytes` accessor — borrowed wire bytes without inner decode.
+//
+// This is the escape hatch for `indexed_struct` types whose plain (non-
+// `indexed_*`) fields can't be walked via `into_walk_<field>` on an
+// `IndexedBorrowed` parent. The caller takes the bytes and constructs a
+// child walker themselves (`T::walk_revisioned(&mut bytes)`).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn into_field_bytes_on_indexed_borrowed_round_trips() {
+	let v = IndexedStruct {
+		a: 11,
+		b: 22,
+		c: 33,
+	};
+	let bytes = revision::to_vec(&v).unwrap();
+	let mut r: &[u8] = &bytes;
+	let w = IndexedStruct::walk_revisioned(&mut r).unwrap();
+	// Take the middle field's bytes and decode them independently — the
+	// returned slice borrows from the original payload (`Cow::Borrowed`).
+	let b_bytes = w.into_b_bytes().unwrap();
+	let mut sub: &[u8] = &b_bytes;
+	let b: u32 =
+		<u32 as revision::DeserializeRevisioned>::deserialize_revisioned(&mut sub).unwrap();
+	assert_eq!(b, 22);
+}
+
+#[test]
+fn into_field_bytes_on_indexed_borrowed_handles_first_and_last_fields() {
+	let v = IndexedStruct {
+		a: 100,
+		b: 200,
+		c: 300,
+	};
+	let bytes = revision::to_vec(&v).unwrap();
+
+	// First field (offset table → bytes[0..4]).
+	{
+		let mut r: &[u8] = &bytes;
+		let w = IndexedStruct::walk_revisioned(&mut r).unwrap();
+		let a_bytes = w.into_a_bytes().unwrap();
+		let mut sub: &[u8] = &a_bytes;
+		let a: u32 =
+			<u32 as revision::DeserializeRevisioned>::deserialize_revisioned(&mut sub).unwrap();
+		assert_eq!(a, 100);
+	}
+	// Last field (extends to payload end — exercises the open-ended slice).
+	{
+		let mut r: &[u8] = &bytes;
+		let w = IndexedStruct::walk_revisioned(&mut r).unwrap();
+		let c_bytes = w.into_c_bytes().unwrap();
+		let mut sub: &[u8] = &c_bytes;
+		let c: u32 =
+			<u32 as revision::DeserializeRevisioned>::deserialize_revisioned(&mut sub).unwrap();
+		assert_eq!(c, 300);
+	}
+}
+
+#[test]
+fn into_field_bytes_on_wire_round_trips() {
+	// Optimised (no `indexed_struct`) — the walker enters the Wire arm
+	// rather than IndexedBorrowed, so the accessor goes through the
+	// remaining()-snapshot + skip-and-recover path.
+	let v = OptStruct {
+		a: 42,
+		b: 100,
+	};
+	let bytes = revision::to_vec(&v).unwrap();
+	let mut r: &[u8] = &bytes;
+	let w = OptStruct::walk_revisioned(&mut r).unwrap();
+	let a_bytes = w.into_a_bytes().unwrap();
+	// `a` is the first field — bytes should be exactly the u32_le encoding
+	// of `a` (4 bytes under the default codec).
+	let mut sub: &[u8] = &a_bytes;
+	let a: u32 =
+		<u32 as revision::DeserializeRevisioned>::deserialize_revisioned(&mut sub).unwrap();
+	assert_eq!(a, 42);
+	assert_eq!(sub.len(), 0, "into_a_bytes should return exactly the field's bytes");
+}
+
+#[test]
+fn into_field_bytes_on_wire_returns_borrowed_not_owned() {
+	// The Wire arm uses the `BorrowedReader` contract to lifetime-extend
+	// the consumed slice — verify we get `Cow::Borrowed` and not an
+	// allocated `Cow::Owned`.
+	let v = OptStruct {
+		a: 1,
+		b: 2,
+	};
+	let bytes = revision::to_vec(&v).unwrap();
+	let mut r: &[u8] = &bytes;
+	let w = OptStruct::walk_revisioned(&mut r).unwrap();
+	let a_bytes = w.into_a_bytes().unwrap();
+	assert!(matches!(a_bytes, std::borrow::Cow::Borrowed(_)));
+}
+
+#[test]
+fn into_field_bytes_on_indexed_borrowed_returns_borrowed_not_owned() {
+	let v = IndexedStruct {
+		a: 1,
+		b: 2,
+		c: 3,
+	};
+	let bytes = revision::to_vec(&v).unwrap();
+	let mut r: &[u8] = &bytes;
+	let w = IndexedStruct::walk_revisioned(&mut r).unwrap();
+	let b_bytes = w.into_b_bytes().unwrap();
+	assert!(matches!(b_bytes, std::borrow::Cow::Borrowed(_)));
+}
+
+#[test]
+fn into_field_bytes_works_on_mixed_history_at_optimised_rev() {
+	// `MixedHistory` is `revision(1), revision(2, optimised)` — the
+	// encoder emits rev 2 (Wire arm with envelope-skipped reader).
+	let v = MixedHistory {
+		a: 7,
+		b: 11,
+	};
+	let bytes = revision::to_vec(&v).unwrap();
+	let mut r: &[u8] = &bytes;
+	let w = MixedHistory::walk_revisioned(&mut r).unwrap();
+	let a_bytes = w.into_a_bytes().unwrap();
+	let mut sub: &[u8] = &a_bytes;
+	let a: u32 =
+		<u32 as revision::DeserializeRevisioned>::deserialize_revisioned(&mut sub).unwrap();
+	assert_eq!(a, 7);
+}
