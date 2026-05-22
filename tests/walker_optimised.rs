@@ -358,6 +358,47 @@ fn into_field_bytes_on_indexed_borrowed_returns_borrowed_not_owned() {
 }
 
 #[test]
+fn into_field_bytes_errors_when_field_not_yet_introduced() {
+	// `GuardedField` is `revision(1), revision(2)` — field `b` is added at
+	// rev 2. Encoding a v1 shadow without `b` and walking it (wire_rev=1)
+	// must reject `into_b_bytes()` with the conversion error emitted by
+	// the macro's revision guard.
+	#[revisioned(revision(1), revision(2))]
+	struct GuardedField {
+		a: u32,
+		#[revision(start = 2, default_fn = "default_b")]
+		b: u32,
+	}
+	impl GuardedField {
+		fn default_b(_rev: u16) -> Result<u32, revision::Error> {
+			Ok(0)
+		}
+	}
+
+	#[revisioned(revision(1))]
+	struct ShadowV1 {
+		a: u32,
+	}
+
+	let bytes = revision::to_vec(&ShadowV1 {
+		a: 99,
+	})
+	.unwrap();
+	let mut r: &[u8] = &bytes;
+	let w = GuardedField::walk_revisioned(&mut r).unwrap();
+	let err = w.into_b_bytes().expect_err("b doesn't exist at wire rev 1 — must error");
+	match err {
+		revision::Error::Conversion(msg) => {
+			assert!(
+				msg.contains("into_b_bytes") && msg.contains("wire revision 1"),
+				"unexpected guard message: {msg}",
+			);
+		}
+		other => panic!("expected Conversion error, got {other:?}"),
+	}
+}
+
+#[test]
 fn into_field_bytes_works_on_mixed_history_at_optimised_rev() {
 	// `MixedHistory` is `revision(1), revision(2, optimised)` — the
 	// encoder emits rev 2 (Wire arm with envelope-skipped reader).
