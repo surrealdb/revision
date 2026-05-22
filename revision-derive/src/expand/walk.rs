@@ -467,6 +467,7 @@ fn emit_struct_methods(
 		let skip_name = format_ident!("skip_{}", method_base);
 		let walk_name = format_ident!("walk_{}", method_base);
 		let into_walk_name = format_ident!("into_walk_{}", method_base);
+		let into_field_bytes_name = format_ident!("into_{}_bytes", method_base);
 		let ty = &f.ty;
 		let pos_lit = latest_idx as u32;
 
@@ -888,6 +889,138 @@ fn emit_struct_methods(
 			};
 		}
 
+		// `into_<field>_bytes(self) -> Cow<'r, [u8]>` — borrowed
+		// wire bytes for the field, without decoding the inner type.
+		//
+		// Lets callers construct a child walker themselves via
+		// `T::walk_revisioned(&mut bytes)`. The use case is
+		// `indexed_struct` types whose plain (non-`indexed_map` /
+		// `indexed_seq` / `indexed_set`) fields can't be reached via
+		// `into_walk_<field>` on an `IndexedBorrowed` parent — building
+		// the streaming child walker would require an owned reader the
+		// macro can't conjure. Returning bytes pushes that construction
+		// to the caller's scope, where the lifetime is well-defined.
+		//
+		// Three walker arms:
+		//
+		// - `IndexedBorrowed`: O(1) — slice `parent.bytes[offsets[i]
+		//   ..offsets[i+1]]`. Returns `Cow::Borrowed` at lifetime `'r`.
+		// - `Wire`: snapshot `reader.remaining()` before/after a skip
+		//   of the field; lifetime-extend the consumed slice via the
+		//   `BorrowedReader` contract (same unsafe pattern as
+		//   `read_borrowed_bytes`). Returns `Cow::Borrowed` at `'r`.
+		// - `ConvertedOwned`: decode the field from the parent's
+		//   materialised bytes, re-encode into a fresh `Vec<u8>`.
+		//   Returns `Cow::Owned`. Rare cross-rev `convert_fn` path.
+		let into_field_bytes_wire_rev_check = if always_present {
+			quote! {}
+		} else {
+			let bytes_err_msg = format!(
+				"into_{}_bytes not available at wire revision {{}}: field added at revision {}",
+				method_base, start_val,
+			);
+			quote! {
+				if wire_rev < #start_val {
+					return ::std::result::Result::Err(::revision::Error::Conversion(
+						::std::format!(#bytes_err_msg, wire_rev),
+					));
+				}
+			}
+		};
+		let into_field_bytes_body = quote! {
+			let __self = self;
+			// IndexedBorrowed fast path — borrow from the offset table.
+			if let #walker_repr_name::IndexedBorrowed { bytes, field_count, .. } = &__self.repr {
+				let __bytes_borrow: &'r [u8] = *bytes;
+				let __fc = *field_count as usize;
+				let __off_base = (#pos_lit as usize) * 4;
+				// Bounds-check the offset table reads. The non-last-field
+				// branch reads two consecutive entries, so it needs 8
+				// bytes; the last-field branch only needs its own 4.
+				let __needed = if (#pos_lit as usize) + 1 < __fc { 8 } else { 4 };
+				if __off_base + __needed > __bytes_borrow.len() {
+					return ::std::result::Result::Err(::revision::Error::Deserialize(
+						"IndexedBorrowed offset table truncated".into(),
+					));
+				}
+				let __start = u32::from_le_bytes(
+					__bytes_borrow[__off_base..__off_base + 4]
+						.try_into()
+						.expect("4-byte slice"),
+				) as usize;
+				let __end = if (#pos_lit as usize) + 1 < __fc {
+					u32::from_le_bytes(
+						__bytes_borrow[__off_base + 4..__off_base + 8]
+							.try_into()
+							.expect("4-byte slice"),
+					) as usize
+				} else {
+					__bytes_borrow.len()
+				};
+				// Validate the slice bounds before indexing — a malformed
+				// payload with `start > end` or `end > len` would otherwise
+				// panic in the slice op.
+				if __start > __end || __end > __bytes_borrow.len() {
+					return ::std::result::Result::Err(::revision::Error::Deserialize(
+						"IndexedBorrowed field offsets out of range".into(),
+					));
+				}
+				return ::std::result::Result::Ok(
+					::std::borrow::Cow::Borrowed(&__bytes_borrow[__start..__end]),
+				);
+			}
+			// Wire / ConvertedOwned: consume `__self.repr`.
+			match __self.repr {
+				#walker_repr_name::Wire { reader, wire_rev, pos: _ } => {
+					#into_field_bytes_wire_rev_check
+					let __before = ::revision::BorrowedReader::remaining(reader);
+					let __before_ptr = __before.as_ptr();
+					let __before_len = __before.len();
+					#field_skip_call
+					let __after_len = ::revision::BorrowedReader::remaining(reader).len();
+					let __consumed_len = __before_len
+						.checked_sub(__after_len)
+						.ok_or_else(|| ::revision::Error::BorrowedReaderContractViolation(
+							::std::format!(
+								"remaining().len() grew across an advance call \
+								 (before={}, after={})",
+								__before_len,
+								__after_len,
+							)
+						))?;
+					// SAFETY: `BorrowedReader::remaining` returns a slice
+					// into the reader's stable buffer; the trait's safety
+					// contract guarantees `advance`/`skip` only moves the
+					// cursor and never invalidates previously-returned
+					// bytes, so `__before_ptr[..__consumed_len]` is valid
+					// for the reader's lifetime `'r`. `checked_sub` above
+					// guarantees the slice can never extend past the
+					// stable region. Mirrors `fast_path_wire` used by the
+					// indexed-field accessors.
+					let __field_bytes: &'r [u8] = unsafe {
+						::std::slice::from_raw_parts(__before_ptr, __consumed_len)
+					};
+					::std::result::Result::Ok(::std::borrow::Cow::Borrowed(__field_bytes))
+				}
+				#walker_repr_name::ConvertedOwned { bytes, cursor, pos: _, .. } => {
+					let mut __slice: &[u8] = &bytes[cursor..];
+					let __v = <#ty as ::revision::DeserializeRevisioned>::deserialize_revisioned(
+						&mut __slice,
+					)?;
+					let mut __out: ::std::vec::Vec<u8> = ::std::vec::Vec::new();
+					<#ty as ::revision::SerializeRevisioned>::serialize_revisioned(
+						&__v, &mut __out,
+					)?;
+					::std::result::Result::Ok(::std::borrow::Cow::Owned(__out))
+				}
+				#walker_repr_name::IndexedBorrowed { .. } => {
+					::std::unreachable!(
+						"IndexedBorrowed handled by the borrowed-bytes fast path above",
+					);
+				}
+			}
+		};
+
 		out.append_all(quote! {
 			/// Decode this field, advancing the walker.
 			///
@@ -997,6 +1130,19 @@ fn emit_struct_methods(
 				self,
 			) -> ::std::result::Result<#into_walk_return_ty, ::revision::Error> {
 				#into_walk_body
+			}
+
+			/// Consume this walker and return the field's raw wire bytes
+			/// as `Cow<'r, [u8]>`, without decoding the inner type. Lets
+			/// the caller construct a child walker themselves via
+			/// `T::walk_revisioned(&mut bytes)`. Borrowed from the source
+			/// buffer for `IndexedBorrowed` / `Wire` walkers; allocated on
+			/// the rare `ConvertedOwned` (cross-rev `convert_fn`) path.
+			#[inline]
+			pub fn #into_field_bytes_name(
+				self,
+			) -> ::std::result::Result<::std::borrow::Cow<'r, [u8]>, ::revision::Error> {
+				#into_field_bytes_body
 			}
 		});
 	}
