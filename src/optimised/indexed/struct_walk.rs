@@ -77,7 +77,7 @@ impl<'p> IndexedStructWalker<'p> {
 		validate_struct_prologue(&payload[..prologue_bytes], count, 4, payload.len() as u32)?;
 		// First offset must point at start of body (`prologue_bytes`).
 		if count > 0 {
-			let first = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]);
+			let first = crate::optimised::validation::decode_u32_le_at(payload, 0);
 			if (first as usize) < prologue_bytes {
 				return Err(Error::OptimisedOffsetOutOfRange {
 					offset: first,

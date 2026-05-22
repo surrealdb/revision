@@ -131,8 +131,7 @@ impl<'p, T> IndexedSeqWalker<'p, T> {
 	/// (`len * 4` bytes); the caller must have already validated `index < len`.
 	#[inline]
 	fn offset_at(offsets: &[u8], index: usize) -> u32 {
-		let base = index * 4;
-		u32::from_le_bytes([offsets[base], offsets[base + 1], offsets[base + 2], offsets[base + 3]])
+		crate::optimised::validation::decode_u32_le_at(offsets, index * 4)
 	}
 
 	#[inline]

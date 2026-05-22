@@ -7,17 +7,21 @@
 
 use crate::Error;
 
-/// Decode the `index`-th `u32_le` offset from an interleaved offset-table byte
-/// slice with the given `stride`. The caller is responsible for ensuring
-/// `index * stride + 4 <= offset_bytes.len()`.
+/// Decode a `u32_le` from `bytes` at `byte_offset`. The single primitive shared
+/// by every indexed-walker / validator site that reads borrowed offset tables.
+///
+/// Caller is responsible for ensuring `byte_offset + 4 <= bytes.len()`; an
+/// out-of-range index panics via standard slice bounds checking. All current
+/// call sites either bounds-check the parent slice at construction
+/// (`payload.len() < cursor + table_bytes`) or run after `validate_*_prologue`
+/// has confirmed the table length, so the read is always in range.
 #[inline]
-fn decode_offset(offset_bytes: &[u8], index: usize, stride: usize) -> u32 {
-	let base = index * stride;
+pub(crate) fn decode_u32_le_at(bytes: &[u8], byte_offset: usize) -> u32 {
 	u32::from_le_bytes([
-		offset_bytes[base],
-		offset_bytes[base + 1],
-		offset_bytes[base + 2],
-		offset_bytes[base + 3],
+		bytes[byte_offset],
+		bytes[byte_offset + 1],
+		bytes[byte_offset + 2],
+		bytes[byte_offset + 3],
 	])
 }
 
@@ -38,7 +42,7 @@ pub fn validate_struct_prologue(
 ) -> Result<(), Error> {
 	let mut last: Option<u32> = None;
 	for i in 0..count {
-		let o = decode_offset(offset_bytes, i, stride);
+		let o = decode_u32_le_at(offset_bytes, i * stride);
 		if o > payload_len {
 			return Err(Error::OptimisedOffsetOutOfRange {
 				offset: o,
@@ -88,13 +92,13 @@ pub fn validate_key_region_ascending(
 	count: usize,
 ) -> Result<(), Error> {
 	for i in 1..count {
-		let prev_start = decode_offset(offset_table, i - 1, 8) as usize;
-		let curr_start = decode_offset(offset_table, i, 8) as usize;
+		let prev_start = decode_u32_le_at(offset_table, (i - 1) * 8) as usize;
+		let curr_start = decode_u32_le_at(offset_table, i * 8) as usize;
 		// `validate_map_prologue` already enforced monotonicity, so curr_start > prev_start.
 		// Last entry runs to keys_region.len(); intermediate to next offset.
 		let prev_end = curr_start;
 		let curr_end = if i + 1 < count {
-			decode_offset(offset_table, i + 1, 8) as usize
+			decode_u32_le_at(offset_table, (i + 1) * 8) as usize
 		} else {
 			keys_region.len()
 		};

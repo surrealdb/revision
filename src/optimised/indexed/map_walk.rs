@@ -63,25 +63,13 @@ impl<'p> MapPrologue<'p> {
 	/// Decode the `index`-th key offset (stride 8, column 0).
 	#[inline]
 	fn key_off(&self, index: usize) -> u32 {
-		let base = index * 8;
-		u32::from_le_bytes([
-			self.offset_table[base],
-			self.offset_table[base + 1],
-			self.offset_table[base + 2],
-			self.offset_table[base + 3],
-		])
+		crate::optimised::validation::decode_u32_le_at(self.offset_table, index * 8)
 	}
 
 	/// Decode the `index`-th value offset (stride 8, column 1).
 	#[inline]
 	fn val_off(&self, index: usize) -> u32 {
-		let base = index * 8 + 4;
-		u32::from_le_bytes([
-			self.offset_table[base],
-			self.offset_table[base + 1],
-			self.offset_table[base + 2],
-			self.offset_table[base + 3],
-		])
+		crate::optimised::validation::decode_u32_le_at(self.offset_table, index * 8 + 4)
 	}
 }
 
