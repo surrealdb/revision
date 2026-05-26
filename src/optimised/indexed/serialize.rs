@@ -17,7 +17,7 @@ use crate::Error;
 use crate::SkipRevisioned;
 use crate::optimised::indexed::OFFSET_TABLE_MIN_LEN;
 use crate::optimised::indexed::seq_walk::FLAG_INDEXED;
-use crate::slice_reader::BorrowedReader;
+use crate::slice_reader::{BorrowedReader, advance_read};
 use crate::{DeserializeRevisioned, SerializeRevisioned};
 
 // -----------------------------------------------------------------------------
@@ -138,8 +138,7 @@ where
 		}
 		// Skip the offset tables + region lengths.
 		let table_bytes = len.checked_mul(8).ok_or(Error::OptimisedSubReaderOverrun)?;
-		let mut discard = vec![0u8; table_bytes + 8];
-		r.read_exact(&mut discard).map_err(Error::Io)?;
+		advance_read(r, table_bytes + 8)?;
 		let mut keys: Vec<K> = Vec::with_capacity(len);
 		for _ in 0..len {
 			keys.push(K::deserialize_revisioned(r)?);
@@ -749,8 +748,7 @@ where
 	// Skip the offset table (len * 8) and region-length pair (8 bytes); we
 	// don't need them for sequential decode.
 	let table_bytes = len.checked_mul(8).ok_or(Error::OptimisedSubReaderOverrun)?;
-	let mut discard = vec![0u8; table_bytes + 8];
-	reader.read_exact(&mut discard).map_err(Error::Io)?;
+	advance_read(reader, table_bytes + 8)?;
 
 	// Dense keys (sorted ascending) come first, then dense values in matching
 	// order. Each K and V know their own wire length via DeserializeRevisioned.
@@ -794,8 +792,7 @@ where
 
 	// Skip the offset table (len * 4 bytes).
 	let table_bytes = len.checked_mul(4).ok_or(Error::OptimisedSubReaderOverrun)?;
-	let mut discard = vec![0u8; table_bytes];
-	reader.read_exact(&mut discard).map_err(Error::Io)?;
+	advance_read(reader, table_bytes)?;
 
 	let mut out = Vec::with_capacity(len);
 	for _ in 0..len {
