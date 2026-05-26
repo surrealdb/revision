@@ -480,4 +480,37 @@ mod tests {
 		assert_eq!(taken, &[1, 2, 3]);
 		assert_eq!(r.remaining(), &[4]);
 	}
+
+	/// The blanket impl `BorrowedReader for &mut R` is what lets the
+	/// macro-emitted walker code call `skip_indexed_*<R: BorrowedReader>`
+	/// with a `reader: &mut &'r mut R` binding. Exercising it through a
+	/// generic helper confirms every method forwards correctly and that
+	/// mutations on the `&mut R` reborrow are visible on the underlying
+	/// reader.
+	#[test]
+	fn borrowed_reader_blanket_impl_forwards_to_underlying() {
+		fn use_borrowed<R: BorrowedReader>(r: &mut R) -> (Vec<u8>, usize, usize, usize) {
+			let peeked = r.peek_bytes(3).unwrap().to_vec();
+			let pos_before = r.position();
+			let remaining_before = r.remaining().len();
+			r.advance(3).unwrap();
+			(peeked, pos_before, remaining_before, r.remaining().len())
+		}
+
+		let data = [10u8, 20, 30, 40, 50, 60];
+		let mut backing = SliceReader::new(&data);
+		// Take a `&mut SliceReader`, then re-borrow as `&mut &mut SliceReader`
+		// to exercise the blanket impl rather than the direct one.
+		let mut reborrow: &mut SliceReader = &mut backing;
+		let (peeked, pos_before, remaining_before, remaining_after) = use_borrowed(&mut reborrow);
+
+		assert_eq!(peeked, &[10, 20, 30]);
+		assert_eq!(pos_before, 0);
+		assert_eq!(remaining_before, 6);
+		assert_eq!(remaining_after, 3);
+		// The advance through the blanket impl must be visible on the
+		// original reader.
+		assert_eq!(backing.position(), 3);
+		assert_eq!(backing.remaining(), &[40, 50, 60]);
+	}
 }

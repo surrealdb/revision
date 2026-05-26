@@ -879,20 +879,13 @@ where
 		return Ok(());
 	}
 	let table_bytes = len.checked_mul(4).ok_or(Error::OptimisedSubReaderOverrun)?;
-	// Peek the offset table to extract the final entry without consuming the
-	// reader yet — `BorrowedReader::peek_bytes` is a borrow against the
-	// reader's stable buffer.
+	// Peek the offset table to read the final offset, then advance past the
+	// table. Offsets are measured from the start of the dense region (just
+	// past the offset table — `body` in `IndexedSeqWalker`).
 	let table = reader.peek_bytes(table_bytes)?;
-	let last_off_pos = (len - 1) * 4;
-	let last_off =
-		u32::from_le_bytes(table[last_off_pos..last_off_pos + 4].try_into().unwrap()) as usize;
-	// Drop the offset table from the cursor.
+	let last_off = u32::from_le_bytes(table[(len - 1) * 4..len * 4].try_into().unwrap()) as usize;
 	reader.advance(table_bytes)?;
-	// Skip the dense region up to the start of the last element. The last
-	// offset is measured from the start of the dense region (i.e. just past
-	// the offset table — `body` in `IndexedSeqWalker`).
 	reader.advance(last_off)?;
-	// Skip the final element; `T::skip_revisioned` knows its own wire length.
 	T::skip_revisioned(reader)?;
 	Ok(())
 }
