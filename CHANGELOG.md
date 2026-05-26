@@ -1,5 +1,60 @@
 # Changelog
 
+## Unreleased — O(1) skip for indexed bodies
+
+Fast-path the per-record cost of skipping `#[revision(indexed_map)]` /
+`#[revision(indexed_seq)]` / `#[revision(indexed_set)]` fields. Driven
+by a SurrealDB no-index scan profile where `skip_indexed_map` accounted
+for ~15 % of total CPU — per-entry `K::skip_revisioned` /
+`V::skip_revisioned` walks plus a `vec![0u8; len*8 + 8]` discard buffer
+allocation per call. The wire format is unchanged; only the parser
+fast-paths.
+
+### Changed (breaking, source-level)
+
+- **`IndexedMapEncoded::skip_indexed_map` / `IndexedSeqEncoded::skip_indexed_seq` /
+  `IndexedSetEncoded::skip_indexed_set` now bound the reader type as
+  `R: BorrowedReader` instead of `R: Read`.** The wire format is
+  unchanged; the bound tightens because the fast paths use
+  `BorrowedReader::advance` (a pointer-bump on slice-backed readers)
+  to jump past the offset table and dense regions without copying or
+  allocating. Downstream hand-written impls (e.g. SurrealDB's
+  `VecMap` / `VecSet`) need a one-line bound update; everything that
+  flows through the macro-generated walker code already used
+  `BorrowedReader`-bounded readers, so consumer-side callers built on
+  the macro need no changes.
+
+### Performance
+
+- **`skip_indexed_map` is now O(1) on indexed bodies.** The prologue
+  carries the dense regions' total byte lengths (`keys_region_len` and
+  `vals_region_len` as `u32_le`); the new implementation reads those,
+  jumps past the offset table and both dense regions via
+  `BorrowedReader::advance`, and never invokes `K`'s or `V`'s
+  `SkipRevisioned` impl. Profile contribution of `Value::skip_revisioned`
+  inside `skip_indexed_map` drops out entirely on indexed bodies.
+- **`skip_indexed_seq` / `skip_indexed_set` reduced from O(N) entry
+  skips to a single entry skip.** The seq wire format records only
+  per-element offsets (no total dense length), so the new path reads
+  the last offset, advances to the start of the final element, then
+  calls `T::skip_revisioned` once.
+- **Removed the `vec![0u8; n]` discard allocation in the skip path.**
+  The old indexed-body skip path allocated a discard buffer per call to
+  `read_exact` past the offset table. The new path advances the cursor
+  directly. The free helper `advance_read` (used by other
+  `SkipRevisioned` impls) already used a stack buffer; the indexed-map
+  / indexed-seq paths now bypass it altogether via the borrowed reader.
+- **Blanket `BorrowedReader for &mut R`** added so the macro-emitted
+  walker code (which holds `reader: &'r mut R` and matches with
+  `&mut self.repr`, producing a `&mut &'r mut R` binding) can call
+  through `skip_indexed_*` without an explicit reborrow.
+
+### Wire-format compatibility
+
+The on-wire layout for `indexed_map`, `indexed_seq`, and `indexed_set`
+is unchanged. Bytes produced by previous releases deserialise identically against
+this version and vice versa; only the parser-side skip path changes.
+
 ## 0.23.0 (unreleased) — design refactor follow-up
 
 A second pass over the optimised wire-format work. Several design choices

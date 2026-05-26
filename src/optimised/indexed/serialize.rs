@@ -17,6 +17,7 @@ use crate::Error;
 use crate::SkipRevisioned;
 use crate::optimised::indexed::OFFSET_TABLE_MIN_LEN;
 use crate::optimised::indexed::seq_walk::FLAG_INDEXED;
+use crate::slice_reader::BorrowedReader;
 use crate::{DeserializeRevisioned, SerializeRevisioned};
 
 // -----------------------------------------------------------------------------
@@ -79,7 +80,13 @@ pub trait IndexedMapEncoded: Sized {
 	type Value;
 	fn serialize_indexed_map<W: Write>(&self, w: &mut W) -> Result<(), Error>;
 	fn deserialize_indexed_map<R: Read>(r: &mut R) -> Result<Self, Error>;
-	fn skip_indexed_map<R: Read>(r: &mut R) -> Result<(), Error>;
+	/// Advance past an indexed-map payload without materialising it.
+	///
+	/// The reader must implement [`BorrowedReader`] so the skip can jump past
+	/// the dense regions via a pointer-bump `advance(n)` rather than allocating
+	/// a discard buffer or walking every entry — this is the per-record hot
+	/// path on scan-heavy workloads.
+	fn skip_indexed_map<R: BorrowedReader>(r: &mut R) -> Result<(), Error>;
 }
 
 impl<K, V> IndexedMapEncoded for BTreeMap<K, V>
@@ -95,7 +102,7 @@ where
 	fn deserialize_indexed_map<R: Read>(r: &mut R) -> Result<Self, Error> {
 		deserialize_indexed_map(r)
 	}
-	fn skip_indexed_map<R: Read>(r: &mut R) -> Result<(), Error> {
+	fn skip_indexed_map<R: BorrowedReader>(r: &mut R) -> Result<(), Error> {
 		skip_indexed_map::<K, V, R>(r)
 	}
 }
@@ -146,7 +153,7 @@ where
 		}
 		Ok(out)
 	}
-	fn skip_indexed_map<R: Read>(r: &mut R) -> Result<(), Error> {
+	fn skip_indexed_map<R: BorrowedReader>(r: &mut R) -> Result<(), Error> {
 		skip_indexed_map::<K, V, R>(r)
 	}
 }
@@ -157,7 +164,12 @@ pub trait IndexedSeqEncoded: Sized {
 	type Item;
 	fn serialize_indexed_seq<W: Write>(&self, w: &mut W) -> Result<(), Error>;
 	fn deserialize_indexed_seq<R: Read>(r: &mut R) -> Result<Self, Error>;
-	fn skip_indexed_seq<R: Read>(r: &mut R) -> Result<(), Error>;
+	/// Advance past an indexed-seq payload without materialising it.
+	///
+	/// Like [`IndexedMapEncoded::skip_indexed_map`], requires a
+	/// [`BorrowedReader`] so the skip can pointer-bump past the offset table
+	/// and the dense element region.
+	fn skip_indexed_seq<R: BorrowedReader>(r: &mut R) -> Result<(), Error>;
 }
 
 impl<T> IndexedSeqEncoded for Vec<T>
@@ -171,7 +183,7 @@ where
 	fn deserialize_indexed_seq<R: Read>(r: &mut R) -> Result<Self, Error> {
 		deserialize_indexed_seq(r)
 	}
-	fn skip_indexed_seq<R: Read>(r: &mut R) -> Result<(), Error> {
+	fn skip_indexed_seq<R: BorrowedReader>(r: &mut R) -> Result<(), Error> {
 		skip_indexed_seq::<T, R>(r)
 	}
 }
@@ -187,7 +199,10 @@ pub trait IndexedSetEncoded: Sized {
 	type Item;
 	fn serialize_indexed_set<W: Write>(&self, w: &mut W) -> Result<(), Error>;
 	fn deserialize_indexed_set<R: Read>(r: &mut R) -> Result<Self, Error>;
-	fn skip_indexed_set<R: Read>(r: &mut R) -> Result<(), Error>;
+	/// Advance past an indexed-set payload without materialising it. See
+	/// [`IndexedMapEncoded::skip_indexed_map`] for why this requires a
+	/// [`BorrowedReader`].
+	fn skip_indexed_set<R: BorrowedReader>(r: &mut R) -> Result<(), Error>;
 }
 
 /// Serialise an iterator of `&T` elements as an indexed set: identical
@@ -257,7 +272,7 @@ where
 pub fn skip_indexed_set<T, R>(reader: &mut R) -> Result<(), Error>
 where
 	T: SkipRevisioned,
-	R: Read,
+	R: BorrowedReader,
 {
 	skip_indexed_seq::<T, R>(reader)
 }
@@ -275,7 +290,7 @@ where
 	fn deserialize_indexed_set<R: Read>(r: &mut R) -> Result<Self, Error> {
 		deserialize_indexed_set(r)
 	}
-	fn skip_indexed_set<R: Read>(r: &mut R) -> Result<(), Error> {
+	fn skip_indexed_set<R: BorrowedReader>(r: &mut R) -> Result<(), Error> {
 		skip_indexed_set::<T, R>(r)
 	}
 }
@@ -293,7 +308,7 @@ where
 		let v: Vec<T> = deserialize_indexed_seq(r)?;
 		Ok(v.into_iter().collect())
 	}
-	fn skip_indexed_set<R: Read>(r: &mut R) -> Result<(), Error> {
+	fn skip_indexed_set<R: BorrowedReader>(r: &mut R) -> Result<(), Error> {
 		skip_indexed_seq::<T, R>(r)
 	}
 }
@@ -791,11 +806,15 @@ where
 
 /// Advance past an indexed-map encoding without materialising the keys or values.
 ///
-/// Mirrors [`deserialize_indexed_map`] structurally: read flags, len, skip
-/// the offset table + region lengths, then call `K::skip_revisioned` and
-/// `V::skip_revisioned` `len` times each.
+/// On the legacy (sub-threshold, no offset table) body this still walks each
+/// entry via `K::skip_revisioned` / `V::skip_revisioned`. On the indexed body
+/// it derives the dense-region length from the prologue's `(keys_region_len,
+/// vals_region_len)` pair and skips it in a single `BorrowedReader::advance`
+/// — O(1) work regardless of entry count, no K/V skipping, no allocation.
+///
+/// The wire format is unchanged; this is purely a parser-side fast path.
 #[doc(hidden)]
-pub fn skip_indexed_map<K, V, R: Read>(reader: &mut R) -> Result<(), Error>
+pub fn skip_indexed_map<K, V, R: BorrowedReader>(reader: &mut R) -> Result<(), Error>
 where
 	K: SkipRevisioned,
 	V: SkipRevisioned,
@@ -805,27 +824,41 @@ where
 	let flags = flag_buf[0];
 	let len = read_varint(reader)?;
 	if (flags & FLAG_INDEXED) == 0 {
+		// Legacy / sub-threshold body: no offset table, no region lengths;
+		// the only way to find the end is to walk each entry.
 		for _ in 0..len {
 			K::skip_revisioned(reader)?;
 			V::skip_revisioned(reader)?;
 		}
 		return Ok(());
 	}
+	// Indexed body: jump past the offset table (`len * 8` bytes — interleaved
+	// `(k_off, v_off)` u32 pairs), read the two `u32_le` region lengths, then
+	// jump past the dense regions. Whole skip is bounded; `K` and `V`'s skip
+	// impls are never invoked.
 	let table_bytes = len.checked_mul(8).ok_or(Error::OptimisedSubReaderOverrun)?;
-	let mut discard = vec![0u8; table_bytes + 8];
-	reader.read_exact(&mut discard).map_err(Error::Io)?;
-	for _ in 0..len {
-		K::skip_revisioned(reader)?;
-	}
-	for _ in 0..len {
-		V::skip_revisioned(reader)?;
-	}
+	reader.advance(table_bytes)?;
+	let mut lens_buf = [0u8; 8];
+	reader.read_exact(&mut lens_buf).map_err(Error::Io)?;
+	let k_region = u32::from_le_bytes(lens_buf[..4].try_into().unwrap()) as usize;
+	let v_region = u32::from_le_bytes(lens_buf[4..].try_into().unwrap()) as usize;
+	let dense_bytes = k_region.checked_add(v_region).ok_or(Error::OptimisedSubReaderOverrun)?;
+	reader.advance(dense_bytes)?;
 	Ok(())
 }
 
-/// Advance past an indexed-seq encoding.
+/// Advance past an indexed-seq encoding without materialising the elements.
+///
+/// On the indexed path the seq wire format does not record the dense region's
+/// total length explicitly — only the per-element offset table — so we can't
+/// jump the whole body in a single bound. Instead we read the last offset to
+/// reach the start of the final element, then call `T::skip_revisioned` once
+/// to advance past that element. That's O(1) buffer use + a single element
+/// skip regardless of `len`, replacing the previous N-entry walk.
+///
+/// The legacy (sub-threshold) body still walks every element.
 #[doc(hidden)]
-pub fn skip_indexed_seq<T, R: Read>(reader: &mut R) -> Result<(), Error>
+pub fn skip_indexed_seq<T, R: BorrowedReader>(reader: &mut R) -> Result<(), Error>
 where
 	T: SkipRevisioned,
 {
@@ -839,12 +872,21 @@ where
 		}
 		return Ok(());
 	}
-	let table_bytes = len.checked_mul(4).ok_or(Error::OptimisedSubReaderOverrun)?;
-	let mut discard = vec![0u8; table_bytes];
-	reader.read_exact(&mut discard).map_err(Error::Io)?;
-	for _ in 0..len {
-		T::skip_revisioned(reader)?;
+	// An indexed body always carries `len >= OFFSET_TABLE_MIN_LEN` (the encoder
+	// falls back to the legacy shape below threshold), so `len == 0` is a
+	// malformed prologue. Treat it conservatively: there's nothing more to skip.
+	if len == 0 {
+		return Ok(());
 	}
+	let table_bytes = len.checked_mul(4).ok_or(Error::OptimisedSubReaderOverrun)?;
+	// Peek the offset table to read the final offset, then advance past the
+	// table. Offsets are measured from the start of the dense region (just
+	// past the offset table — `body` in `IndexedSeqWalker`).
+	let table = reader.peek_bytes(table_bytes)?;
+	let last_off = u32::from_le_bytes(table[(len - 1) * 4..len * 4].try_into().unwrap()) as usize;
+	reader.advance(table_bytes)?;
+	reader.advance(last_off)?;
+	T::skip_revisioned(reader)?;
 	Ok(())
 }
 

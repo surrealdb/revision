@@ -6,7 +6,9 @@ use super::super::optimised::indexed::{
 	deserialize_indexed_seq, serialize_indexed_entries, serialize_indexed_seq_iter,
 	serialize_indexed_set_iter, skip_indexed_map, skip_indexed_seq, skip_indexed_set,
 };
-use super::super::{DeserializeRevisioned, Revisioned, SerializeRevisioned, SkipRevisioned};
+use super::super::{
+	BorrowedReader, DeserializeRevisioned, Revisioned, SerializeRevisioned, SkipRevisioned,
+};
 use imbl::{HashMap, HashSet, OrdMap, OrdSet, Vector};
 use std::hash::Hash;
 
@@ -29,7 +31,7 @@ where
 		let std_map: std::collections::BTreeMap<K, V> = deserialize_indexed_map(r)?;
 		Ok(std_map.into_iter().collect())
 	}
-	fn skip_indexed_map<R: std::io::Read>(r: &mut R) -> Result<(), Error> {
+	fn skip_indexed_map<R: BorrowedReader>(r: &mut R) -> Result<(), Error> {
 		skip_indexed_map::<K, V, R>(r)
 	}
 }
@@ -51,7 +53,7 @@ where
 			<std::collections::HashMap<K, V> as IndexedMapEncoded>::deserialize_indexed_map(r)?;
 		Ok(std_map.into_iter().collect())
 	}
-	fn skip_indexed_map<R: std::io::Read>(r: &mut R) -> Result<(), Error> {
+	fn skip_indexed_map<R: BorrowedReader>(r: &mut R) -> Result<(), Error> {
 		skip_indexed_map::<K, V, R>(r)
 	}
 }
@@ -68,7 +70,7 @@ where
 		let v: Vec<T> = deserialize_indexed_seq(r)?;
 		Ok(v.into_iter().collect())
 	}
-	fn skip_indexed_seq<R: std::io::Read>(r: &mut R) -> Result<(), Error> {
+	fn skip_indexed_seq<R: BorrowedReader>(r: &mut R) -> Result<(), Error> {
 		skip_indexed_seq::<T, R>(r)
 	}
 }
@@ -85,7 +87,7 @@ where
 		let v: Vec<T> = deserialize_indexed_seq(r)?;
 		Ok(v.into_iter().collect())
 	}
-	fn skip_indexed_set<R: std::io::Read>(r: &mut R) -> Result<(), Error> {
+	fn skip_indexed_set<R: BorrowedReader>(r: &mut R) -> Result<(), Error> {
 		skip_indexed_set::<T, R>(r)
 	}
 }
@@ -102,7 +104,7 @@ where
 		let v: Vec<T> = deserialize_indexed_seq(r)?;
 		Ok(v.into_iter().collect())
 	}
-	fn skip_indexed_set<R: std::io::Read>(r: &mut R) -> Result<(), Error> {
+	fn skip_indexed_set<R: BorrowedReader>(r: &mut R) -> Result<(), Error> {
 		skip_indexed_set::<T, R>(r)
 	}
 }
