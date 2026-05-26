@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — alloc-free indexed deserialize
+
+Removes the per-call heap allocation from the indexed-body **deserialize** path, completing the work [#67](https://github.com/surrealdb/revision/pull/67) started for the **skip** path. The wire format and all public signatures are unchanged.
+
+### Performance
+
+- **`deserialize_indexed_map` / `deserialize_indexed_seq` (and the `HashMap` `IndexedMapEncoded` impl) no longer allocate a `vec![0u8; n]` discard buffer** to step over the offset-table prologue. They now use `slice_reader::advance_read`, the same fixed 4 KB stack-buffer read loop the other `SkipRevisioned` impls use — one fewer heap allocation per indexed map/seq decoded, no behavioural change. The reader bound stays `R: Read` (unlike the `skip_indexed_*` fast path, sequential decode can't pointer-bump), so this is not a breaking change.
+
 ## Unreleased — O(1) skip for indexed bodies
 
 Fast-path the per-record cost of skipping `#[revision(indexed_map)]` /
