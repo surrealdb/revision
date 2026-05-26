@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.26.0 — O(1) skip for indexed bodies
+## Unreleased — O(1) skip for indexed bodies
 
 Fast-path the per-record cost of skipping `#[revision(indexed_map)]` /
 `#[revision(indexed_seq)]` / `#[revision(indexed_set)]` fields. Driven
@@ -52,9 +52,8 @@ fast-paths.
 ### Wire-format compatibility
 
 The on-wire layout for `indexed_map`, `indexed_seq`, and `indexed_set`
-is unchanged. Bytes produced by 0.25.x deserialise identically with
-0.26.0 and vice versa; this release only changes how skips parse those
-bytes.
+is unchanged. Bytes produced by previous releases deserialise identically against
+this version and vice versa; only the parser-side skip path changes.
 
 ## 0.23.0 (unreleased) — design refactor follow-up
 
