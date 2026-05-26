@@ -286,6 +286,38 @@ unsafe impl BorrowedReader for &[u8] {
 	}
 }
 
+// SAFETY: Forwarding impl. Every method delegates to the underlying `R`,
+// which is itself `BorrowedReader` and therefore obeys the trait's safety
+// contract (stable backing buffer, non-mutating `peek_bytes` / `remaining`,
+// monotonic non-increasing `remaining().len()` under `advance`). The
+// forwarding adds no state and cannot violate any invariant the inner impl
+// upholds.
+//
+// This impl is what lets the macro-emitted `walk_<field>` / `skip_<field>`
+// paths call `skip_indexed_*` with a `reader: &mut &'r mut R` binding
+// (extracted from the `Wire` repr variant) without an explicit reborrow.
+unsafe impl<R: BorrowedReader + ?Sized> BorrowedReader for &mut R {
+	#[inline]
+	fn peek_bytes(&self, n: usize) -> Result<&[u8], Error> {
+		(**self).peek_bytes(n)
+	}
+
+	#[inline]
+	fn advance(&mut self, n: usize) -> Result<(), Error> {
+		(**self).advance(n)
+	}
+
+	#[inline]
+	fn position(&self) -> usize {
+		(**self).position()
+	}
+
+	#[inline]
+	fn remaining(&self) -> &[u8] {
+		(**self).remaining()
+	}
+}
+
 // SAFETY: `SliceReader<'a>` borrows an external `&'a [u8]` it never modifies.
 // `peek_bytes` returns slices into that external buffer; `advance` only updates
 // the internal cursor (`inner`), never the buffer. Both invariants hold.
