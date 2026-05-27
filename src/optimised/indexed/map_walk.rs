@@ -81,34 +81,38 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 	/// Open a walker **without** validating the prologue (monotonic offsets,
 	/// ascending key region).
 	///
-	/// Skips the O(len) validation that [`from_payload`] runs. Use only when
-	/// the bytes are trusted (e.g. freshly written by the same process).
+	/// Skips the O(len) validation that [`from_payload`] runs. Construction
+	/// only bounds-checks the offset *tables* and region-length headers
+	/// (returning [`Error::OptimisedSubReaderOverrun`] on a truncated
+	/// payload); the offset *values* in those tables are trusted.
 	///
-	/// # Panics on malformed input
+	/// # Behaviour on malformed input
 	///
-	/// On untrusted input this trades a clean
+	/// The per-entry accessors never panic on a bad offset — they are
+	/// bounds-checked at the point of use, so this constructor is safe to
+	/// call on untrusted bytes (important under `panic = 'abort'`, where a
+	/// slice-OOB panic would abort the whole process). It trades the clean
 	/// [`Error::OptimisedOffsetsNonMonotonic`] /
-	/// [`Error::OptimisedKeyRegionNotAscending`] at construction for
-	/// failures on access. Specifically:
+	/// [`Error::OptimisedKeyRegionNotAscending`] that [`from_payload`]
+	/// reports *at construction* for the following weaker guarantees *on
+	/// access*:
 	///
-	/// - The offset *tables* (`key_offsets`, `val_offsets`) and the
-	///   region-length headers are bounds-checked while constructing the
-	///   walker — `OptimisedSubReaderOverrun` is returned if the payload
-	///   is too short to hold them. Reading an entry from these tables
-	///   is therefore safe.
-	/// - The offset *values* read from those tables are not checked.
-	///   Per-entry accessors slice the dense key / value regions by
-	///   those values; an offset past the region's length or a
-	///   non-monotonic adjacent entry triggers a slice-out-of-bounds
-	///   panic.
-	/// - Binary-search lookups additionally rely on the keys region
-	///   being byte-ascending. Searching a non-ascending region does
-	///   **not** panic — it returns wrong results (the binary search
-	///   silently converges on a non-existent key).
+	/// - [`find_value_bytes`](Self::find_value_bytes) returns
+	///   [`Error::OptimisedOffsetOutOfRange`] instead of slicing out of
+	///   bounds when an offset is past its region or non-monotonic.
+	/// - [`entries`](Self::entries) clamps an out-of-range or inverted
+	///   `(start, end)` to an empty slice for that entry rather than
+	///   panicking.
+	/// - Binary-search lookups still assume the keys region is byte-ascending.
+	///   On a non-ascending (corrupt) region the search does not panic and
+	///   does not read out of bounds, but may report a present key as absent
+	///   (it silently converges on the wrong slot).
 	///
-	/// This is intended behaviour: the caller asserted trust by choosing
-	/// this constructor. Callers who cannot make that assertion should
-	/// use [`from_payload`].
+	/// Callers that cannot tolerate the wrong-result-on-corruption case
+	/// should use [`from_payload`]; callers protected by an upstream
+	/// integrity check (e.g. storage-engine block checksums) can take this
+	/// fast path and recover from the access-time error by falling back to a
+	/// full decode.
 	///
 	/// [`from_payload`]: Self::from_payload
 	/// [`Error::OptimisedOffsetsNonMonotonic`]: crate::Error::OptimisedOffsetsNonMonotonic
@@ -229,7 +233,17 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 			} else {
 				(keys.len(), vals.len())
 			};
-			let entry = (&keys[k_start..k_end], &vals[v_start..v_end]);
+			// Checked slicing: a walker opened via `from_payload` has a
+			// validated prologue so these ranges are always in-range and
+			// monotonic. On `from_payload_unvalidated` a corrupt offset
+			// (`k_start > k_end`, or past the region end) would otherwise
+			// panic — aborting the process under `panic = 'abort'`. Clamp
+			// to an empty slice so the caller observes a non-matching entry
+			// and recovers (e.g. falls back to a full decode) instead.
+			let entry = (
+				keys.get(k_start..k_end).unwrap_or_default(),
+				vals.get(v_start..v_end).unwrap_or_default(),
+			);
 			k_start = k_end;
 			v_start = v_end;
 			entry
@@ -256,7 +270,17 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 			} else {
 				p.keys_region.len()
 			};
-			let key_bytes = &p.keys_region[k_start..k_end];
+			// Checked slicing: validated walkers (`from_payload`) always hit
+			// the `Some` arm. On `from_payload_unvalidated` a corrupt offset
+			// would otherwise panic and abort under `panic = 'abort'`; return
+			// a recoverable error so the caller can fall back to a full decode.
+			let key_bytes = p
+				.keys_region
+				.get(k_start..k_end)
+				.ok_or(Error::OptimisedOffsetOutOfRange {
+					offset: k_end as u32,
+					payload_len: p.keys_region.len() as u32,
+				})?;
 			match predicate(key_bytes) {
 				Ordering::Equal => {
 					let v_start = p.val_off(mid) as usize;
@@ -265,7 +289,14 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 					} else {
 						p.vals_region.len()
 					};
-					return Ok(Some(&p.vals_region[v_start..v_end]));
+					return p
+						.vals_region
+						.get(v_start..v_end)
+						.map(Some)
+						.ok_or(Error::OptimisedOffsetOutOfRange {
+							offset: v_end as u32,
+							payload_len: p.vals_region.len() as u32,
+						});
 				}
 				Ordering::Less => lo = mid + 1,
 				Ordering::Greater => hi = mid,
@@ -412,5 +443,52 @@ mod tests {
 			w.find_value_bytes(|_| Ordering::Equal).is_err(),
 			"find_value_bytes errors on legacy path"
 		);
+	}
+
+	/// Overwrite entry `i`'s `key_off` (stride-8 column 0) in a payload built
+	/// by [`build_indexed_map`]: `FLAG_INDEXED` byte + 1-byte varint (n <= 250)
+	/// puts the offset table at byte 2.
+	fn corrupt_key_off(payload: &mut [u8], entry: usize, value: u32) {
+		let at = 2 + entry * 8;
+		payload[at..at + 4].copy_from_slice(&value.to_le_bytes());
+	}
+
+	#[test]
+	fn validated_rejects_out_of_range_offset_at_construction() {
+		let mut payload =
+			build_indexed_map(&[(b"bar", b"7"), (b"baz", b"99"), (b"foo", b"42")]);
+		corrupt_key_off(&mut payload, 1, u32::MAX);
+		assert!(
+			IndexedMapWalker::<(), ()>::from_payload(&payload).is_err(),
+			"validating constructor must reject a key offset past the region"
+		);
+	}
+
+	#[test]
+	fn unvalidated_find_value_bytes_errors_instead_of_panicking() {
+		let mut payload =
+			build_indexed_map(&[(b"bar", b"7"), (b"baz", b"99"), (b"foo", b"42")]);
+		// Corrupt the middle entry — binary search over n=3 probes mid=1 first.
+		corrupt_key_off(&mut payload, 1, u32::MAX);
+		let w: IndexedMapWalker<(), ()> =
+			IndexedMapWalker::from_payload_unvalidated(&payload).unwrap();
+		// Must return a recoverable error, not slice-OOB panic / abort.
+		assert!(matches!(
+			w.find_value_bytes(|k| k.cmp(b"baz".as_slice())),
+			Err(Error::OptimisedOffsetOutOfRange { .. })
+		));
+	}
+
+	#[test]
+	fn unvalidated_entries_clamp_corrupt_offset_without_panicking() {
+		let mut payload =
+			build_indexed_map(&[(b"bar", b"7"), (b"baz", b"99"), (b"foo", b"42")]);
+		corrupt_key_off(&mut payload, 1, u32::MAX);
+		let w: IndexedMapWalker<(), ()> =
+			IndexedMapWalker::from_payload_unvalidated(&payload).unwrap();
+		// Collecting must not panic; corrupt ranges clamp to empty slices.
+		let collected: Vec<(&[u8], &[u8])> = w.entries().unwrap().collect();
+		assert_eq!(collected.len(), 3);
+		assert!(collected.iter().any(|(k, _)| k.is_empty()));
 	}
 }
