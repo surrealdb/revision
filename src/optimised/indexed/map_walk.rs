@@ -274,10 +274,8 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 			// the `Some` arm. On `from_payload_unvalidated` a corrupt offset
 			// would otherwise panic and abort under `panic = 'abort'`; return
 			// a recoverable error so the caller can fall back to a full decode.
-			let key_bytes = p
-				.keys_region
-				.get(k_start..k_end)
-				.ok_or(Error::OptimisedOffsetOutOfRange {
+			let key_bytes =
+				p.keys_region.get(k_start..k_end).ok_or(Error::OptimisedOffsetOutOfRange {
 					offset: k_end as u32,
 					payload_len: p.keys_region.len() as u32,
 				})?;
@@ -289,14 +287,12 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 					} else {
 						p.vals_region.len()
 					};
-					return p
-						.vals_region
-						.get(v_start..v_end)
-						.map(Some)
-						.ok_or(Error::OptimisedOffsetOutOfRange {
+					return p.vals_region.get(v_start..v_end).map(Some).ok_or(
+						Error::OptimisedOffsetOutOfRange {
 							offset: v_end as u32,
 							payload_len: p.vals_region.len() as u32,
-						});
+						},
+					);
 				}
 				Ordering::Less => lo = mid + 1,
 				Ordering::Greater => hi = mid,
@@ -455,8 +451,7 @@ mod tests {
 
 	#[test]
 	fn validated_rejects_out_of_range_offset_at_construction() {
-		let mut payload =
-			build_indexed_map(&[(b"bar", b"7"), (b"baz", b"99"), (b"foo", b"42")]);
+		let mut payload = build_indexed_map(&[(b"bar", b"7"), (b"baz", b"99"), (b"foo", b"42")]);
 		corrupt_key_off(&mut payload, 1, u32::MAX);
 		assert!(
 			IndexedMapWalker::<(), ()>::from_payload(&payload).is_err(),
@@ -466,8 +461,7 @@ mod tests {
 
 	#[test]
 	fn unvalidated_find_value_bytes_errors_instead_of_panicking() {
-		let mut payload =
-			build_indexed_map(&[(b"bar", b"7"), (b"baz", b"99"), (b"foo", b"42")]);
+		let mut payload = build_indexed_map(&[(b"bar", b"7"), (b"baz", b"99"), (b"foo", b"42")]);
 		// Corrupt the middle entry — binary search over n=3 probes mid=1 first.
 		corrupt_key_off(&mut payload, 1, u32::MAX);
 		let w: IndexedMapWalker<(), ()> =
@@ -481,8 +475,7 @@ mod tests {
 
 	#[test]
 	fn unvalidated_entries_clamp_corrupt_offset_without_panicking() {
-		let mut payload =
-			build_indexed_map(&[(b"bar", b"7"), (b"baz", b"99"), (b"foo", b"42")]);
+		let mut payload = build_indexed_map(&[(b"bar", b"7"), (b"baz", b"99"), (b"foo", b"42")]);
 		corrupt_key_off(&mut payload, 1, u32::MAX);
 		let w: IndexedMapWalker<(), ()> =
 			IndexedMapWalker::from_payload_unvalidated(&payload).unwrap();
