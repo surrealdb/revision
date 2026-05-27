@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — bounds-checked indexed-map lookups
+## 0.28.0 — bounds-checked indexed-map lookups
 
 Lets consumers skip the O(len) indexed-map prologue validation on the hot
 path without risking a process abort. Driven by a SurrealDB no-index scan
@@ -36,7 +36,7 @@ the access-time error).
 
 The wire format and all public signatures are unchanged.
 
-## Unreleased — alloc-free indexed deserialize
+## 0.27.0 — alloc-free indexed deserialize
 
 Removes the per-call heap allocation from the indexed-body **deserialize** path, completing the work [#67](https://github.com/surrealdb/revision/pull/67) started for the **skip** path. The wire format and all public signatures are unchanged.
 
@@ -44,7 +44,7 @@ Removes the per-call heap allocation from the indexed-body **deserialize** path,
 
 - **`deserialize_indexed_map` / `deserialize_indexed_seq` (and the `HashMap` `IndexedMapEncoded` impl) no longer allocate a `vec![0u8; n]` discard buffer** to step over the offset-table prologue. They now use `slice_reader::advance_read`, the same fixed 4 KB stack-buffer read loop the other `SkipRevisioned` impls use — one fewer heap allocation per indexed map/seq decoded, no behavioural change. The reader bound stays `R: Read` (unlike the `skip_indexed_*` fast path, sequential decode can't pointer-bump), so this is not a breaking change.
 
-## Unreleased — O(1) skip for indexed bodies
+## 0.26.0 — O(1) skip for indexed bodies
 
 Fast-path the per-record cost of skipping `#[revision(indexed_map)]` /
 `#[revision(indexed_seq)]` / `#[revision(indexed_set)]` fields. Driven
