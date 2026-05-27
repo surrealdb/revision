@@ -1,6 +1,42 @@
 # Changelog
 
-## Unreleased — alloc-free indexed deserialize
+## 0.28.0 — bounds-checked indexed-map lookups
+
+Lets consumers skip the O(len) indexed-map prologue validation on the hot
+path without risking a process abort. Driven by a SurrealDB no-index scan
+profile where `IndexedMapWalker::from_payload`'s eager validation
+(`validate_map_prologue` + `validate_key_region_ascending`) accounted for
+~6.8 % of total CPU per record — five times the cost of the binary-search
+lookup it guarded — because it walks every offset and every key while the
+lookup only touches O(log len) of them.
+
+The validation existed because `find_value_bytes` / `entries` sliced the
+dense key/value regions with *unchecked* offset values: a corrupt offset
+would slice out of bounds and, under `panic = 'abort'`, abort the whole
+process. Bounds-checking those slices at the point of use removes that
+hazard, so `from_payload_unvalidated` is now safe to use on untrusted bytes
+(callers protected by an upstream integrity check — e.g. storage-engine
+block checksums — can take the fast path and fall back to a full decode on
+the access-time error).
+
+### Changed
+
+- **`IndexedMapWalker::find_value_bytes`** now returns
+  `Error::OptimisedOffsetOutOfRange` instead of panicking when a key/value
+  offset is past its region or non-monotonic. Walkers opened via
+  `from_payload` are unaffected (their prologue is validated, so the error
+  arm is unreachable).
+- **`IndexedMapWalker::entries`** clamps an out-of-range or inverted
+  `(start, end)` to an empty slice for that entry instead of panicking.
+- **`from_payload_unvalidated`** is no longer documented as "panics on
+  malformed input" — the accessors are now bounds-checked at the point of
+  use. The only weaker guarantee versus `from_payload` is that a corrupt
+  *non-ascending* key region can make a binary-search lookup report a
+  present key as absent (no panic, no out-of-bounds read).
+
+The wire format and all public signatures are unchanged.
+
+## 0.27.0 — alloc-free indexed deserialize
 
 Removes the per-call heap allocation from the indexed-body **deserialize** path, completing the work [#67](https://github.com/surrealdb/revision/pull/67) started for the **skip** path. The wire format and all public signatures are unchanged.
 
@@ -8,7 +44,7 @@ Removes the per-call heap allocation from the indexed-body **deserialize** path,
 
 - **`deserialize_indexed_map` / `deserialize_indexed_seq` (and the `HashMap` `IndexedMapEncoded` impl) no longer allocate a `vec![0u8; n]` discard buffer** to step over the offset-table prologue. They now use `slice_reader::advance_read`, the same fixed 4 KB stack-buffer read loop the other `SkipRevisioned` impls use — one fewer heap allocation per indexed map/seq decoded, no behavioural change. The reader bound stays `R: Read` (unlike the `skip_indexed_*` fast path, sequential decode can't pointer-bump), so this is not a breaking change.
 
-## Unreleased — O(1) skip for indexed bodies
+## 0.26.0 — O(1) skip for indexed bodies
 
 Fast-path the per-record cost of skipping `#[revision(indexed_map)]` /
 `#[revision(indexed_seq)]` / `#[revision(indexed_set)]` fields. Driven
