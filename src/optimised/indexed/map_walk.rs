@@ -274,11 +274,16 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 			// the `Some` arm. On `from_payload_unvalidated` a corrupt offset
 			// would otherwise panic and abort under `panic = 'abort'`; return
 			// a recoverable error so the caller can fall back to a full decode.
-			let key_bytes =
-				p.keys_region.get(k_start..k_end).ok_or(Error::OptimisedOffsetOutOfRange {
+			// `let .. else` rather than `ok_or`: this runs once per
+			// binary-search probe on scan hot paths, and an eager `ok_or`
+			// argument constructs and drops the error on every successful
+			// probe — `Error`'s size and drop glue make that measurable.
+			let Some(key_bytes) = p.keys_region.get(k_start..k_end) else {
+				return Err(Error::OptimisedOffsetOutOfRange {
 					offset: k_end as u32,
 					payload_len: p.keys_region.len() as u32,
-				})?;
+				});
+			};
 			match predicate(key_bytes) {
 				Ordering::Equal => {
 					let v_start = p.val_off(mid) as usize;
@@ -287,12 +292,13 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 					} else {
 						p.vals_region.len()
 					};
-					return p.vals_region.get(v_start..v_end).map(Some).ok_or(
-						Error::OptimisedOffsetOutOfRange {
+					let Some(value_bytes) = p.vals_region.get(v_start..v_end) else {
+						return Err(Error::OptimisedOffsetOutOfRange {
 							offset: v_end as u32,
 							payload_len: p.vals_region.len() as u32,
-						},
-					);
+						});
+					};
+					return Ok(Some(value_bytes));
 				}
 				Ordering::Less => lo = mid + 1,
 				Ordering::Greater => hi = mid,
