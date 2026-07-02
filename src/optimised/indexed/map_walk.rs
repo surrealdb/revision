@@ -50,6 +50,19 @@ pub struct IndexedMapWalker<'p, K, V> {
 	_marker: PhantomData<fn() -> (K, V)>,
 }
 
+/// Result of [`IndexedMapWalker::find_value_bytes_with_hint`].
+#[derive(Debug, Clone, Copy)]
+pub struct HintedLookup<'p> {
+	/// The matching entry's value bytes, or `None` if the key is absent
+	/// from this map.
+	pub value: Option<&'p [u8]>,
+	/// The slot to pass as `hint` on the next call against a same-shape
+	/// map. `None` only when no call has ever found the key (nothing
+	/// learned yet); once a hint exists, a later miss carries the old one
+	/// forward rather than discarding it.
+	pub hint: Option<u32>,
+}
+
 #[derive(Debug)]
 struct MapPrologue<'p> {
 	/// `count * 8` bytes of interleaved `(u32_le key_off, u32_le val_off)`
@@ -70,6 +83,30 @@ impl<'p> MapPrologue<'p> {
 	#[inline]
 	fn val_off(&self, index: usize) -> u32 {
 		crate::optimised::validation::decode_u32_le_at(self.offset_table, index * 8 + 4)
+	}
+
+	/// Byte ranges (into [`keys_region`](Self::keys_region) /
+	/// [`vals_region`](Self::vals_region)) of entry `index`, or `None` if
+	/// `index >= n`. Shared by the binary search and the hinted-probe path
+	/// in [`IndexedMapWalker::find_value_bytes_with_hint`] so both derive
+	/// entry boundaries the same way.
+	#[inline]
+	fn entry_ranges(
+		&self,
+		n: usize,
+		index: usize,
+	) -> Option<(std::ops::Range<usize>, std::ops::Range<usize>)> {
+		if index >= n {
+			return None;
+		}
+		let k_start = self.key_off(index) as usize;
+		let v_start = self.val_off(index) as usize;
+		let (k_end, v_end) = if index + 1 < n {
+			(self.key_off(index + 1) as usize, self.val_off(index + 1) as usize)
+		} else {
+			(self.keys_region.len(), self.vals_region.len())
+		};
+		Some((k_start..k_end, v_start..v_end))
 	}
 }
 
@@ -252,24 +289,104 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 
 	/// Borrow the value bytes for the entry whose key bytes compare `Equal`
 	/// under `predicate`. Uses binary search when indexed; linear scan when not.
-	pub fn find_value_bytes<F>(&self, mut predicate: F) -> Result<Option<&'p [u8]>, Error>
+	pub fn find_value_bytes<F>(&self, predicate: F) -> Result<Option<&'p [u8]>, Error>
 	where
 		F: FnMut(&[u8]) -> Ordering,
 	{
 		let Some(p) = &self.prologue else {
 			return Err(Error::Deserialize("find_value_bytes called on non-indexed map".into()));
 		};
+		Ok(Self::binary_search_entry(p, self.len, predicate)?.map(|(value, _index)| value))
+	}
+
+	/// Like [`find_value_bytes`](Self::find_value_bytes), but probes a
+	/// remembered `hint` slot before falling back to the binary search.
+	///
+	/// Intended for scan loops that call this repeatedly against a fixed
+	/// `predicate` (the same needle key) over a sequence of maps with the
+	/// same *shape* — e.g. successive rows of a table scan whose schema
+	/// happens to be uniform. Same-shape maps sort their keys into the
+	/// same slot every time, so probing the slot learned from the previous
+	/// call turns the usual O(log n) search into one verified O(1) probe.
+	///
+	/// Returns the value bytes (`None` if the key is absent from this map)
+	/// alongside the slot to pass as `hint` on the next call:
+	/// - **Hint hits** (predicate reports `Equal` at the hinted slot):
+	///   returned unchanged — the search rarely needs to run at all.
+	/// - **Hint misses, but the binary search finds the key elsewhere**:
+	///   the matched slot, so the caller's hint self-corrects toward
+	///   whatever slot this differently-shaped map actually uses.
+	/// - **Key not found at all**: the *original* `hint` is carried
+	///   forward unchanged. A single row missing the field (common on
+	///   schemaless tables) must not erase a hint that is still correct
+	///   for every other row.
+	///
+	/// A `hint` that is out of range for this map (`>= len`, e.g. carried
+	/// over from a smaller map of a different shape) is not itself
+	/// evidence of payload corruption — it is a harmless miss that falls
+	/// straight through to the binary search, never an [`Error`].
+	pub fn find_value_bytes_with_hint<F>(
+		&self,
+		hint: Option<u32>,
+		mut predicate: F,
+	) -> Result<HintedLookup<'p>, Error>
+	where
+		F: FnMut(&[u8]) -> Ordering,
+	{
+		let Some(p) = &self.prologue else {
+			return Err(Error::Deserialize(
+				"find_value_bytes_with_hint called on non-indexed map".into(),
+			));
+		};
 		let n = self.len;
+
+		// A hint that fails to resolve to the needle — absent, out of
+		// range, pointing at the wrong key, or (on an unvalidated walker)
+		// at a corrupt key/value range — is a harmless miss, not proof of
+		// corruption on its own; every failing branch here falls through
+		// to the identical binary search below.
+		if let Some(h) = hint
+			&& let Some((k_range, v_range)) = p.entry_ranges(n, h as usize)
+			&& let Some(key_bytes) = p.keys_region.get(k_range)
+			&& predicate(key_bytes) == Ordering::Equal
+			&& let Some(value_bytes) = p.vals_region.get(v_range)
+		{
+			return Ok(HintedLookup {
+				value: Some(value_bytes),
+				hint: Some(h),
+			});
+		}
+
+		Ok(match Self::binary_search_entry(p, n, predicate)? {
+			Some((value, index)) => HintedLookup {
+				value: Some(value),
+				hint: Some(index),
+			},
+			None => HintedLookup {
+				value: None,
+				hint,
+			},
+		})
+	}
+
+	/// Shared binary-search core for [`find_value_bytes`](Self::find_value_bytes)
+	/// and [`find_value_bytes_with_hint`](Self::find_value_bytes_with_hint).
+	/// Returns the matching entry's value bytes and its slot index (for
+	/// hint-learning), or `None` if no entry compares `Equal`.
+	fn binary_search_entry<F>(
+		p: &MapPrologue<'p>,
+		n: usize,
+		mut predicate: F,
+	) -> Result<Option<(&'p [u8], u32)>, Error>
+	where
+		F: FnMut(&[u8]) -> Ordering,
+	{
 		let mut lo = 0usize;
 		let mut hi = n;
 		while lo < hi {
 			let mid = lo + (hi - lo) / 2;
-			let k_start = p.key_off(mid) as usize;
-			let k_end = if mid + 1 < n {
-				p.key_off(mid + 1) as usize
-			} else {
-				p.keys_region.len()
-			};
+			let (k_range, v_range) =
+				p.entry_ranges(n, mid).expect("mid is within [0, n) by loop invariant");
 			// Checked slicing: validated walkers (`from_payload`) always hit
 			// the `Some` arm. On `from_payload_unvalidated` a corrupt offset
 			// would otherwise panic and abort under `panic = 'abort'`; return
@@ -278,27 +395,21 @@ impl<'p, K, V> IndexedMapWalker<'p, K, V> {
 			// binary-search probe on scan hot paths, and an eager `ok_or`
 			// argument constructs and drops the error on every successful
 			// probe — `Error`'s size and drop glue make that measurable.
-			let Some(key_bytes) = p.keys_region.get(k_start..k_end) else {
+			let Some(key_bytes) = p.keys_region.get(k_range.clone()) else {
 				return Err(Error::OptimisedOffsetOutOfRange {
-					offset: k_end as u32,
+					offset: k_range.end as u32,
 					payload_len: p.keys_region.len() as u32,
 				});
 			};
 			match predicate(key_bytes) {
 				Ordering::Equal => {
-					let v_start = p.val_off(mid) as usize;
-					let v_end = if mid + 1 < n {
-						p.val_off(mid + 1) as usize
-					} else {
-						p.vals_region.len()
-					};
-					let Some(value_bytes) = p.vals_region.get(v_start..v_end) else {
+					let Some(value_bytes) = p.vals_region.get(v_range.clone()) else {
 						return Err(Error::OptimisedOffsetOutOfRange {
-							offset: v_end as u32,
+							offset: v_range.end as u32,
 							payload_len: p.vals_region.len() as u32,
 						});
 					};
-					return Ok(Some(value_bytes));
+					return Ok(Some((value_bytes, mid as u32)));
 				}
 				Ordering::Less => lo = mid + 1,
 				Ordering::Greater => hi = mid,
@@ -489,5 +600,110 @@ mod tests {
 		let collected: Vec<(&[u8], &[u8])> = w.entries().unwrap().collect();
 		assert_eq!(collected.len(), 3);
 		assert!(collected.iter().any(|(k, _)| k.is_empty()));
+	}
+
+	/// Sorted order is `bar`(0), `baz`(1), `foo`(2).
+	fn three_entry_map() -> Vec<u8> {
+		build_indexed_map(&[(b"bar", b"7"), (b"baz", b"99"), (b"foo", b"42")])
+	}
+
+	#[test]
+	fn hinted_lookup_hits_on_correct_hint() {
+		let payload = three_entry_map();
+		let w: IndexedMapWalker<(), ()> = IndexedMapWalker::from_payload(&payload).unwrap();
+		// Learn the slot first (hint = None takes the plain binary search).
+		let first = w.find_value_bytes_with_hint(None, |k| k.cmp(b"baz".as_slice())).unwrap();
+		assert_eq!(first.value, Some(b"99".as_slice()));
+		assert_eq!(first.hint, Some(1));
+		// Probing that learned slot again must return the identical result.
+		let second =
+			w.find_value_bytes_with_hint(first.hint, |k| k.cmp(b"baz".as_slice())).unwrap();
+		assert_eq!(second.value, Some(b"99".as_slice()));
+		assert_eq!(second.hint, Some(1));
+	}
+
+	#[test]
+	fn hinted_lookup_self_corrects_on_wrong_hint() {
+		let payload = three_entry_map();
+		let w: IndexedMapWalker<(), ()> = IndexedMapWalker::from_payload(&payload).unwrap();
+		// Hint points at "bar" (slot 0) but the needle is "foo" (slot 2) —
+		// e.g. a hint learned from a differently-shaped prior row.
+		let out = w.find_value_bytes_with_hint(Some(0), |k| k.cmp(b"foo".as_slice())).unwrap();
+		assert_eq!(out.value, Some(b"42".as_slice()));
+		assert_eq!(out.hint, Some(2), "a wrong hint must self-correct to the real slot");
+	}
+
+	#[test]
+	fn hinted_lookup_preserves_prior_hint_on_miss() {
+		let payload = three_entry_map();
+		let w: IndexedMapWalker<(), ()> = IndexedMapWalker::from_payload(&payload).unwrap();
+		// A row missing the field entirely must not erase a hint that is
+		// still correct for every other row.
+		let out = w.find_value_bytes_with_hint(Some(1), |k| k.cmp(b"missing".as_slice())).unwrap();
+		assert_eq!(out.value, None);
+		assert_eq!(out.hint, Some(1), "a genuine miss must carry the old hint forward unchanged");
+	}
+
+	#[test]
+	fn hinted_lookup_falls_through_on_out_of_range_hint() {
+		let payload = three_entry_map();
+		let w: IndexedMapWalker<(), ()> = IndexedMapWalker::from_payload(&payload).unwrap();
+		// A stale hint from a smaller/differently-shaped map must be a
+		// harmless miss, not a panic or an out-of-bounds read.
+		let out = w.find_value_bytes_with_hint(Some(50), |k| k.cmp(b"foo".as_slice())).unwrap();
+		assert_eq!(out.value, Some(b"42".as_slice()));
+		assert_eq!(out.hint, Some(2));
+	}
+
+	#[test]
+	fn hinted_lookup_no_hint_matches_plain_binary_search() {
+		let payload = three_entry_map();
+		let w: IndexedMapWalker<(), ()> = IndexedMapWalker::from_payload(&payload).unwrap();
+		let plain = w.find_value_bytes(|k| k.cmp(b"bar".as_slice())).unwrap();
+		let hinted = w.find_value_bytes_with_hint(None, |k| k.cmp(b"bar".as_slice())).unwrap();
+		assert_eq!(hinted.value, plain);
+		assert_eq!(hinted.hint, Some(0));
+	}
+
+	#[test]
+	fn hinted_lookup_on_legacy_map_errors() {
+		let payload = [0u8, 2, 0xAA, 0xBB];
+		let w: IndexedMapWalker<(), ()> = IndexedMapWalker::from_payload(&payload).unwrap();
+		assert!(w.find_value_bytes_with_hint(None, |_| Ordering::Equal).is_err());
+	}
+
+	#[test]
+	fn hinted_lookup_on_unvalidated_map_ignores_corrupt_key_at_hinted_slot() {
+		let mut payload = three_entry_map();
+		// Corrupt "baz" (slot 1)'s key offset. Hinting slot 1 while
+		// searching for "foo" must not error just because the hinted
+		// slot's key range happens to be unreadable — it should fall
+		// through to the (unaffected) binary search for "foo", which
+		// never needs to touch slot 1 in a 3-entry search (mid = 1 is
+		// probed first and IS the corrupted slot, so this also confirms
+		// the corrupted-but-touched-by-search case still errors like
+		// `find_value_bytes` does).
+		corrupt_key_off(&mut payload, 1, u32::MAX);
+		let w: IndexedMapWalker<(), ()> =
+			IndexedMapWalker::from_payload_unvalidated(&payload).unwrap();
+		assert!(matches!(
+			w.find_value_bytes_with_hint(Some(1), |k| k.cmp(b"foo".as_slice())),
+			Err(Error::OptimisedOffsetOutOfRange { .. })
+		));
+	}
+
+	#[test]
+	fn hinted_lookup_on_unvalidated_map_recovers_via_hint_when_search_would_hit_corruption() {
+		let mut payload = three_entry_map();
+		// Corrupt "baz" (slot 1) — a plain binary search for "foo" probes
+		// mid = 1 first and would hit the corruption. Hinting the correct
+		// slot (2) for "foo" up front means the hinted probe succeeds and
+		// the corrupted slot is never touched.
+		corrupt_key_off(&mut payload, 1, u32::MAX);
+		let w: IndexedMapWalker<(), ()> =
+			IndexedMapWalker::from_payload_unvalidated(&payload).unwrap();
+		let out = w.find_value_bytes_with_hint(Some(2), |k| k.cmp(b"foo".as_slice())).unwrap();
+		assert_eq!(out.value, Some(b"42".as_slice()));
+		assert_eq!(out.hint, Some(2));
 	}
 }

@@ -23,5 +23,7 @@ pub mod tag;
 #[doc(hidden)]
 pub mod validation;
 
-pub use indexed::{IndexedMapWalker, IndexedSeqWalker, IndexedStructWalker, OFFSET_TABLE_MIN_LEN};
+pub use indexed::{
+	HintedLookup, IndexedMapWalker, IndexedSeqWalker, IndexedStructWalker, OFFSET_TABLE_MIN_LEN,
+};
 pub use tag::{MAX_VARIANTS, SizeClass, Tag};

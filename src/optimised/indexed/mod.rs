@@ -13,7 +13,7 @@ pub mod serialize;
 #[doc(hidden)]
 pub mod struct_walk;
 
-pub use map_walk::IndexedMapWalker;
+pub use map_walk::{HintedLookup, IndexedMapWalker};
 pub use seq_walk::IndexedSeqWalker;
 pub use serialize::{
 	IndexedMapEncoded, IndexedMapView, IndexedSeqEncoded, IndexedSeqView, IndexedSetEncoded,
