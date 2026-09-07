@@ -33,6 +33,13 @@ pub enum Error {
 	},
 	/// Offsets in an indexed prologue are not strictly monotonic.
 	OptimisedOffsetsNonMonotonic,
+	/// A strided indexed prologue declares a stride and element count whose
+	/// product does not match the dense element region it precedes.
+	OptimisedStrideMismatch {
+		stride: usize,
+		count: usize,
+		body_len: usize,
+	},
 	/// Keys in an indexed map's keys region are not strictly ascending.
 	OptimisedKeyRegionNotAscending,
 	/// A varlen sub-reader's declared byte length exceeds the bytes available to its parent.
@@ -101,6 +108,17 @@ impl std::fmt::Display for Error {
 			}
 			Self::OptimisedOffsetsNonMonotonic => {
 				write!(f, "Optimised indexed prologue offsets are not strictly monotonic")
+			}
+			Self::OptimisedStrideMismatch {
+				stride,
+				count,
+				body_len,
+			} => {
+				write!(
+					f,
+					"Optimised strided prologue declares {count} elements of {stride} bytes \
+					 but the element region holds {body_len} bytes"
+				)
 			}
 			Self::OptimisedKeyRegionNotAscending => {
 				write!(f, "Optimised indexed map keys are not strictly ascending")
