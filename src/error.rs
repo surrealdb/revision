@@ -33,12 +33,17 @@ pub enum Error {
 	},
 	/// Offsets in an indexed prologue are not strictly monotonic.
 	OptimisedOffsetsNonMonotonic,
-	/// A strided indexed prologue declares a stride and element count whose
-	/// product does not match the dense element region it precedes.
+	/// A strided indexed prologue declares a geometry that cannot describe its
+	/// dense element region: a zero stride, a `count * stride` that overflows,
+	/// or a product that disagrees with the region actually present.
+	///
+	/// `body_len` is `None` where the region length is not known at the point
+	/// of the check — the skip path reads the prologue from a stream and never
+	/// learns how many bytes follow.
 	OptimisedStrideMismatch {
 		stride: usize,
 		count: usize,
-		body_len: usize,
+		body_len: Option<usize>,
 	},
 	/// Keys in an indexed map's keys region are not strictly ascending.
 	OptimisedKeyRegionNotAscending,
@@ -113,13 +118,18 @@ impl std::fmt::Display for Error {
 				stride,
 				count,
 				body_len,
-			} => {
-				write!(
+			} => match body_len {
+				Some(body_len) => write!(
 					f,
 					"Optimised strided prologue declares {count} elements of {stride} bytes \
 					 but the element region holds {body_len} bytes"
-				)
-			}
+				),
+				None => write!(
+					f,
+					"Optimised strided prologue declares {count} elements of {stride} bytes, \
+					 which cannot describe an element region"
+				),
+			},
 			Self::OptimisedKeyRegionNotAscending => {
 				write!(f, "Optimised indexed map keys are not strictly ascending")
 			}

@@ -17,6 +17,7 @@ use crate::Error;
 use crate::SkipRevisioned;
 use crate::optimised::indexed::OFFSET_TABLE_MIN_LEN;
 use crate::optimised::indexed::seq_walk::{FLAG_INDEXED, FLAG_STRIDED};
+use crate::optimised::validation::strided_region_len;
 use crate::slice_reader::{BorrowedReader, advance_read};
 use crate::{DeserializeRevisioned, SerializeRevisioned};
 
@@ -835,7 +836,7 @@ where
 	let len = read_varint(reader)?;
 	if (flags & FLAG_INDEXED) == 0 {
 		// Legacy fallback: pure `(elem)*` body.
-		let mut out = Vec::with_capacity(len);
+		let mut out = Vec::with_capacity(prealloc(len));
 		for _ in 0..len {
 			out.push(T::deserialize_revisioned(reader)?);
 		}
@@ -843,21 +844,74 @@ where
 	}
 
 	if (flags & FLAG_STRIDED) != 0 {
-		// The stride is random-access metadata for the walker. A sequential
-		// decode does not need it: every element's own `DeserializeRevisioned`
-		// bounds its read, exactly as on the offset-table path.
-		read_varint(reader)?;
-	} else {
-		// Skip the offset table (len * 4 bytes).
-		let table_bytes = len.checked_mul(4).ok_or(Error::OptimisedSubReaderOverrun)?;
-		advance_read(reader, table_bytes)?;
+		let stride = read_varint(reader)?;
+		// Rejects a zero stride and an overflowing geometry, so this decoder
+		// and `skip_indexed_seq` agree on which prologues are acceptable.
+		strided_region_len(stride, len)?;
+		let mut out = Vec::with_capacity(prealloc(len));
+		for _ in 0..len {
+			// The stride, not `T`'s own framing, is what `skip_indexed_seq`
+			// and the walker use to delimit elements. Decoding by `T`'s
+			// framing alone would let a corrupt payload where the two
+			// disagree leave this cursor somewhere the other two readers
+			// would not put it, spilling bytes into the next field. Hold `T`
+			// to the declared width instead — a counter over the reader, so
+			// no buffering or copying on the hot path.
+			let mut counting = CountingReader {
+				inner: &mut *reader,
+				read: 0,
+			};
+			let value = T::deserialize_revisioned(&mut counting)?;
+			let read = counting.read;
+			if read != stride {
+				return Err(Error::Deserialize(format!(
+					"strided element consumed {read} bytes, expected the declared stride of \
+					 {stride}"
+				)));
+			}
+			out.push(value);
+		}
+		return Ok(out);
 	}
 
-	let mut out = Vec::with_capacity(len);
+	// Skip the offset table (len * 4 bytes).
+	let table_bytes = len.checked_mul(4).ok_or(Error::OptimisedSubReaderOverrun)?;
+	advance_read(reader, table_bytes)?;
+
+	let mut out = Vec::with_capacity(prealloc(len));
 	for _ in 0..len {
 		out.push(T::deserialize_revisioned(reader)?);
 	}
 	Ok(out)
+}
+
+/// Upper bound on the capacity reserved from a declared element count.
+///
+/// A prologue's `len` is attacker-controlled and is read before any element
+/// byte is, so reserving it outright turns an 11-byte payload into an
+/// allocation of `usize::MAX` and an abort. Reserve a bounded amount and let
+/// the vector grow against bytes that actually arrive; the reallocation only
+/// happens for sequences that really are this long.
+const MAX_PREALLOC_ELEMENTS: usize = 4096;
+
+#[inline]
+fn prealloc(len: usize) -> usize {
+	len.min(MAX_PREALLOC_ELEMENTS)
+}
+
+/// Counts bytes pulled through it, so a caller can hold a decoder to an
+/// exact width without buffering the bytes first.
+struct CountingReader<'a, R> {
+	inner: &'a mut R,
+	read: usize,
+}
+
+impl<R: Read> Read for CountingReader<'_, R> {
+	fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+		let n = self.inner.read(buf)?;
+		self.read += n;
+		Ok(n)
+	}
 }
 
 /// Advance past an indexed-map encoding without materialising the keys or values.
@@ -933,8 +987,7 @@ where
 	}
 	if (flags & FLAG_STRIDED) != 0 {
 		let stride = read_varint(reader)?;
-		let dense_bytes = len.checked_mul(stride).ok_or(Error::OptimisedSubReaderOverrun)?;
-		reader.advance(dense_bytes)?;
+		reader.advance(strided_region_len(stride, len)?)?;
 		return Ok(());
 	}
 	// An indexed body always carries `len >= OFFSET_TABLE_MIN_LEN` (the encoder
@@ -1159,9 +1212,20 @@ mod tests {
 	#[test]
 	#[cfg(feature = "strided-seq")]
 	fn strided_set_round_trips_and_stays_byte_sorted() {
-		let original: BTreeSet<u32> = (0u32..16).collect();
+		// `0..16` serialise in ascending byte order under both integer
+		// encodings, so an ordering assertion over them cannot fail — hoisting
+		// the strided early return above `bodies.sort()` would leave it green
+		// while breaking membership search. These values are uniform-width in
+		// both encodings *and* reorder: 512 sorts before 257 either way.
+		let original: BTreeSet<u32> =
+			[256, 257, 258, 259, 260, 261, 511, 512].into_iter().collect();
 		let elements: Vec<u32> = original.iter().copied().collect();
-		let (_, stride) = uniform_element_bodies(&elements);
+		let (bodies, stride) = uniform_element_bodies(&elements);
+		assert_ne!(
+			bodies.iter().max(),
+			bodies.last(),
+			"fixture must not already be in byte order, or it cannot detect a missing sort"
+		);
 		let mut bytes = Vec::new();
 		serialize_indexed_set_iter(original.iter(), &mut bytes).unwrap();
 
@@ -1179,6 +1243,82 @@ mod tests {
 		let mut r: &[u8] = &bytes;
 		let decoded: BTreeSet<u32> = deserialize_indexed_set(&mut r).unwrap();
 		assert_eq!(decoded, original);
+	}
+
+	#[test]
+	fn hostile_element_count_does_not_abort() {
+		// `len` is read before any element byte, so reserving it outright turns
+		// a tiny payload into an `usize::MAX` allocation. Every body shape must
+		// survive a declared count it cannot possibly hold.
+		for flags in [0u8, FLAG_INDEXED, FLAG_INDEXED | FLAG_STRIDED] {
+			let mut payload = vec![flags, 253];
+			payload.extend_from_slice(&usize::MAX.to_le_bytes());
+			payload.push(1); // stride, read only on the strided path
+			let mut r: &[u8] = &payload;
+			assert!(
+				deserialize_indexed_seq::<u8, _>(&mut r).is_err(),
+				"flags {flags:#04b}: hostile count should error, not allocate"
+			);
+		}
+	}
+
+	#[test]
+	fn strided_decode_rejects_an_element_narrower_than_the_stride() {
+		// `len = 1, stride = 2` with a one-byte `T`: decoding by `T`'s own
+		// framing would consume one byte and leave the other to be read as the
+		// next field, while `skip_indexed_seq` consumes both.
+		let payload = vec![FLAG_INDEXED | FLAG_STRIDED, 1, 2, 0xAA, 0xBB];
+		let mut r: &[u8] = &payload;
+		let err = deserialize_indexed_seq::<u8, _>(&mut r).unwrap_err();
+		assert!(
+			matches!(&err, Error::Deserialize(m) if m.contains("declared stride")),
+			"expected a stride-width error, got {err:?}"
+		);
+	}
+
+	#[test]
+	fn decode_and_skip_agree_on_where_a_strided_field_ends() {
+		// The property the previous two tests protect: a decode that *succeeds*
+		// must leave the cursor exactly where the skip does, so a following
+		// field is read from the same offset either way.
+		//
+		// Skip is deliberately the more permissive of the two. It is an O(1)
+		// path that never decodes an element, so it cannot notice one that is
+		// narrower than the declared stride; it advances to where the prologue
+		// says the field ends. That asymmetry is safe precisely because decode
+		// now refuses such a payload instead of silently stopping somewhere
+		// else — the failure mode being closed here is silent divergence, not
+		// skip's willingness to trust a geometry it already validated.
+		let cases: Vec<Vec<u8>> = vec![
+			vec![FLAG_INDEXED | FLAG_STRIDED, 4, 0, 1, 2, 3, 4], // zero stride
+			vec![FLAG_INDEXED | FLAG_STRIDED, 1, 2, 0xAA, 0xBB], // element narrower than stride
+			vec![FLAG_INDEXED | FLAG_STRIDED, 2, 1, 0xAA, 0xBB], // well formed
+			vec![FLAG_INDEXED, 8, 0, 0, 0, 0],                   // truncated offset table
+		];
+		for payload in cases {
+			let mut full = payload.clone();
+			full.push(0xEE); // sentinel standing in for the next field
+			let mut d: &[u8] = &full;
+			let Ok(_) = deserialize_indexed_seq::<u8, _>(&mut d) else {
+				continue;
+			};
+			let mut sk: &[u8] = &full;
+			skip_indexed_seq::<u8, _>(&mut sk).unwrap_or_else(|e| {
+				panic!("decode accepted {payload:02x?} but skip rejected: {e}")
+			});
+			assert_eq!(d, sk, "decode and skip left different cursors on {payload:02x?}");
+			assert_eq!(d, &[0xEE], "cursor should rest on the next field");
+		}
+	}
+
+	#[test]
+	fn skip_rejects_a_zero_stride() {
+		// Zero dense bytes for any count: the skip would stop at the header and
+		// the element bytes would be parsed as the next field.
+		let payload = vec![FLAG_INDEXED | FLAG_STRIDED, 4, 0, 1, 2, 3, 4];
+		let mut r: &[u8] = &payload;
+		let err = skip_indexed_seq::<u8, _>(&mut r).unwrap_err();
+		assert!(matches!(err, Error::OptimisedStrideMismatch { .. }), "got {err:?}");
 	}
 
 	#[test]

@@ -159,18 +159,40 @@ pub fn validate_strided_seq_prologue(
 	count: usize,
 	body_len: usize,
 ) -> Result<(), Error> {
-	let mismatch = || Error::OptimisedStrideMismatch {
-		stride,
-		count,
-		body_len,
-	};
-	if stride == 0 {
-		return Err(mismatch());
-	}
-	if count.checked_mul(stride) != Some(body_len) {
-		return Err(mismatch());
+	if strided_region_len(stride, count)? != body_len {
+		return Err(Error::OptimisedStrideMismatch {
+			stride,
+			count,
+			body_len: Some(body_len),
+		});
 	}
 	Ok(())
+}
+
+/// Byte length of the dense element region a strided prologue describes.
+///
+/// This is the geometry check every strided reader shares, whether or not it
+/// can see the region it precedes. The walker knows the region length and goes
+/// on to compare it via [`validate_strided_seq_prologue`]; the sequential
+/// decoder and the skip path read from a stream and only have the prologue, so
+/// this is the whole of their check.
+///
+/// A zero stride is rejected here rather than at each call site: it would make
+/// the region zero-length for any `count`, so a skip would stop at the header
+/// and leave the element bytes to be parsed as the next field, while the
+/// walker rejects the same payload. Readers disagreeing about where a field
+/// ends is worse than any of them being wrong alone.
+#[doc(hidden)]
+pub fn strided_region_len(stride: usize, count: usize) -> Result<usize, Error> {
+	let invalid = || Error::OptimisedStrideMismatch {
+		stride,
+		count,
+		body_len: None,
+	};
+	if stride == 0 {
+		return Err(invalid());
+	}
+	count.checked_mul(stride).ok_or_else(invalid)
 }
 
 #[cfg(test)]
