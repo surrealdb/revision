@@ -137,6 +137,64 @@ pub fn validate_seq_prologue(
 	validate_struct_prologue(elem_offset_bytes, count, 4, payload_len)
 }
 
+/// Validate a strided indexed-seq prologue.
+///
+/// A strided sequence replaces the per-element offset table with a single
+/// stride: element `i` occupies `body[i * stride .. (i + 1) * stride]`. The
+/// only thing to check is that the declared geometry covers the element
+/// region exactly — `count * stride == body_len`. That single equality is
+/// what lets [`IndexedSeqWalker::element_bytes`] index the body without a
+/// per-element bounds proof, and it replaces the O(count) monotonicity walk
+/// that [`validate_seq_prologue`] runs over an offset table.
+///
+/// `stride` is required to be non-zero: a zero stride would give every
+/// element the same empty slice, which is the same ambiguity that
+/// [`validate_struct_prologue`]'s strict-monotonic rule rejects on the
+/// offset-table path.
+///
+/// [`IndexedSeqWalker::element_bytes`]: crate::optimised::IndexedSeqWalker::element_bytes
+#[doc(hidden)]
+pub fn validate_strided_seq_prologue(
+	stride: usize,
+	count: usize,
+	body_len: usize,
+) -> Result<(), Error> {
+	if strided_region_len(stride, count)? != body_len {
+		return Err(Error::OptimisedStrideMismatch {
+			stride,
+			count,
+			body_len: Some(body_len),
+		});
+	}
+	Ok(())
+}
+
+/// Byte length of the dense element region a strided prologue describes.
+///
+/// This is the geometry check every strided reader shares, whether or not it
+/// can see the region it precedes. The walker knows the region length and goes
+/// on to compare it via [`validate_strided_seq_prologue`]; the sequential
+/// decoder and the skip path read from a stream and only have the prologue, so
+/// this is the whole of their check.
+///
+/// A zero stride is rejected here rather than at each call site: it would make
+/// the region zero-length for any `count`, so a skip would stop at the header
+/// and leave the element bytes to be parsed as the next field, while the
+/// walker rejects the same payload. Readers disagreeing about where a field
+/// ends is worse than any of them being wrong alone.
+#[doc(hidden)]
+pub fn strided_region_len(stride: usize, count: usize) -> Result<usize, Error> {
+	let invalid = || Error::OptimisedStrideMismatch {
+		stride,
+		count,
+		body_len: None,
+	};
+	if stride == 0 {
+		return Err(invalid());
+	}
+	count.checked_mul(stride).ok_or_else(invalid)
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -161,6 +219,42 @@ mod tests {
 			out.extend_from_slice(&v.to_le_bytes());
 		}
 		out
+	}
+
+	#[test]
+	fn strided_prologue_accepts_exact_geometry() {
+		assert!(validate_strided_seq_prologue(16, 768, 16 * 768).is_ok());
+		assert!(validate_strided_seq_prologue(1, 0, 0).is_ok());
+	}
+
+	#[test]
+	fn strided_prologue_rejects_short_and_long_bodies() {
+		assert!(matches!(
+			validate_strided_seq_prologue(4, 3, 11),
+			Err(Error::OptimisedStrideMismatch { .. })
+		));
+		assert!(matches!(
+			validate_strided_seq_prologue(4, 3, 13),
+			Err(Error::OptimisedStrideMismatch { .. })
+		));
+	}
+
+	#[test]
+	fn strided_prologue_rejects_zero_stride() {
+		// Zero stride would give every element the same empty slice — the
+		// ambiguity the offset-table path rejects as non-monotonic.
+		assert!(matches!(
+			validate_strided_seq_prologue(0, 0, 0),
+			Err(Error::OptimisedStrideMismatch { .. })
+		));
+	}
+
+	#[test]
+	fn strided_prologue_rejects_overflowing_geometry() {
+		assert!(matches!(
+			validate_strided_seq_prologue(usize::MAX, 2, 0),
+			Err(Error::OptimisedStrideMismatch { .. })
+		));
 	}
 
 	#[test]
