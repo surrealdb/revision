@@ -24,8 +24,9 @@ pub use serialize::{
 	IndexedMapEncoded, IndexedMapView, IndexedSeqEncoded, IndexedSeqView, IndexedSetEncoded,
 	IndexedSetView, VariantView, deserialize_indexed_map, deserialize_indexed_seq,
 	deserialize_indexed_set, serialize_indexed_entries, serialize_indexed_map,
-	serialize_indexed_seq, serialize_indexed_seq_iter, serialize_indexed_set_iter,
-	skip_indexed_map, skip_indexed_seq, skip_indexed_set,
+	serialize_indexed_seq, serialize_indexed_seq_iter, serialize_indexed_seq_iter_strided,
+	serialize_indexed_set_iter, serialize_indexed_set_iter_strided, skip_indexed_map,
+	skip_indexed_seq, skip_indexed_set,
 };
 pub use struct_walk::IndexedStructWalker;
 

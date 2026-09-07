@@ -163,6 +163,17 @@ where
 pub trait IndexedSeqEncoded: Sized {
 	type Item;
 	fn serialize_indexed_seq<W: Write>(&self, w: &mut W) -> Result<(), Error>;
+	/// Encode with the strided shape permitted: where every element
+	/// serialises to the same non-zero width, a single stride varint replaces
+	/// the per-element offset table.
+	///
+	/// Emitted only for fields declaring `#[revision(indexed_seq, strided)]`,
+	/// so the choice to write bytes a pre-strided reader cannot parse belongs
+	/// to whoever owns the stored format. The default keeps the offset-table
+	/// encoding, which is why an impl that has not opted in is unaffected.
+	fn serialize_indexed_seq_strided<W: Write>(&self, w: &mut W) -> Result<(), Error> {
+		self.serialize_indexed_seq(w)
+	}
 	fn deserialize_indexed_seq<R: Read>(r: &mut R) -> Result<Self, Error>;
 	/// Advance past an indexed-seq payload without materialising it.
 	///
@@ -179,6 +190,9 @@ where
 	type Item = T;
 	fn serialize_indexed_seq<W: Write>(&self, w: &mut W) -> Result<(), Error> {
 		serialize_indexed_seq(self, w)
+	}
+	fn serialize_indexed_seq_strided<W: Write>(&self, w: &mut W) -> Result<(), Error> {
+		serialize_indexed_seq_iter_strided(self.iter(), w)
 	}
 	fn deserialize_indexed_seq<R: Read>(r: &mut R) -> Result<Self, Error> {
 		deserialize_indexed_seq(r)
@@ -198,6 +212,15 @@ where
 pub trait IndexedSetEncoded: Sized {
 	type Item;
 	fn serialize_indexed_set<W: Write>(&self, w: &mut W) -> Result<(), Error>;
+	/// Strided counterpart of [`serialize_indexed_set`], with the same opt-in
+	/// rules as [`IndexedSeqEncoded::serialize_indexed_seq_strided`]. The
+	/// byte-ascending guarantee is unaffected: elements are sorted before the
+	/// shape is chosen.
+	///
+	/// [`serialize_indexed_set`]: Self::serialize_indexed_set
+	fn serialize_indexed_set_strided<W: Write>(&self, w: &mut W) -> Result<(), Error> {
+		self.serialize_indexed_set(w)
+	}
 	fn deserialize_indexed_set<R: Read>(r: &mut R) -> Result<Self, Error>;
 	/// Advance past an indexed-set payload without materialising it. See
 	/// [`IndexedMapEncoded::skip_indexed_map`] for why this requires a
@@ -225,36 +248,34 @@ where
 		bodies.push(b);
 	}
 	// Sort by element bytes — the byte-ascending guarantee that lets the
-	// walker binary-search membership.
+	// walker binary-search membership. Sorting precedes the shape choice, so
+	// it holds on both shapes.
 	bodies.sort();
-	let len = bodies.len();
+	write_seq_bodies(writer, &bodies, false)
+}
 
-	if len < OFFSET_TABLE_MIN_LEN {
-		writer.write_all(&[0u8]).map_err(Error::Io)?;
-		write_varint(writer, len)?;
-		for b in &bodies {
-			writer.write_all(b).map_err(Error::Io)?;
-		}
-		return Ok(());
+/// [`serialize_indexed_set_iter`], permitted to emit the strided shape.
+///
+/// Reached from `#[revision(indexed_set, strided)]`; see
+/// [`IndexedSetEncoded::serialize_indexed_set_strided`].
+#[doc(hidden)]
+pub fn serialize_indexed_set_iter_strided<'a, I, T, W>(
+	items: I,
+	writer: &mut W,
+) -> Result<(), Error>
+where
+	I: IntoIterator<Item = &'a T>,
+	T: SerializeRevisioned + 'a,
+	W: Write,
+{
+	let mut bodies: Vec<Vec<u8>> = Vec::new();
+	for item in items {
+		let mut b = Vec::new();
+		item.serialize_revisioned(&mut b)?;
+		bodies.push(b);
 	}
-
-	if let Some(stride) = uniform_stride(&bodies) {
-		return write_strided_seq(writer, &bodies, stride);
-	}
-
-	writer.write_all(&[FLAG_INDEXED]).map_err(Error::Io)?;
-	write_varint(writer, len)?;
-	let mut off = 0u32;
-	for b in &bodies {
-		writer.write_all(&off.to_le_bytes()).map_err(Error::Io)?;
-		off = off.checked_add(b.len() as u32).ok_or_else(|| {
-			Error::Serialize("indexed set element region exceeds u32::MAX".into())
-		})?;
-	}
-	for b in &bodies {
-		writer.write_all(b).map_err(Error::Io)?;
-	}
-	Ok(())
+	bodies.sort();
+	write_seq_bodies(writer, &bodies, true)
 }
 
 /// Decode an indexed set written by [`serialize_indexed_set_iter`]. Mirrors
@@ -291,6 +312,9 @@ where
 	fn serialize_indexed_set<W: Write>(&self, w: &mut W) -> Result<(), Error> {
 		serialize_indexed_set_iter(self.iter(), w)
 	}
+	fn serialize_indexed_set_strided<W: Write>(&self, w: &mut W) -> Result<(), Error> {
+		serialize_indexed_set_iter_strided(self.iter(), w)
+	}
 	fn deserialize_indexed_set<R: Read>(r: &mut R) -> Result<Self, Error> {
 		deserialize_indexed_set(r)
 	}
@@ -307,6 +331,9 @@ where
 	type Item = T;
 	fn serialize_indexed_set<W: Write>(&self, w: &mut W) -> Result<(), Error> {
 		serialize_indexed_set_iter(self.iter(), w)
+	}
+	fn serialize_indexed_set_strided<W: Write>(&self, w: &mut W) -> Result<(), Error> {
+		serialize_indexed_set_iter_strided(self.iter(), w)
 	}
 	fn deserialize_indexed_set<R: Read>(r: &mut R) -> Result<Self, Error> {
 		let v: Vec<T> = deserialize_indexed_seq(r)?;
@@ -658,15 +685,10 @@ where
 /// give every element the same empty slice, the same ambiguity the offset-table
 /// path rejects via its strict-monotonic rule.
 ///
-/// Also `None` for every input unless the `strided-seq` feature is on. The
-/// strided shape is readable by any build, but writing it is opt-in: a reader
-/// predating [`FLAG_STRIDED`] sees only [`FLAG_INDEXED`] and misreads the
-/// stride varint as the head of an offset table. Downstreams turn the feature
-/// on in the same change that bumps their own stored-format version.
+/// Only ever consulted on the `*_strided` entry points; see
+/// [`IndexedSeqEncoded::serialize_indexed_seq_strided`] for why writing this
+/// shape is opt-in.
 fn uniform_stride(bodies: &[Vec<u8>]) -> Option<usize> {
-	if !cfg!(feature = "strided-seq") {
-		return None;
-	}
 	let stride = bodies.first()?.len();
 	if stride == 0 {
 		return None;
@@ -733,35 +755,70 @@ where
 		item.serialize_revisioned(&mut b)?;
 		bodies.push(b);
 	}
-	let len = bodies.len();
+	write_seq_bodies(writer, &bodies, false)
+}
 
-	// Threshold fallback: below `OFFSET_TABLE_MIN_LEN` we skip the offset
-	// table and emit the legacy `(elem)*` body. `flags.0 == 0` tells the
-	// reader to expect this shape.
+/// [`serialize_indexed_seq_iter`], permitted to emit the strided shape.
+///
+/// Reached from `#[revision(indexed_seq, strided)]`; see
+/// [`IndexedSeqEncoded::serialize_indexed_seq_strided`].
+#[doc(hidden)]
+pub fn serialize_indexed_seq_iter_strided<'a, I, T, W>(
+	items: I,
+	writer: &mut W,
+) -> Result<(), Error>
+where
+	I: IntoIterator<Item = &'a T>,
+	T: SerializeRevisioned + 'a,
+	W: Write,
+{
+	let mut bodies: Vec<Vec<u8>> = Vec::new();
+	for item in items {
+		let mut b = Vec::new();
+		item.serialize_revisioned(&mut b)?;
+		bodies.push(b);
+	}
+	write_seq_bodies(writer, &bodies, true)
+}
+
+/// Write pre-serialised element bodies in whichever shape fits.
+///
+/// Below `OFFSET_TABLE_MIN_LEN` the prologue is pure overhead, so the legacy
+/// `(elem)*` body is emitted with `flags.0 == 0`. Above it, `allow_strided`
+/// decides whether uniform-width elements may drop the offset table.
+///
+/// Callers that sort `bodies` must do so before calling: the shape is chosen
+/// from the bytes as given, and the order they are written in is the order the
+/// walker sees.
+fn write_seq_bodies<W: Write>(
+	writer: &mut W,
+	bodies: &[Vec<u8>],
+	allow_strided: bool,
+) -> Result<(), Error> {
+	let len = bodies.len();
 	if len < OFFSET_TABLE_MIN_LEN {
 		writer.write_all(&[0u8]).map_err(Error::Io)?;
 		write_varint(writer, len)?;
-		for b in &bodies {
+		for b in bodies {
 			writer.write_all(b).map_err(Error::Io)?;
 		}
 		return Ok(());
 	}
 
-	if let Some(stride) = uniform_stride(&bodies) {
-		return write_strided_seq(writer, &bodies, stride);
+	if allow_strided && let Some(stride) = uniform_stride(bodies) {
+		return write_strided_seq(writer, bodies, stride);
 	}
 
 	writer.write_all(&[FLAG_INDEXED]).map_err(Error::Io)?;
 	write_varint(writer, len)?;
-
 	let mut off = 0u32;
-	for b in &bodies {
+	for b in bodies {
 		writer.write_all(&off.to_le_bytes()).map_err(Error::Io)?;
 		off = off
 			.checked_add(b.len() as u32)
 			.ok_or_else(|| Error::Serialize("indexed seq exceeds u32::MAX".into()))?;
 	}
-	for b in &bodies {
+	for b in bodies {
 		writer.write_all(b).map_err(Error::Io)?;
 	}
 	Ok(())
@@ -1149,9 +1206,10 @@ mod tests {
 
 	#[test]
 	fn strided_seq_is_readable_without_the_write_feature() {
-		// The write side is feature-gated; the read side never is. A build
-		// with `strided-seq` off must still decode what a build with it on
-		// wrote, or a mixed fleet cannot read its own storage.
+		// Only fields that opt in emit this shape; every reader accepts it
+		// unconditionally. A type that never declares `strided` must still
+		// decode what one that does wrote, or a mixed fleet cannot read its
+		// own storage.
 		let items: Vec<u32> = (0u32..8).collect();
 		let (bodies, stride) = uniform_element_bodies(&items);
 		let refs: Vec<&[u8]> = bodies.iter().map(|e| e.as_slice()).collect();
@@ -1181,14 +1239,31 @@ mod tests {
 	}
 
 	#[test]
-	#[cfg(feature = "strided-seq")]
+	fn default_entry_points_never_emit_the_strided_shape() {
+		// Uniform-width input through the non-strided entry points must still
+		// produce an offset table: opting in is the field's decision, and a
+		// type that has not opted in must keep its bytes byte-for-byte.
+		let items: Vec<u32> = (0u32..8).collect();
+		let mut seq = Vec::new();
+		serialize_indexed_seq(&items, &mut seq).unwrap();
+		let w: IndexedSeqWalker<u32> = IndexedSeqWalker::from_payload(&seq).unwrap();
+		assert_eq!(w.stride(), None, "`serialize_indexed_seq` must not stride");
+
+		let set: BTreeSet<u32> = (0u32..8).collect();
+		let mut out = Vec::new();
+		serialize_indexed_set_iter(set.iter(), &mut out).unwrap();
+		let w: IndexedSeqWalker<u32> = IndexedSeqWalker::from_payload(&out).unwrap();
+		assert_eq!(w.stride(), None, "`serialize_indexed_set_iter` must not stride");
+	}
+
+	#[test]
 	fn strided_seq_shrinks_the_prologue_and_round_trips() {
 		// Eight uniform elements: the offset table would cost 8 * 4 bytes,
 		// the stride costs one varint.
 		let items: Vec<u32> = (0u32..8).collect();
 		let (bodies, stride) = uniform_element_bodies(&items);
 		let mut bytes = Vec::new();
-		serialize_indexed_seq(&items, &mut bytes).unwrap();
+		serialize_indexed_seq_iter_strided(items.iter(), &mut bytes).unwrap();
 
 		let walker: IndexedSeqWalker<u32> = IndexedSeqWalker::from_payload(&bytes).unwrap();
 		assert_eq!(walker.stride(), Some(stride));
@@ -1210,7 +1285,6 @@ mod tests {
 	}
 
 	#[test]
-	#[cfg(feature = "strided-seq")]
 	fn strided_set_round_trips_and_stays_byte_sorted() {
 		// `0..16` serialise in ascending byte order under both integer
 		// encodings, so an ordering assertion over them cannot fail — hoisting
@@ -1227,7 +1301,7 @@ mod tests {
 			"fixture must not already be in byte order, or it cannot detect a missing sort"
 		);
 		let mut bytes = Vec::new();
-		serialize_indexed_set_iter(original.iter(), &mut bytes).unwrap();
+		serialize_indexed_set_iter_strided(original.iter(), &mut bytes).unwrap();
 
 		let walker: IndexedSeqWalker<u32> = IndexedSeqWalker::from_payload(&bytes).unwrap();
 		assert_eq!(walker.stride(), Some(stride));

@@ -22,9 +22,11 @@
 //! for the case where every element serialises to the same width — element `i`
 //! starts at `i * stride` — at a prologue cost of one varint instead of
 //! `len * 4` bytes. Readers accept both shapes unconditionally; whether the
-//! encoder *emits* the strided shape is gated on the `strided-seq` feature,
-//! because a reader predating this flag misreads the stride varint as the
-//! head of an offset table.
+//! encoder *emits* the strided shape is declared per field with
+//! `#[revision(indexed_seq, strided)]`, because a reader predating this flag
+//! misreads the stride varint as the head of an offset table — so the choice
+//! belongs to whoever owns the stored format, next to the revision bump that
+//! makes the new bytes legible.
 
 use std::marker::PhantomData;
 

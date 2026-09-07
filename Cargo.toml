@@ -33,12 +33,6 @@ autobenches = false
 default = ["specialised-vectors"]
 specialised-vectors = []
 fixed-width-encoding = []
-# Emit the strided indexed-seq shape (single stride varint in place of a
-# per-element offset table) for sequences whose elements all serialise to the
-# same width. Readers understand the shape with or without this feature; only
-# writing it is gated, because a reader predating the flag misreads the stride
-# varint as the head of an offset table.
-strided-seq = []
 
 [dependencies]
 revision-derive = { version = "0.30.0", path = "revision-derive" }

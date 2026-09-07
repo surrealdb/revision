@@ -92,15 +92,28 @@ pub fn emit_struct_serialize(s: &Struct, ctx: EncodingContext) -> TokenStream {
 				)?;
 			});
 		} else if f.attrs.options.indexed_seq {
+			// `strided` picks the encoder that may drop the offset table for
+			// uniform-width elements. Both shapes are read by the same
+			// decoder, so only the write side varies.
+			let method = if f.attrs.options.strided {
+				quote!(serialize_indexed_seq_strided)
+			} else {
+				quote!(serialize_indexed_seq)
+			};
 			out.append_all(quote! {
-				<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::serialize_indexed_seq(
+				<#ty as ::revision::optimised::indexed::IndexedSeqEncoded>::#method(
 					#binding,
 					&mut __scratch,
 				)?;
 			});
 		} else if f.attrs.options.indexed_set {
+			let method = if f.attrs.options.strided {
+				quote!(serialize_indexed_set_strided)
+			} else {
+				quote!(serialize_indexed_set)
+			};
 			out.append_all(quote! {
-				<#ty as ::revision::optimised::indexed::IndexedSetEncoded>::serialize_indexed_set(
+				<#ty as ::revision::optimised::indexed::IndexedSetEncoded>::#method(
 					#binding,
 					&mut __scratch,
 				)?;

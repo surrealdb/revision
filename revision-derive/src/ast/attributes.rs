@@ -42,6 +42,7 @@ mod kw {
 	// Per-field encoding overrides regardless of crate-wide cargo features.
 	syn::custom_keyword!(fixed);
 	syn::custom_keyword!(specialised);
+	syn::custom_keyword!(strided);
 }
 
 #[derive(Debug)]
@@ -185,6 +186,16 @@ pub struct FieldOptions {
 	/// cargo feature. Valid on `Vec<T>` fields where `T` is a primitive in
 	/// the bulk-encoded list.
 	pub specialised: bool,
+	/// `#[revision(strided)]`: let this field's elements be written without a
+	/// per-element offset table when they all serialise to the same width.
+	/// Modifies `indexed_seq` / `indexed_set`; meaningless on its own.
+	///
+	/// This is opt-in per field rather than crate-wide because it changes the
+	/// bytes written: a reader predating the strided shape misreads the stride
+	/// as the head of an offset table. Declaring it here puts the choice in
+	/// the source of whoever owns the stored format, alongside the revision
+	/// bump that makes the new bytes legible.
+	pub strided: bool,
 }
 
 impl FieldOptions {
@@ -204,6 +215,7 @@ pub enum FieldOption {
 	IndexedSet(kw::indexed_set),
 	Fixed(kw::fixed),
 	Specialised(kw::specialised),
+	Strided(kw::strided),
 }
 
 impl Parse for FieldOption {
@@ -235,6 +247,9 @@ impl Parse for FieldOption {
 		if input.peek(kw::specialised) {
 			return Ok(FieldOption::Specialised(input.parse()?));
 		}
+		if input.peek(kw::strided) {
+			return Ok(FieldOption::Strided(input.parse()?));
+		}
 
 		Err(input.error("invalid field option"))
 	}
@@ -247,6 +262,7 @@ impl AttributeOptions for FieldOptions {
 		let mut res = FieldOptions::default();
 
 		let mut end_kw = None;
+		let mut strided_kw = None;
 
 		for option in options {
 			match option {
@@ -323,7 +339,25 @@ impl AttributeOptions for FieldOptions {
 					}
 					res.specialised = true;
 				}
+				FieldOption::Strided(kw) => {
+					if res.strided {
+						return Err(Error::new(kw.span(), "tried to set an option twice"));
+					}
+					strided_kw = Some(kw);
+					res.strided = true;
+				}
 			}
+		}
+
+		// `strided` only modifies the sequence-shaped encoders. On a map or a
+		// plain field it would be silently ignored, so reject it instead.
+		if let Some(kw) = strided_kw
+			&& !(res.indexed_seq || res.indexed_set)
+		{
+			return Err(Error::new(
+				kw.span(),
+				"`strided` requires `indexed_seq` or `indexed_set` on the same field",
+			));
 		}
 
 		if let Some(kw) = end_kw
