@@ -117,3 +117,58 @@ fn mixed_width_elements_fall_back_to_the_offset_table() {
 	assert_eq!(walker.stride(), None, "mixed widths cannot be strided");
 	assert_eq!(revision::from_slice::<Mixed>(&bytes).unwrap(), original);
 }
+
+/// Every collection the crate ships an encoder for must honour the strided
+/// entry point.
+///
+/// The per-type override is easy to add and easy to forget: a type that misses
+/// it still round-trips perfectly and simply emits the offset table, so the
+/// attribute silently does nothing and no round-trip test notices. This walks
+/// the bundled types explicitly so a new one cannot be added without either
+/// overriding the method or failing here.
+#[test]
+fn every_bundled_collection_honours_the_strided_entry_point() {
+	use revision::optimised::indexed::{IndexedSeqEncoded, IndexedSetEncoded};
+
+	fn assert_strided(label: &str, bytes: &[u8]) {
+		let walker: IndexedSeqWalker<u32> = IndexedSeqWalker::from_payload(bytes).unwrap();
+		assert!(
+			walker.stride().is_some(),
+			"{label}: the strided entry point emitted an offset table"
+		);
+	}
+
+	let values: Vec<u32> = (0u32..16).collect();
+
+	let mut bytes = Vec::new();
+	values.serialize_indexed_seq_strided(&mut bytes).unwrap();
+	assert_strided("Vec", &bytes);
+
+	let set: BTreeSet<u32> = values.iter().copied().collect();
+	let mut bytes = Vec::new();
+	set.serialize_indexed_set_strided(&mut bytes).unwrap();
+	assert_strided("BTreeSet", &bytes);
+
+	let set: std::collections::HashSet<u32> = values.iter().copied().collect();
+	let mut bytes = Vec::new();
+	set.serialize_indexed_set_strided(&mut bytes).unwrap();
+	assert_strided("HashSet", &bytes);
+
+	#[cfg(feature = "imbl")]
+	{
+		let seq: imbl::Vector<u32> = values.iter().copied().collect();
+		let mut bytes = Vec::new();
+		seq.serialize_indexed_seq_strided(&mut bytes).unwrap();
+		assert_strided("imbl::Vector", &bytes);
+
+		let set: imbl::OrdSet<u32> = values.iter().copied().collect();
+		let mut bytes = Vec::new();
+		set.serialize_indexed_set_strided(&mut bytes).unwrap();
+		assert_strided("imbl::OrdSet", &bytes);
+
+		let set: imbl::HashSet<u32> = values.iter().copied().collect();
+		let mut bytes = Vec::new();
+		set.serialize_indexed_set_strided(&mut bytes).unwrap();
+		assert_strided("imbl::HashSet", &bytes);
+	}
+}

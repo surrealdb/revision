@@ -4,7 +4,8 @@ use super::super::Error;
 use super::super::optimised::indexed::{
 	IndexedMapEncoded, IndexedSeqEncoded, IndexedSetEncoded, deserialize_indexed_map,
 	deserialize_indexed_seq, serialize_indexed_entries, serialize_indexed_seq_iter,
-	serialize_indexed_set_iter, skip_indexed_map, skip_indexed_seq, skip_indexed_set,
+	serialize_indexed_seq_iter_strided, serialize_indexed_set_iter,
+	serialize_indexed_set_iter_strided, skip_indexed_map, skip_indexed_seq, skip_indexed_set,
 };
 use super::super::{
 	BorrowedReader, DeserializeRevisioned, Revisioned, SerializeRevisioned, SkipRevisioned,
@@ -66,6 +67,9 @@ where
 	fn serialize_indexed_seq<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
 		serialize_indexed_seq_iter(self.iter(), w)
 	}
+	fn serialize_indexed_seq_strided<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
+		serialize_indexed_seq_iter_strided(self.iter(), w)
+	}
 	fn deserialize_indexed_seq<R: std::io::Read>(r: &mut R) -> Result<Self, Error> {
 		let v: Vec<T> = deserialize_indexed_seq(r)?;
 		Ok(v.into_iter().collect())
@@ -83,6 +87,9 @@ where
 	fn serialize_indexed_set<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
 		serialize_indexed_set_iter(self.iter(), w)
 	}
+	fn serialize_indexed_set_strided<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
+		serialize_indexed_set_iter_strided(self.iter(), w)
+	}
 	fn deserialize_indexed_set<R: std::io::Read>(r: &mut R) -> Result<Self, Error> {
 		let v: Vec<T> = deserialize_indexed_seq(r)?;
 		Ok(v.into_iter().collect())
@@ -99,6 +106,9 @@ where
 	type Item = T;
 	fn serialize_indexed_set<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
 		serialize_indexed_set_iter(self.iter(), w)
+	}
+	fn serialize_indexed_set_strided<W: std::io::Write>(&self, w: &mut W) -> Result<(), Error> {
+		serialize_indexed_set_iter_strided(self.iter(), w)
 	}
 	fn deserialize_indexed_set<R: std::io::Read>(r: &mut R) -> Result<Self, Error> {
 		let v: Vec<T> = deserialize_indexed_seq(r)?;
