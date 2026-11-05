@@ -18,7 +18,12 @@ impl DeserializeRevisioned for Duration {
 	fn deserialize_revisioned<R: std::io::Read>(reader: &mut R) -> Result<Self, Error> {
 		let secs = u64::deserialize_revisioned(reader)?;
 		let nanos = u32::deserialize_revisioned(reader)?;
-		Ok(Duration::new(secs, nanos))
+		// Duration::new carries whole seconds out of nanos and panics if that
+		// pushes secs past u64::MAX, so do the carry here and report it instead.
+		let secs = secs
+			.checked_add((nanos / 1_000_000_000) as u64)
+			.ok_or_else(|| Error::Deserialize("invalid duration".to_string()))?;
+		Ok(Duration::new(secs, nanos % 1_000_000_000))
 	}
 }
 
@@ -44,6 +49,25 @@ mod tests {
 		assert_eq!(mem.len(), 6);
 		#[cfg(feature = "fixed-width-encoding")]
 		assert_eq!(mem.len(), 12);
+		let out = <Duration as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
+			.unwrap();
+		assert_eq!(val, out);
+	}
+
+	#[test]
+	fn deserialize_rejects_overflowing_duration() {
+		let mut mem: Vec<u8> = vec![];
+		u64::MAX.serialize_revisioned(&mut mem).unwrap();
+		1_000_000_000u32.serialize_revisioned(&mut mem).unwrap();
+		let out = <Duration as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice());
+		assert!(out.is_err());
+	}
+
+	#[test]
+	fn deserialize_accepts_maximum_duration() {
+		let val = Duration::MAX;
+		let mut mem: Vec<u8> = vec![];
+		val.serialize_revisioned(&mut mem).unwrap();
 		let out = <Duration as DeserializeRevisioned>::deserialize_revisioned(&mut mem.as_slice())
 			.unwrap();
 		assert_eq!(val, out);
